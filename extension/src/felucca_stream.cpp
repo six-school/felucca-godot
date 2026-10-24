@@ -82,7 +82,10 @@ double FeluccaPlayback::_get_playback_position() const {
 int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t p_frames) {
 	const felucca::Plan &p = felucca::Engine::get().plan;
 	mixed += uint64_t(p_frames);
-	if (!core || hold_silent) {
+	if (!core || hold_silent || hold_fade) {
+		if (hold_fade && !hold_silent) {
+			hold_fade--;
+		}
 		for (int32_t i = 0; i < p_frames; i++) {
 			p_buffer[i] = AudioFrame{ 0.0f, 0.0f };
 		}

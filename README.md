@@ -12,7 +12,8 @@ sources play a project made on the device, in sync on one timeline, pause-safe. 
   (`core/build.sh`) and its tests (`core/tests/run.sh`)
 - `extension/`, `SConstruct`: the GDExtension (godot-cpp 10.0.0, API 4.7): conductor, sources, project importer; its
   Godot-side tests (`extension/run_tests.sh`)
-- `demo/`: a Godot 4.7 project: the user's project in two sources (`main.tscn`), the tests (`tests/`)
+- `demo/`: a Godot 4.7 project: the user's project in two sources (`main.tscn`), the tests (`tests/`). A project
+  using the extension needs its autoload `Felucca="*res://addons/felucca/felucca.tscn"` (atomic pause: DESIGN.md D7)
 - `tools/setup_godot.sh`: Godot 4.7.2 (checked), godot-cpp 10.0.0-stable, SCons
 - `patches/`: the Felucca patch series (PR 269 and three of ours), on Felucca `63f88ec`
 - `tools/setup_felucca.sh`: clones Felucca at that commit, applies the series, generates its headers

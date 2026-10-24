@@ -10,6 +10,7 @@
 #include <godot_cpp/classes/scene_tree.hpp>
 #include <godot_cpp/classes/window.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -119,10 +120,16 @@ void FeluccaConductor::ensure_node() {
 	if (!tree || !tree->get_root()) {
 		return;
 	}
+	UtilityFunctions::push_warning("FeluccaConductor: no Felucca autoload (res://addons/felucca/felucca.tscn) in the project: ",
+			"one is added after the scene, so the scene's sources hear a pause before it and the pause is not atomic");
 	FeluccaConductorNode *n = memnew(FeluccaConductorNode);
 	n->set_name("FeluccaConductor");
 	node = n->get_instance_id();
 	tree->get_root()->call_deferred("add_child", n);
+}
+
+void FeluccaConductor::adopt_node(Node *p_node) {
+	node = p_node->get_instance_id();
 }
 
 void FeluccaConductor::add_playback(FeluccaPlayback *p_playback) {
@@ -153,8 +160,10 @@ void FeluccaConductor::resolve_pending() {
 	pending.clear();
 }
 
-// D7: one lock for B and every source the tree pause stops (those that cannot process while it is paused); a source
-// its own stream_paused had paused already is noted, left paused, and kept so through Godot's unpause (godot #65743)
+// D7: one lock for B and every bound source, whatever its process mode (a source left playing would only ring on,
+// its music standing with B; DESIGN.md §13.17: its own time while B stands is for M5 / M6). A source its own
+// stream_paused had paused already is noted and left paused; one Godot will unpause (it is told the pause: it cannot
+// process while the tree is paused) is kept so through that (godot #65743) by its own UNPAUSED (FeluccaSource)
 void FeluccaConductor::tree_paused(bool p_paused) {
 	AudioServer::get_singleton()->lock();
 	felucca::Engine::get().paused = p_paused;
@@ -165,21 +174,20 @@ void FeluccaConductor::tree_paused(bool p_paused) {
 			continue;
 		}
 		if (p_paused) {
-			if (n->can_process()) {
-				continue; // (PROCESS_MODE_ALWAYS and the like play on: their music stands with B)
-			}
 			p->tree_held = true;
+			p->tree_told = !n->can_process();
 			p->user_paused = bool(n->call("get_stream_paused"));
 			if (!p->user_paused) {
 				n->call("set_stream_paused", true);
 			}
 		} else if (p->tree_held) {
 			p->tree_held = false;
-			if (p->user_paused) {
-				p->hold_silent = FeluccaSource::is_source(n); // (its UNPAUSED pauses it again: FeluccaSource)
-				p->user_paused = p->hold_silent;
-			} else {
+			if (!p->user_paused) {
 				n->call("set_stream_paused", false);
+			} else if (p->tree_told && FeluccaSource::is_source(n)) {
+				p->hold_silent = true; // (until its UNPAUSED, right after Godot's, pauses it again)
+			} else {
+				p->user_paused = false; // (Godot leaves it as it is: paused)
 			}
 		}
 	}
@@ -189,6 +197,9 @@ void FeluccaConductor::tree_paused(bool p_paused) {
 void FeluccaConductorNode::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
+			if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
+				c->adopt_node(this);
+			}
 			AudioServer *as = AudioServer::get_singleton();
 			felucca::Engine &e = felucca::Engine::get();
 			as->lock();
@@ -206,9 +217,6 @@ void FeluccaConductorNode::_notification(int p_what) {
 			set_process_priority(1 << 30); // (last in each frame's process: that frame's play()s are all in)
 			set_process(true);
 		} break;
-		case NOTIFICATION_READY:
-			get_parent()->call_deferred("move_child", this, 0); // first: hears PAUSED before any scene node
-			break;
 		case NOTIFICATION_PROCESS:
 			if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
 				c->resolve_pending();

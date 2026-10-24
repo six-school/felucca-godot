@@ -1,8 +1,11 @@
 // The conductor (D6, D7, §5.2): FeluccaConductor, an engine singleton as Input is (FeluccaConductor.tempo = 140.0),
-// owns the timeline B, its tempo and transport and the pool's playbacks. Its node, FeluccaConductorNode, installs
-// itself as the root's first child, so it hears the tree's PAUSED / UNPAUSED before any scene node: it stops B and
-// pauses every bound source's player in one AudioServer::lock(), and Godot's own per-node pauses after it change
-// nothing. It also owns the clock effect's muted bus, and resolves each frame's play()s to one origin.
+// owns the timeline B, its tempo and transport and the pool's playbacks. Its node, FeluccaConductorNode, is the
+// project's autoload (addons/felucca/felucca.tscn): Godot tells a pause to the root's children in the order they were
+// added (Node::_propagate_pause_notification walks data.children, not the child index), and autoloads are added before
+// the main scene, so it hears the tree's PAUSED / UNPAUSED before any scene node: it stops B and pauses every bound
+// source's player in one AudioServer::lock(), and Godot's own per-node pauses after it change nothing. It also owns
+// the clock effect's muted bus, and resolves each frame's play()s to one origin. Without the autoload one is added at
+// run time, after the scene: then the pause is not atomic (a warning says so).
 #pragma once
 
 #include <godot_cpp/classes/node.hpp>
@@ -42,6 +45,7 @@ public:
 
 	// the extension's own
 	void ensure_node(); // (a source entering the tree, or a call above, at run time)
+	void adopt_node(Node *p_node); // the autoload's node, entering the tree
 	void add_playback(FeluccaPlayback *p_playback);
 	void remove_playback(FeluccaPlayback *p_playback);
 	void resolve_pending(); // the node, last in each frame's process

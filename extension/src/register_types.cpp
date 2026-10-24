@@ -24,7 +24,7 @@ static void initialize_felucca(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(FeluccaStream);
 		GDREGISTER_INTERNAL_CLASS(FeluccaPlayback);
 		GDREGISTER_ABSTRACT_CLASS(FeluccaConductor); // (the engine singleton only)
-		GDREGISTER_INTERNAL_CLASS(FeluccaConductorNode);
+		GDREGISTER_CLASS(FeluccaConductorNode); // (the autoload's: addons/felucca/felucca.tscn)
 		GDREGISTER_CLASS(FeluccaSource);
 		GDREGISTER_CLASS(FeluccaSource2D);
 		GDREGISTER_CLASS(FeluccaSource3D);

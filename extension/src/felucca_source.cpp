@@ -52,6 +52,7 @@ void FelSource::notification(Node *p_owner, int p_what) {
 			AudioServer::get_singleton()->lock();
 			p_owner->call("set_stream_paused", true);
 			p->hold_silent = false;
+			p->hold_fade = 1; // (Godot mixes it once more, fading into the pause)
 			p->user_paused = false;
 			AudioServer::get_singleton()->unlock();
 		}

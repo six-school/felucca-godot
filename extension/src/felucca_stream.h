@@ -63,8 +63,10 @@ public:
 	bool armed = false; // play() resolved: step 1 at origin
 	double origin = 0.0; // B of its step 1
 	bool tree_held = false; // the tree pause holds it (the conductor paused it, or noted its own pause)
+	bool tree_told = false; // .. and Godot tells it the pause (it cannot process while the tree is paused)
 	bool user_paused = false; // its source was paused by its own stream_paused when the tree paused
 	bool hold_silent = false; // .. and Godot's unpause let it go (godot #65743) until the source pauses it again
+	int hold_fade = 0; // .. and the mix step after, Godot's fade into that pause (its music must not move in it)
 
 	FeluccaPlayback();
 	~FeluccaPlayback();

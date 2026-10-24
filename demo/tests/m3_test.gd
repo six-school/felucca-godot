@@ -1,8 +1,10 @@
 # M3's checks in Godot 4.7.2 (extension/run_tests.sh: headless, the Dummy audio driver, which mixes on a thread of its
 # own under the driver lock, as the real drivers do):
 #   T12  the clock effect runs once a mix step on its muted bus, during a tree pause too, with B standing still
-#   T13  8 sources, 4000 nodes between each, started in one frame: through 300 tree pause / unpause cycles their
-#        music stays at one position and their players' mixed frames keep their spacing
+#   T13  7 sources, 4000 nodes between each, started in one frame (one of them PROCESS_MODE_ALWAYS: paused all the
+#        same, DESIGN.md D7): through 300 tree pause / unpause cycles, each pause stops every source before any scene
+#        node hears it (the Felucca autoload hears it first), each unpause starts every one again, their music stays
+#        at one position and their players' mixed frames keep their spacing
 #   sync a source started later, quantize BAR, plays on the others' bars
 #   own pause  stream_paused on a source holds through the tree's pause and unpause (godot #65743); FOLLOW resumes
 #        where the music is, HOLD from where it stopped
@@ -19,6 +21,18 @@ var fails := 0
 var sources: Array[FeluccaSource] = []
 var project: FeluccaProject = preload("res://music/solar_signal.felucca")
 var tol := 0                       # samples a position may differ by (0: exact)
+var told := 0                      # pauses / unpauses the probe heard
+var told_late := 0                 # .. with a source not yet paused / unpaused by the conductor
+
+class Probe extends Node:          # a scene node before the sources: by the time it hears the pause, the conductor
+	var test: Node                 # has paused (unpaused) every one
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_PAUSED or what == NOTIFICATION_UNPAUSED:
+			test.told += 1
+			for s in test.sources:
+				if s.playing and not test.own.has(s) and s.stream_paused != (what == NOTIFICATION_PAUSED):
+					test.told_late += 1
+var own: Array = []                # sources paused by their own stream_paused (the probe leaves them be)
 
 func check(ok: bool, what: String) -> void:
 	print(("ok   " if ok else "FAIL ") + what)
@@ -67,7 +81,11 @@ func _ready() -> void:
 	FeluccaConductor.boot_pool()
 	FeluccaConductor.play()
 	await wait(0.2)
-	check(get_tree().root.get_child(0).name == "FeluccaConductor", "the conductor's node is the root's first child")
+	check(get_tree().root.get_child(0) is FeluccaConductorNode, "the Felucca autoload is the conductor's node (the root's first child)")
+	var probe := Probe.new()
+	probe.test = self
+	probe.process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_child(probe)
 
 	# ---- import
 	check(project.project_name == "SOLAR SIGNAL" and project.bpm == 68 and project.firmware == "FELUCCA v1.6.1"
@@ -97,6 +115,7 @@ func _ready() -> void:
 	# ---- T13
 	for i in N:
 		var holder := Node.new()
+		holder.process_mode = Node.PROCESS_MODE_ALWAYS if i == 6 else Node.PROCESS_MODE_PAUSABLE
 		add_child(holder)
 		for k in FILLER:
 			holder.add_child(Node.new())
@@ -120,14 +139,33 @@ func _ready() -> void:
 	check(AudioServer.get_bus_peak_volume_left_db(0, 0) > -60.0, "T13 they sound (Master peak %.1f dB)" % AudioServer.get_bus_peak_volume_left_db(0, 0))
 	var m0 := mixed()
 	var out_of_step := 0
+	var stuck := 0                 # cycles after which a source's music did not move on
+	var running := 0               # .. or a source was not stopped while paused
+	told = 0
 	for k in 300:
 		get_tree().paused = true
 		await wait(randf_range(0.0, 0.03))
+		var during := mixed()
+		await wait(0.012)
+		var still := mixed()
+		for i in 7:
+			running += int(not sources[i].stream_paused or still[i] != during[i])
+		var before := positions()
 		get_tree().paused = false
 		await wait(randf_range(0.0, 0.03))
-		if not all_same(positions(), seven):
+		var m := FeluccaConductor.get_mix_steps()    # (the Dummy driver mixes in bursts: wait for two mix steps)
+		var t := Time.get_ticks_msec()
+		while FeluccaConductor.get_mix_steps() < m + 2 and Time.get_ticks_msec() - t < 500:
+			await wait(0.005)
+		var after := positions()
+		for i in 7:
+			stuck += int(not after[i].get("playing", false) or after[i].beats <= before[i].beats)
+		if not all_same(after, seven):
 			out_of_step += 1
 	var m1 := mixed()
+	check(told == 600 and told_late == 0, "T13 the pause reached every source before the scene's nodes (%d of %d told late)" % [told_late, told])
+	check(running == 0 and stuck == 0, "T13 every pause stopped every source (the ALWAYS one too) and every unpause started it again (%d, %d not)"
+		% [running, stuck])
 	var spacing := 0
 	for i in 7:
 		spacing = max(spacing, abs((m1[i] - m1[0]) - (m0[i] - m0[0])))
@@ -151,6 +189,7 @@ func _ready() -> void:
 		% [p[7].get("origin", 0.0) - p[2].origin, p[7].tracks[3][0] + 1, p[2].tracks[3][0] + 1])
 
 	# ---- own pause: source 0 FOLLOW, source 1 HOLD; source 2 plays on
+	own = [sources[0], sources[1]]
 	sources[0].stream_paused = true
 	sources[1].stream_paused = true
 	await wait(0.6)
@@ -166,6 +205,7 @@ func _ready() -> void:
 	await wait(0.6)
 	sources[0].stream_paused = false
 	sources[1].stream_paused = false
+	own = []
 	await wait(0.5)
 	p = positions()
 	check(same_music(p[0], p[2]), "own pause, FOLLOW: back where the music is (%.4f beats, as source 2's %.4f)" % [p[0].beats, p[2].beats])
