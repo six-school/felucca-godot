@@ -1,0 +1,41 @@
+From 6577270b13b83248817192b4a7be923a331ae77b Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 24 Oct 2026 06:28:04 +0000
+Subject: [PATCH 4/4] Test only: a hook after each block's sequencer ticks
+
+FEL_MEASURE (tests, never a build of the firmware): the board file's fel_measure_block(n) runs after seq_tick for
+every track, so a test sees which steps began in which 32-sample block.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SuSq9wGdniKSxRn9Ez2WpY
+---
+ firmware/src/seq.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/firmware/src/seq.c b/firmware/src/seq.c
+index 985fbc0..29c41ef 100644
+--- a/firmware/src/seq.c
++++ b/firmware/src/seq.c
+@@ -1349,6 +1349,9 @@ static int32_t click_beat_now(void)
+ static int host_clock_on;                 /* the host (a game engine) feeds the musical units: no pulses, no ms */
+ static uint32_t host_clock_units(uint32_t n);   /* (the board file: units of MIDI_CLOCK_GRID for an n-sample block) */
+ #endif
++#ifdef FEL_MEASURE
++static void fel_measure_block(uint32_t n);
++#endif
+ static void events_block(uint32_t n)
+ {
+     uint32_t i, pr, seq_n = n;
+@@ -1462,6 +1465,9 @@ static void events_block(uint32_t n)
+     chain_tick(clock_mode && chain.running ? midi_seq_preview(&trk[chain.clk], seq_n) : seq_n);
+     for (i = 0; i < NTRK; i++)
+         seq_tick(&trk[i], seq_n);
++#ifdef FEL_MEASURE
++    fel_measure_block(n);                         /* (test only: which steps began in this block) */
++#endif
+     if (cin_flush)
+         cin_record();
+     if (song.playing)
+-- 
+2.43.0
+

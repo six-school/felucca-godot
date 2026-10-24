@@ -1,0 +1,438 @@
+From bbb93390c229bfa18601472b6a2dbfbdb6fc9e94 Mon Sep 17 00:00:00 2001
+From: Felix Gebhard <fgunited@users.noreply.github.com>
+Date: Sat, 24 Oct 2026 06:28:03 +0000
+Subject: [PATCH 1/4] Preserve external MIDI-clock phase in sequencers and
+ arpeggiators
+
+From hugelton/Felucca PR 269 (branch head ebdf867), firmware and tests only, applied onto main 63f88ec.
+---
+ firmware/src/midi_clock.c |  81 ++++++++++++++++++--------
+ firmware/src/seq.c        |  62 ++++++++++++++++++--
+ tests/midi_drift_test.c   | 119 ++++++++++++++++++++++++++++++++++++++
+ tests/run_tests.sh        |   4 +-
+ 4 files changed, 237 insertions(+), 29 deletions(-)
+ create mode 100644 tests/midi_drift_test.c
+
+diff --git a/firmware/src/midi_clock.c b/firmware/src/midi_clock.c
+index c139b8a..70f80eb 100644
+--- a/firmware/src/midi_clock.c
++++ b/firmware/src/midi_clock.c
+@@ -1,24 +1,26 @@
+ /* SPDX-License-Identifier: GPL-3.0-only
+  * Adapted from MIDI clock contributions by ChanceTheMaker and keremimo (2026).
+  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
+-/* Audio ISR state. Input timestamps keep USB/TRS jitter outside the render loop. */
++/* Audio ISR state. Input timestamps keep USB/TRS jitter outside the render loop.
++ * pos/rendered use fixed musical units (GRID per quarter), independent of BPM.
++ * Sequencers/ARPs convert those units with fractional carries; tempo changes
++ * cannot change the clock's accumulated musical phase. */
+ static struct {
+-    uint32_t pos, rendered, last_ms, start_ms, rem, interval_ms;
+-    uint32_t pulse_samples, interp_q8, tempo_ms;
++    uint32_t pos, rendered, last_ms, start_ms, interval_ms;
++    uint32_t pulse_units, interp_q8, tempo_ms;
+     uint8_t mode, have_pulse, tempo_valid, tempo_n;
+ } midi_clock;
+ 
+ static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint32_t ms)
+ {
+     if (status == 0xFAu) {                         /* Start: step zero */
+-        midi_clock.pos = midi_clock.rendered = midi_clock.rem = 0;
++        midi_clock.pos = midi_clock.rendered = 0;
+         midi_clock.have_pulse = midi_clock.tempo_valid = 0;
+         midi_clock.interval_ms = 0;
+         midi_clock.start_ms = ms;
+         seq_start();
+     } else if (status == 0xFBu) {                  /* Continue: preserve the step */
+         midi_clock.pos = midi_clock.rendered;
+-        midi_clock.rem = 0;
+         midi_clock.have_pulse = midi_clock.tempo_valid = 0;
+         midi_clock.interval_ms = 0;
+         midi_clock.start_ms = ms;
+@@ -30,9 +32,26 @@ static __attribute__((noinline)) void midi_clock_transport(uint32_t status, uint
+     }
+ }
+ 
++static uint32_t midi_clock_scale(uint32_t value, uint32_t new_period, uint32_t old_period)
++{
++    return (uint32_t)(((uint64_t)value * new_period + old_period / 2u) / old_period);
++}
++
++static uint32_t midi_clock_period(uint32_t quarter, uint32_t div)
++{
++    return div < 6u ? quarter / DIV_DEN[div] : div < 10u ? quarter << (div - 5u) : quarter / DIV_DEN[div % 6u];
++}
++
++static uint32_t midi_clock_scale_phase(uint32_t value, uint32_t new_period, uint32_t old_period, midi_grid_t *grid)
++{
++    uint64_t phase = (uint64_t)value * MIDI_CLOCK_GRID + grid->remainder;
++    phase = (phase * new_period + old_period / 2u) / old_period;
++    grid->remainder = (uint32_t)(phase % MIDI_CLOCK_GRID);
++    return (uint32_t)(phase / MIDI_CLOCK_GRID);
++}
++
+ static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)
+ {
+-    uint32_t q;
+     if (!midi_clock.tempo_valid) {
+         midi_clock.tempo_valid = 1;
+         midi_clock.tempo_ms = ms;
+@@ -45,41 +64,56 @@ static __attribute__((noinline)) void midi_clock_pulse(uint32_t ms)
+         if (dt >= 62u && dt <= 375u) {
+             uint32_t old_beat = beat_samples(), new_beat = (uint32_t)FS * dt / 250u;
+             if (song.playing && new_beat != old_beat) {
+-                uint32_t i, ratio = (new_beat << 12) / old_beat;
++                uint32_t i;
+                 /* Preserve each track's fractional step phase when the master
+                  * changes tempo. The next pulse then lands on its new boundary. */
+                 for (i = 0; i < NTRK; i++) {
+-                    if (trk[i].seq_pos < (uint32_t)FS * 2u)
+-                        trk[i].seq_pos = (uint32_t)(((uint64_t)trk[i].seq_pos * ratio + 2048u) >> 12);
++                    uint32_t div = (uint32_t)trk[i].p[P_SDIV];
++                    uint32_t old_period = midi_clock_period(old_beat, div), new_period = midi_clock_period(new_beat, div);
++                    if (trk[i].seq_pos < 0x7FFFFFFFu)
++                        trk[i].seq_pos = midi_clock_scale_phase(trk[i].seq_pos, new_period, old_period, &midi_seq_grid[i]);
+                     if (trk[i].seq_off)
+-                        trk[i].seq_off = (uint32_t)(((uint64_t)trk[i].seq_off * ratio + 2048u) >> 12);
++                        trk[i].seq_off = midi_clock_scale(trk[i].seq_off, new_period, old_period);
+                     if (trk[i].nd_late)            /* (NUDGE: the latched plays, seq_pos + 1, with the step) */
+-                        trk[i].nd_late = (uint32_t)(((uint64_t)(trk[i].nd_late - 1u) * ratio + 2048u) >> 12) + 1u;
++                        trk[i].nd_late = midi_clock_scale(trk[i].nd_late - 1u, new_period, old_period) + 1u;
+                     if (trk[i].nd_early)
+-                        trk[i].nd_early = (uint32_t)(((uint64_t)(trk[i].nd_early - 1u) * ratio + 2048u) >> 12) + 1u;
++                        trk[i].nd_early = midi_clock_scale(trk[i].nd_early - 1u, new_period, old_period) + 1u;
++                    div = (uint32_t)trk[i].p[P_ARATE];
++                    old_period = midi_clock_period(old_beat, div); new_period = midi_clock_period(new_beat, div);
++                    if (trk[i].arp_pos < 0xFFFFFFFu)
++                        trk[i].arp_pos = midi_clock_scale_phase(trk[i].arp_pos, new_period, old_period, &midi_arp_grid[i]);
++                    if (trk[i].arp_off)
++                        trk[i].arp_off = midi_clock_scale(trk[i].arp_off, new_period, old_period);
+                 }
+-                if (clk_pos < (uint32_t)FS * 2u)   /* (the metronome's beat as the steps) */
+-                    clk_pos = (uint32_t)(((uint64_t)clk_pos * ratio + 2048u) >> 12);
++                if (clk_pos != CLK_START)          /* (the metronome's beat as the steps) */
++                    clk_pos = midi_clock_scale_phase(clk_pos, new_beat / 4u, old_beat / 4u, &midi_click_grid);
++                beat_pos = midi_clock_scale_phase(beat_pos, new_beat, old_beat, &midi_beat_grid);
+             }
+             midi_beat_samples = new_beat;
+             song.g[G_BPM] = (int16_t)clamp((int32_t)((15000u + dt / 2u) / dt), 40, 240);
+         }
+     }
+     if (song.playing) {
++        if (!midi_clock.have_pulse) {
++            /* Enter a fresh start before later clocks in the same queue are
++             * consumed; the start sentinel must not discard their progress. */
++            for (uint32_t i = 0; i < NTRK; i++) {
++                seq_tick(&trk[i], 0);
++                if (trk[i].arp_pos == 0xFFFFFFFu) arp_step(&trk[i], 0, 0);
++            }
++        }
+         if (midi_clock.have_pulse) {
+             uint32_t interval = ms - midi_clock.last_ms;
+             if (interval >= 8u && interval <= 80u)
+                 midi_clock.interval_ms = interval;
+-            q = beat_samples() + midi_clock.rem;
+-            midi_clock.pos += q / 24u;
+-            midi_clock.rem = q % 24u;
++            midi_clock.pos += MIDI_CLOCK_GRID / 24u;
+         }
+         midi_clock.have_pulse = 1;
+     }
+-    midi_clock.pulse_samples = beat_samples() / 24u;
++    midi_clock.pulse_units = MIDI_CLOCK_GRID / 24u;
+     if (!midi_clock.interval_ms)
+         midi_clock.interval_ms = beat_samples() * 1000u / ((uint32_t)FS * 24u);
+-    midi_clock.interp_q8 = midi_clock.pulse_samples * 256u / midi_clock.interval_ms;
++    midi_clock.interp_q8 = midi_clock.pulse_units * 256u / midi_clock.interval_ms;
+     midi_clock.last_ms = ms;
+ }
+ 
+@@ -93,13 +127,12 @@ static uint32_t midi_clock_advance(uint32_t now)
+     if (elapsed > midi_clock.interval_ms)
+         elapsed = midi_clock.interval_ms;
+     offset = elapsed * midi_clock.interp_q8 >> 8;
+-    if (offset >= midi_clock.pulse_samples)
+-        offset = midi_clock.pulse_samples - 1u;
++    if (offset >= midi_clock.pulse_units)
++        offset = midi_clock.pulse_units - 1u;
+     target = midi_clock.pos + offset;
+     n = (int32_t)(target - midi_clock.rendered) > 0 ? target - midi_clock.rendered : 0u;
+-    if (n > (uint32_t)FS / 8u)
+-        n = (uint32_t)FS / 8u;
++    if (n > MIDI_CLOCK_GRID / 2u)
++        n = MIDI_CLOCK_GRID / 2u;
+     midi_clock.rendered += n;
+     return n;
+ }
+-
+diff --git a/firmware/src/seq.c b/firmware/src/seq.c
+index 2d69d0f..fd432fd 100644
+--- a/firmware/src/seq.c
++++ b/firmware/src/seq.c
+@@ -231,6 +231,35 @@ static int rec_on(const track_t *t) { return ((song.rec >> trk_index(t)) & 1u) &
+ enum { AM_OFF, AM_UP, AM_DN, AM_UPDN, AM_RND, AM_ORD, AM_REPEAT, AM_DNUP, AM_UP8, AM_CONV, AM_DIVG, AM_PINKY,
+        AM_THUMB, AM_WALK, AM_CHORD };
+ 
++/* External clock advances exact quarter notes; sequencer/ARP periods are whole
++ * samples. Carry the fractional difference instead of accumulating floor()
++ * error each step. Separate carries retain polymeter and each ARP rate. */
++#define MIDI_CLOCK_GRID 24000u                    /* fixed units per quarter, divisible by every DIV denominator */
++typedef struct { uint32_t remainder; } midi_grid_t;
++static midi_grid_t midi_seq_grid[NTRK], midi_arp_grid[NPART], midi_click_grid, midi_beat_grid;
++static __attribute__((noinline)) void midi_grid_reset(void)
++{
++    memset(midi_seq_grid, 0, sizeof midi_seq_grid);
++    memset(midi_arp_grid, 0, sizeof midi_arp_grid);
++    memset(&midi_click_grid, 0, sizeof midi_click_grid);
++    memset(&midi_beat_grid, 0, sizeof midi_beat_grid);
++}
++static __attribute__((noinline)) uint32_t midi_grid_advance(midi_grid_t *g, uint32_t n, uint32_t div)
++{
++    uint32_t quarter = beat_samples();
++    if (div < 6u) quarter = (quarter / DIV_DEN[div]) * DIV_DEN[div];
++    /* n <= GRID/2 and quarter <= 66150: numerator fits uint32_t. */
++    uint32_t numerator = n * quarter + g->remainder;
++    uint32_t samples = numerator / MIDI_CLOCK_GRID;
++    g->remainder = numerator % MIDI_CLOCK_GRID;
++    return samples;
++}
++static __attribute__((noinline)) uint32_t midi_seq_preview(const track_t *t, uint32_t n)
++{
++    midi_grid_t copy = midi_seq_grid[trk_index(t)];
++    return midi_grid_advance(&copy, n, (uint32_t)t->p[P_SDIV]);
++}
++
+ static void arp_forget(track_t *t)               /* (its notes ended otherwise: trk_all_off) */
+ {
+     t->arp_note = t->arp_ch[0] = t->arp_ch[1] = t->arp_ch[2] = 0;
+@@ -424,6 +453,20 @@ static __attribute__((noinline)) void arp_fire(track_t *t, uint32_t period)
+     }
+ }
+ 
++static __attribute__((noinline)) void arp_external_due(track_t *t, uint32_t period, int32_t sw)
++{
++    uint32_t duration = period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw);
++    while (t->arp_pos >= duration) {
++        t->arp_pos -= duration;
++        arp_fire(t, period);
++        duration = period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw);
++    }
++    if (t->arp_note) {
++        if (t->arp_off <= t->arp_pos) arp_off(t);
++        else t->arp_off -= t->arp_pos;
++    }
++}
++
+ static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
+ {
+     uint32_t period;
+@@ -444,6 +487,11 @@ static void arp_step(track_t *t, uint32_t n, uint32_t gate_n)
+     t->arp_pos += n;
+     if (t->arp_pos < period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw) && t->arp_pos != 0xFFFFFFF + n)
+         return;
++    if (song.g[G_CLOCK] && t->arp_pos != 0xFFFFFFFu + n) {
++        arp_external_due(t, period, sw);
++        return;
++    }
++    if (song.g[G_CLOCK]) midi_arp_grid[trk_index(t)].remainder = 0;
+     t->arp_pos = 0;
+     arp_fire(t, period);
+ }
+@@ -821,6 +869,7 @@ static void keyboard_block(void)
+ static void seq_start(void)
+ {
+     uint32_t i;
++    midi_grid_reset();
+     motion_begin();
+     chain_start();
+     for (i = 0; i < NTRK; i++) {                   /* every track from its step 0, together */
+@@ -1157,6 +1206,8 @@ static __attribute__((noinline)) void seq_enter(track_t *t, uint32_t top, uint32
+ static void seq_tick(track_t *t, uint32_t n)
+ {
+     uint32_t period, len, top;
++    if (song.g[G_CLOCK])
++        n = midi_grid_advance(&midi_seq_grid[trk_index(t)], n, (uint32_t)t->p[P_SDIV]);
+     if (t->seq_n && !t->seq_hold) {
+         if (t->seq_off <= n)
+             seq_release(t);
+@@ -1263,6 +1314,7 @@ static __attribute__((noinline)) void cin_record(void)
+ /* the metronome's beat: adv samples on while the transport runs (click.c sounds it in this block) */
+ static void click_tick(uint32_t adv)
+ {
++    if (song.g[G_CLOCK]) adv = midi_grid_advance(&midi_click_grid, adv, 2u);
+     uint32_t p = div_samples(2), beat = 0;
+     if (clk_pos == CLK_START) {
+         clk_pos = 0;
+@@ -1398,16 +1450,18 @@ static void events_block(uint32_t n)
+     }
+     if (aud_req)
+         seq_audition();                               /* (STEP PREVIEW: a step sounds, stopped) */
+-    chain_tick(seq_n);
++    chain_tick(clock_mode && chain.running ? midi_seq_preview(&trk[chain.clk], seq_n) : seq_n);
+     for (i = 0; i < NTRK; i++)
+         seq_tick(&trk[i], seq_n);
+     if (cin_flush)
+         cin_record();
+     if (song.playing)
+         click_tick(seq_n);
+-    for (i = 0; i < NPART; i++)
+-        arp_step(&trk[i], clock_mode ? seq_n : n, clock_mode && song.playing ? seq_n : n);
+-    beat_pos += clock_mode ? seq_n : n;               /* the beat the ARP LED flashes on (ui_leds) */
++    for (i = 0; i < NPART; i++) {
++        uint32_t arp_n = clock_mode ? midi_grid_advance(&midi_arp_grid[i], seq_n, (uint32_t)trk[i].p[P_ARATE]) : n;
++        arp_step(&trk[i], arp_n, clock_mode && song.playing ? arp_n : n);
++    }
++    beat_pos += clock_mode ? midi_grid_advance(&midi_beat_grid, seq_n, 0u) : n; /* ARP LED beat */
+     if (beat_pos >= beat_samples()) {
+         beat_pos -= beat_samples();
+         beat_pos = beat_pos < beat_samples() ? beat_pos : 0u;
+diff --git a/tests/midi_drift_test.c b/tests/midi_drift_test.c
+new file mode 100644
+index 0000000..1870fd6
+--- /dev/null
++++ b/tests/midi_drift_test.c
+@@ -0,0 +1,119 @@
++/* SPDX-License-Identifier: GPL-3.0-only
++ * Long-run external-clock phase measured against independent wire pulse counts.
++ * Use rational musical positions, not another copy of the firmware clock math. */
++#define UI_TEST_NO_MAIN 1
++#include "ui_test.c"
++#include <math.h>
++
++static void drift_packet(uint32_t source, uint32_t status, uint32_t ms)
++{
++    fm1_ms = ms;
++    if (source == 2u) um_byte(status);
++    else midi_enqueue(0xFu | status << 8, source);
++    events_block(CTL);
++}
++static void drift_setup(uint32_t source, uint32_t bpm)
++{
++    static const int16_t len[] = {16,17,23,64}, div[] = {2,3,5,6}, rate[] = {2,3,5,0};
++    ui_power_on(); memset(&midi_clock,0,sizeof midi_clock); memset(&um,0,sizeof um);
++    mi_r=mi_w=0; midi_beat_samples=0; fm1_ms=0;
++    song.g[G_CLOCK]=(int16_t)source; song.g[G_BPM]=(int16_t)bpm;
++    events_block(CTL);
++    for(uint32_t k=0;k<NTRK;k++) {
++        track_t *t=&trk[k];
++        set_engine_of(t,0); apply_preset_to(t,0); t->engine=t->eng_req;
++        memset(t->step,0,sizeof t->step);
++        t->p[P_SLEN]=len[k]; t->p[P_SDIV]=div[k]; t->p[P_SSWING]=0;
++    }
++    drift_packet(source,0xFA,10);
++    for(uint32_t k=0;k<NTRK;k++) {
++        trk[k].p[P_AMODE]=AM_UP; trk[k].p[P_ARATE]=rate[k]; trk[k].p[P_ASWING]=0;
++        input_on(&trk[k],60,100); input_on(&trk[k],64,100);
++    }
++    drift_packet(source,0xF8,10);
++}
++static double drift_beats(uint32_t div)
++{
++    static const double value[]={1.,.5,.25,.125,1./3.,1./6.,2.,4.,8.,16.};
++    return value[div];
++}
++static int drift_run(uint32_t source, uint32_t bpm, uint32_t jitter, uint32_t interpolate)
++{
++    int bad=0; drift_setup(source,bpm);
++    uint32_t steps[NTRK]={0},prev[NTRK]={0};
++    uint32_t pulses=bpm*20u*24u;
++    for(uint32_t i=1;i<=pulses;i++) {
++        static const int8_t noise[]={0,1,-1,1,0,-1,0,-1,1,-1,0,1,1,0,-1,0,1,-1};
++        uint32_t at=10u+(uint32_t)((uint64_t)i*60000u/(bpm*24u));
++        if(jitter) at=(uint32_t)((int32_t)at+noise[i%18u]);
++        if(interpolate) while(fm1_ms+1u<at) { fm1_ms++; events_block(CTL); }
++        drift_packet(source,0xF8,at);
++        for(uint32_t k=0;k<NTRK;k++) {
++            steps[k]+=(trk[k].seq_idx+(uint32_t)trk[k].p[P_SLEN]-prev[k])%(uint32_t)trk[k].p[P_SLEN];
++            prev[k]=trk[k].seq_idx;
++        }
++    }
++    for(uint32_t k=0;k<NTRK;k++) {
++        track_t *t=&trk[k];
++        double expected=(double)pulses/24.;
++        double seq=(steps[k]+(double)t->seq_pos/div_samples((uint32_t)t->p[P_SDIV]))*drift_beats((uint32_t)t->p[P_SDIV]);
++        double arp=(t->arp_idx+(double)t->arp_pos/div_samples((uint32_t)t->p[P_ARATE]))*drift_beats((uint32_t)t->p[P_ARATE]);
++        double seq_ms=(seq-expected)*60000./bpm,arp_ms=(arp-expected)*60000./bpm;
++        printf("source %u, %u BPM, jitter %u, interpolate %u, T%u: seq %.4f ms, ARP %.4f ms after 20 min\n",
++               source,bpm,jitter,interpolate,k+1u,seq_ms,arp_ms);
++        bad+=check("sequencer phase stays within 2 ms of counted wire pulses",fabs(seq_ms)<2.);
++        bad+=check("ARP phase stays within 2 ms without loop resets",fabs(arp_ms)<2.);
++        bad+=check("polymetric lengths, rates and held ARP chords are retained",t->p[P_SLEN]==(int16_t[]){16,17,23,64}[k] && t->nheld==2u);
++    }
++    bad+=check("long-run transport keeps running without input overflow",song.playing && !midi_in_overflow);
++    return bad;
++}
++static int drift_tempo_edges(uint32_t source)
++{
++    int bad=0; drift_setup(source,120);
++    uint32_t steps[NTRK]={0},prev[NTRK]={0};
++    uint64_t us=10000u;
++    for(uint32_t i=1;i<=400u;i++) {
++        uint32_t bpm=i<29u?120u:i<137u?97u:i<233u?240u:40u;
++        us+=60000000u/(bpm*24u);
++        drift_packet(source,0xF8,(uint32_t)(us/1000u));
++        for(uint32_t k=0;k<NTRK;k++) {
++            steps[k]+=(trk[k].seq_idx+(uint32_t)trk[k].p[P_SLEN]-prev[k])%(uint32_t)trk[k].p[P_SLEN];
++            prev[k]=trk[k].seq_idx;
++        }
++    }
++    for(uint32_t k=0;k<NTRK;k++) {
++        track_t *t=&trk[k];
++        double seq=(steps[k]+(double)t->seq_pos/div_samples((uint32_t)t->p[P_SDIV]))*drift_beats((uint32_t)t->p[P_SDIV]);
++        double arp=(t->arp_idx+(double)t->arp_pos/div_samples((uint32_t)t->p[P_ARATE]))*drift_beats((uint32_t)t->p[P_ARATE]);
++        bad+=check("tempo changes preserve sequence phase against wire pulse count",fabs(seq-400./24.)*1500.<2.);
++        bad+=check("tempo changes preserve ARP phase against wire pulse count",fabs(arp-400./24.)*1500.<2.);
++    }
++    return bad;
++}
++static int drift_start_and_wrap(uint32_t source)
++{
++    int bad=0; drift_setup(source,120);
++    transport_req=2; events_block(CTL);
++    for(uint32_t i=0;i<8u;i++) {
++        fm1_ms=i?100u+(i-1u)*21u:100u;
++        uint32_t status=i?0xF8u:0xFAu;
++        if(source==2u) um_byte(status); else midi_enqueue(0xFu|status<<8,source);
++    }
++    events_block(CTL);
++    bad+=check("Start and seven queued clocks enter the first step before consuming progress",song.playing && trk[0].seq_idx==1u && trk[0].seq_pos==0u);
++    drift_setup(source,120);
++    midi_clock.pos=midi_clock.rendered=0xFFFFFC18u;
++    drift_packet(source,0xF8,31u);
++    bad+=check("musical counter wrap preserves forward track progress",midi_clock.pos==0u && trk[0].seq_pos>0u && trk[0].seq_idx==0u);
++    return bad;
++}
++
++int main(void)
++{
++    int bad=drift_run(2,120,0,0)+drift_run(1,120,1,1)+drift_run(2,97,1,1)+
++            drift_run(1,240,1,1)+drift_run(2,40,0,0);
++    bad+=drift_tempo_edges(1)+drift_tempo_edges(2)+drift_start_and_wrap(1)+drift_start_and_wrap(2);
++    printf("MIDI LONG-RUN PHASE: %s\n",bad?"FAIL":"PASS");
++    return bad!=0;
++}
+diff --git a/tests/run_tests.sh b/tests/run_tests.sh
+index 056e338..35a6481 100755
+--- a/tests/run_tests.sh
++++ b/tests/run_tests.sh
+@@ -283,6 +283,8 @@ if [ -f build/gen/felucca_tables.h ]; then
+     run "1.6: SEQ's piano roll follows the play position (#242: STEP, DETAIL; held by the knobs, 3 s or one pass)" "$OUT/v16_test"
+     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/fun10_test" tests/fun10_test.c -lm
+     run "1.2 (FUN10): LFO 2 SYNC / TRIG / POL, NUDGE (record, QUANTIZE, play, controls), 128 motion records, FUN10 / FUN9 / FUN8 / FUN7, user presets" "$OUT/fun10_test"
++    $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_drift_test" tests/midi_drift_test.c -lm
++    run "External-clock long-run phase: five 20-minute USB/TRS cases" "$OUT/midi_drift_test"
+     $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_control_test" tests/midi_control_test.c -lm
+     run "USB/TRS clock, bend, sustain, ownership and panic recovery" "$OUT/midi_control_test"
+     $CC -O1 -w -DFELUCCA_FM4=1 -Ibuild/gen -Ifirmware/src -o "$OUT/digital_test" tests/digital_test.c -lm
+@@ -476,7 +478,7 @@ else
+     run "ASan/UBSan: update loader (other app -> this build)" "$A/ldr_test" "$OUT/old.fwsc" build/felucca.fwsc
+     $SCC -DOWN_PKG=1 -o "$A/ota_test" tests/ota_test.c
+     run "ASan/UBSan: M-UPGRADE entry (own loader)" "$A/ota_test" build/felucca.fwsc
+-    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test; do
++    for t in editor_test project_test backup_test robust_test fun10_test fm6bank_test midi_drift_test; do
+         $SCC -o "$A/$t" tests/$t.c -lm
+         run "ASan/UBSan: $t" "$A/$t"
+     done
+-- 
+2.43.0
+

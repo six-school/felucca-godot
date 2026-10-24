@@ -1,0 +1,57 @@
+From b963b150e2fd58cc50ba34dc6b822ccac8baa9ed Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 24 Oct 2026 06:28:03 +0000
+Subject: [PATCH 3/4] Delay: glide to a new TIME instead of jumping
+
+FELUCCA_DELAY_GLIDE (off unless defined): when the tempo changes the delay's TIME, its read point moves 1/64 sample
+per sample (under 30 cents) with interpolated reads, as the chorus reads, instead of jumping, which clicks in the
+echoes on every tempo change.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01SuSq9wGdniKSxRn9Ez2WpY
+---
+ firmware/src/fx.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/firmware/src/fx.c b/firmware/src/fx.c
+index 0407874..e469e22 100644
+--- a/firmware/src/fx.c
++++ b/firmware/src/fx.c
+@@ -555,6 +555,10 @@ static __attribute__((noinline)) void rev_switch(const int32_t *rev_in, int32_t
+     fx.rtype = (uint8_t)rt;
+ }
+ 
++#ifdef FELUCCA_DELAY_GLIDE
++static uint32_t dly_q16;                 /* the delay's read point, samples Q16 */
++#define DLY_GLIDE (65536u / 64u)
++#endif
+ /* process the three buses for one block; sends in, wet stereo-equal out */
+ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t *rev_in, int32_t *wet,
+                      uint32_t n)
+@@ -581,7 +585,23 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
+         }
+         fx.cho_w++;
+         /* delay with a low-passed feedback */
++#ifdef FELUCCA_DELAY_GLIDE
++        {   /* a new TIME (the tempo moved): the read point glides there (1/64 sample a sample, under 30 cents), read
++             * between samples as the chorus does, instead of jumping (a click in the echoes) */
++            uint32_t target = dl << 16, ri, f;
++            if (!dly_q16) dly_q16 = target;
++            if (dly_q16 + DLY_GLIDE < target) dly_q16 += DLY_GLIDE;
++            else if (dly_q16 > target + DLY_GLIDE) dly_q16 -= DLY_GLIDE;
++            else dly_q16 = target;
++            ri = dly_q16 >> 16; f = (dly_q16 >> 8) & 255u;
++            {
++                int32_t a0 = dly_buf[(fx.dly_w - ri) & (DLY_LEN - 1u)], a1 = dly_buf[(fx.dly_w - ri - 1u) & (DLY_LEN - 1u)];
++                x = a0 + (((a1 - a0) * (int32_t)f) >> 8);
++            }
++        }
++#else
+         x = dly_buf[(fx.dly_w - dl) & (DLY_LEN - 1u)];
++#endif
+         fx.dly_lp += mulq15(x - fx.dly_lp, col);
+         dly_buf[fx.dly_w & (DLY_LEN - 1u)] =
+             (int16_t)clamp((dly_in[i] >> 1) + mulq15(fx.dly_lp, fb), -32768, 32767);
+-- 
+2.43.0
+

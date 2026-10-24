@@ -1,0 +1,4 @@
+# made by tools/setup_felucca.sh and prototypes/run_all.sh
+/third_party/felucca/
+/third_party/.felucca-venv/
+/build/
