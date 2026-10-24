@@ -33,6 +33,21 @@ func _ready() -> void:
 	check(FeluccaPart.ArpRate.ARP_RATE_1_16 == 2 and FeluccaPart.ArpRate.ARP_RATE_4BAR == 9 and FeluccaPart.Engine.ENGINE_ANALOG == 0
 		and FeluccaPart.Engine.ENGINE_PHASE == 2 and FeluccaAnalog.Wave.WAVE_SIN == 3, "enums: the firmware's values (ARP RATE 1/16 = 2, PHASE = 2, ANALOG WAVE SIN = 3)")
 
+	# ---- no method or property of ours shadows one of an engine ancestor (Node2D.position is get_position's)
+	var clashes: Array[String] = []
+	for c in ["FeluccaSource", "FeluccaSource2D", "FeluccaSource3D", "FeluccaPart", "FeluccaSong", "FeluccaAnalog",
+			"FeluccaProject", "FeluccaOverride", "FeluccaOverrides", "FeluccaSnapshot", "FeluccaConductorNode"]:
+		var base := ClassDB.get_parent_class(c)
+		while base.begins_with("Felucca"):
+			base = ClassDB.get_parent_class(base)
+		for m: Dictionary in ClassDB.class_get_method_list(c, true):
+			if ClassDB.class_has_method(base, m.name):
+				clashes.append("%s.%s()" % [c, m.name])
+		for q: Dictionary in ClassDB.class_get_property_list(c, true):
+			if q.usage & PROPERTY_USAGE_CATEGORY == 0 and q.name in ClassDB.class_get_property_list(base).map(func(x: Dictionary) -> String: return x.name):
+				clashes.append("%s.%s" % [c, q.name])
+	check(clashes.is_empty(), "no name of ours shadows an engine ancestor's %s" % [clashes])
+
 	# ---- unbound: the project's values; what is set is kept
 	var a := source()
 	var p1: FeluccaPart = a.part_1

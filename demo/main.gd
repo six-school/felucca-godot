@@ -16,8 +16,8 @@ func _ready() -> void:
 	cellar.play()
 	hallway.play()
 	var t := create_tween().set_loops()
-	t.tween_property(FeluccaConductor, "tempo", 80.0, 8.0).set_delay(4.0)
-	t.tween_property(FeluccaConductor, "tempo", float(project.bpm), 8.0).set_delay(4.0)
+	t.tween_method(func(bpm: float) -> void: FeluccaConductor.tempo = bpm, float(project.bpm), 80.0, 8.0).set_delay(4.0)
+	t.tween_method(func(bpm: float) -> void: FeluccaConductor.tempo = bpm, 80.0, float(project.bpm), 8.0).set_delay(4.0)
 	var timer := Timer.new()
 	timer.wait_time = 1.0
 	timer.autostart = true
@@ -25,15 +25,15 @@ func _ready() -> void:
 	add_child(timer)
 
 func _report() -> void:
-	var a := cellar.get_position()
-	var b := hallway.get_position()
+	var a := cellar.get_snapshot()
+	var b := hallway.get_snapshot()
 	print("B %8.3f beats at %6.2f BPM | cellar %s | hallway %s" % [FeluccaConductor.beats, FeluccaConductor.tempo,
 		_steps(a), _steps(b)])
 
-func _steps(p: Dictionary) -> String:
-	if not p.get("bound", false):
+func _steps(s: FeluccaSnapshot) -> String:
+	if not s.bound:
 		return "unbound"
-	return " ".join(p.tracks.map(func(t: Array) -> String: return "%2d" % (t[0] + 1)))
+	return " ".join(Array(s.steps).map(func(step: int) -> String: return "%2d" % (step + 1)))
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e.is_action_pressed("ui_accept"):

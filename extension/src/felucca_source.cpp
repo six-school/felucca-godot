@@ -60,14 +60,14 @@ void FelSource::notification(Node *p_owner, int p_what) {
 	}
 }
 
-Dictionary FelSource::position(Node *p_owner) const {
+Ref<FeluccaSnapshot> FelSource::snapshot(Node *p_owner) const {
 	FeluccaPlayback *p = playback_of(p_owner);
 	if (!p) {
-		Dictionary d;
-		d["bound"] = false;
-		return d;
+		Ref<FeluccaSnapshot> s;
+		s.instantiate();
+		return s;
 	}
-	return p->position();
+	return p->snapshot();
 }
 
 bool FelSource::bound(Node *p_owner) const {
@@ -111,7 +111,7 @@ void FelSource::bind() {
 	ClassDB::bind_method(D_METHOD("set_join", "join"), &T::set_join);
 	ClassDB::bind_method(D_METHOD("get_join"), &T::get_join);
 	ClassDB::bind_method(D_METHOD("is_bound"), &T::is_bound);
-	ClassDB::bind_method(D_METHOD("get_position"), &T::get_position);
+	ClassDB::bind_method(D_METHOD("get_snapshot"), &T::get_snapshot); // (not get_position: Node2D / 3D's position's)
 	ClassDB::bind_method(D_METHOD("set_overrides", "overrides"), &T::set_overrides);
 	ClassDB::bind_method(D_METHOD("get_overrides"), &T::get_overrides);
 	ClassDB::bind_method(D_METHOD("_get_part", "index"), &T::_get_part);

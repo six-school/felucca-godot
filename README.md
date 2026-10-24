@@ -15,7 +15,8 @@ tables (`FeluccaPart`, its engine views, `FeluccaSong`, `FeluccaOverrides`). Nex
   Godot-side tests (`extension/run_tests.sh`)
 - `demo/`: a Godot 4.7 project: the user's project in two sources (`main.tscn`), the tests (`tests/`). A project
   using the extension needs its autoload `Felucca="*res://addons/felucca/felucca.tscn"` (atomic pause: DESIGN.md D7), and
-  `debug/gdscript/warnings/unsafe_property_access=2` for a misspelled parameter to be a parse error (D10)
+  `debug/gdscript/warnings/unsafe_property_access=2` and `unsafe_method_access=2` for a misspelled parameter or method
+  to be a parse error (D10)
 - `tools/setup_godot.sh`: Godot 4.7.2 (checked), godot-cpp 10.0.0-stable, SCons
 - `patches/`: the Felucca patch series (PR 269 and three of ours), on Felucca `63f88ec`
 - `tools/setup_felucca.sh`: clones Felucca at that commit, applies the series, generates its headers

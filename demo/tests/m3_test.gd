@@ -43,9 +43,11 @@ func check(ok: bool, what: String) -> void:
 func wait(seconds: float) -> void:
 	await get_tree().create_timer(seconds, true, false, true).timeout
 
-func positions() -> Array:         # every source's music, read in one mix step (one lock)
+func positions() -> Array[FeluccaSnapshot]:   # every source's music, read in one mix step (one lock)
+	var a: Array[FeluccaSnapshot] = []
 	AudioServer.lock()
-	var a := sources.map(func(s: FeluccaSource) -> Dictionary: return s.get_position())
+	for s in sources:
+		a.append(s.get_snapshot())
 	AudioServer.unlock()
 	return a
 
@@ -56,19 +58,22 @@ func mixed() -> Array:             # each player's mixed frames, in one mix step
 	AudioServer.unlock()
 	return a
 
-func same_music(a: Dictionary, b: Dictionary) -> bool:
-	if not (a.get("bound", false) and b.get("bound", false) and a.playing and b.playing):
+func same_music(a: FeluccaSnapshot, b: FeluccaSnapshot) -> bool:
+	if not (a.bound and b.bound and a.playing and b.playing):
 		return false
 	if tol == 0:
-		return a.beats == b.beats and a.tracks == b.tracks
+		return a.beats == b.beats and a.steps == b.steps and a.positions == b.positions and a.loops == b.loops
 	for t in 4:                    # (a step's end within tol: one has crossed it, the other not)
-		var x: Array = a.tracks[t]
-		var y: Array = b.tracks[t]
-		if x[0] == y[0] and abs(x[1] - y[1]) > tol or x[0] != y[0] and x[1] > tol and y[1] > tol:
+		if not same_step(a, b, t):
 			return false
 	return abs(a.beats - b.beats) < 0.005
 
-func all_same(p: Array, idx: Array) -> bool:
+func same_step(a: FeluccaSnapshot, b: FeluccaSnapshot, t: int) -> bool:   # part t on one step (within tol)
+	if a.steps[t] == b.steps[t]:
+		return abs(a.positions[t] - b.positions[t]) <= tol
+	return tol > 0 and (a.positions[t] <= tol or b.positions[t] <= tol)
+
+func all_same(p: Array[FeluccaSnapshot], idx: Array) -> bool:
 	for i in idx:
 		if not same_music(p[idx[0]], p[i]):
 			return false
@@ -127,16 +132,16 @@ func _ready() -> void:
 		s.join = FeluccaSource.JOIN_HOLD if i == 1 else FeluccaSource.JOIN_FOLLOW
 		holder.add_child(s)
 		sources.append(s)
-	for s in sources.slice(0, 7):  # one frame: one origin, on the conductor's next bar (source 7 joins later)
+	for s: FeluccaSource in sources.slice(0, 7):  # one frame: one origin, on the conductor's next bar (source 7 joins later)
 		s.play()
 	var t0 := Time.get_ticks_msec()
-	while not positions()[0].get("playing", false) and Time.get_ticks_msec() - t0 < 6000:
+	while not positions()[0].playing and Time.get_ticks_msec() - t0 < 6000:
 		await wait(0.05)
 	await wait(0.5)
 	var start := positions()
 	var seven := range(7)
 	check(all_same(start, seven) and fmod(start[0].origin, 4.0) == 0.0, "T13 7 sources started in one frame: one position (beats %.4f, origin %.1f, on a bar)"
-		% [start[0].get("beats", -1.0), start[0].get("origin", -1.0)])
+		% [start[0].beats, start[0].origin])
 	check(AudioServer.get_bus_peak_volume_left_db(0, 0) > -60.0, "T13 they sound (Master peak %.1f dB)" % AudioServer.get_bus_peak_volume_left_db(0, 0))
 	var m0 := mixed()
 	var out_of_step := 0
@@ -160,7 +165,7 @@ func _ready() -> void:
 			await wait(0.005)
 		var after := positions()
 		for i in 7:
-			stuck += int(not after[i].get("playing", false) or after[i].beats <= before[i].beats)
+			stuck += int(not after[i].playing or after[i].beats <= before[i].beats)
 		if not all_same(after, seven):
 			out_of_step += 1
 	var m1 := mixed()
@@ -178,16 +183,14 @@ func _ready() -> void:
 	# ---- a source started later, on the bar
 	sources[7].play()
 	t0 = Time.get_ticks_msec()
-	while not positions()[7].get("playing", false) and Time.get_ticks_msec() - t0 < 6000:
+	while not positions()[7].playing and Time.get_ticks_msec() - t0 < 6000:
 		await wait(0.05)
 	await wait(0.3)
 	p = positions()
-	var d2: Array = p[2].tracks[3]
-	var d7: Array = p[7].tracks[3]
-	check(p[7].get("playing", false) and fmod(p[7].origin, 4.0) == 0.0 and fmod(p[7].origin - p[2].origin, 4.0) == 0.0
-		and d2[0] == d7[0] and abs(d2[1] - d7[1]) <= tol,
+	check(p[7].playing and fmod(p[7].origin, 4.0) == 0.0 and fmod(p[7].origin - p[2].origin, 4.0) == 0.0
+		and p[7].steps[3] == p[2].steps[3] and abs(p[7].positions[3] - p[2].positions[3]) <= tol,
 		"sync: started %.0f beats later, on a bar: the DRUM track (a bar long) on its step with the others (%d / %d)"
-		% [p[7].get("origin", 0.0) - p[2].origin, p[7].tracks[3][0] + 1, p[2].tracks[3][0] + 1])
+		% [p[7].origin - p[2].origin, p[7].steps[3] + 1, p[2].steps[3] + 1])
 
 	# ---- own pause: source 0 FOLLOW, source 1 HOLD; source 2 plays on
 	own = [sources[0], sources[1]]

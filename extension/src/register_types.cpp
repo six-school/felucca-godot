@@ -22,6 +22,7 @@ static void initialize_felucca(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(FeluccaProject);
 		GDREGISTER_INTERNAL_CLASS(FeluccaClockEffectInstance);
 		GDREGISTER_INTERNAL_CLASS(FeluccaClockEffect);
+		GDREGISTER_CLASS(FeluccaSnapshot);
 		GDREGISTER_INTERNAL_CLASS(FeluccaStream);
 		GDREGISTER_INTERNAL_CLASS(FeluccaPlayback);
 		GDREGISTER_ABSTRACT_CLASS(FeluccaConductor); // (the engine singleton only)

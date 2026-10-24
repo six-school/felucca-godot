@@ -14,6 +14,7 @@
 namespace godot {
 
 class FeluccaStream;
+class FeluccaSnapshot;
 
 // what the three share
 struct FelSource {
@@ -30,7 +31,7 @@ struct FelSource {
 
 	void update(Node *p_owner);
 	void notification(Node *p_owner, int p_what);
-	Dictionary position(Node *p_owner) const;
+	Ref<FeluccaSnapshot> snapshot(Node *p_owner) const;
 	bool bound(Node *p_owner) const;
 	template <typename T>
 	static void bind();
@@ -66,7 +67,7 @@ public:                                                                         
 	}                                                                                               \
 	int get_join() const { return src.join; }                                                       \
 	bool is_bound() { return src.bound(this); }                                                     \
-	Dictionary get_position() { return src.position(this); }
+	Ref<FeluccaSnapshot> get_snapshot() { return src.snapshot(this); }
 
 class FeluccaSource : public AudioStreamPlayer {
 	GDCLASS(FeluccaSource, AudioStreamPlayer);

@@ -4,6 +4,7 @@
 #include "felucca_engine.h"
 
 #include <godot_cpp/classes/audio_server.hpp>
+#include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <cmath>
@@ -176,32 +177,50 @@ void FeluccaPlayback::render(AudioFrame *p_out, int32_t p_frames, double p_b0, d
 	}
 }
 
-Dictionary FeluccaPlayback::position() const {
-	Dictionary d;
-	d["bound"] = core != nullptr;
-	d["slot"] = slot;
+Ref<FeluccaSnapshot> FeluccaPlayback::snapshot() const {
+	Ref<FeluccaSnapshot> r;
+	r.instantiate();
+	r->slot = slot;
 	if (!core) {
-		return d;
+		return r;
 	}
 	fel_snapshot_t s;
 	AudioServer::get_singleton()->lock();
 	core->snapshot(&s);
-	double o = origin;
+	r->origin = origin;
 	AudioServer::get_singleton()->unlock();
-	Array tracks;
+	r->bound = true;
+	r->playing = s.playing != 0;
+	r->beats = s.beats;
+	r->frames = int64_t(s.frames);
 	for (int t = 0; t < FEL_TRACKS; t++) {
-		Array a;
-		a.push_back(int64_t(s.track[t].step));
-		a.push_back(int64_t(s.track[t].pos));
-		a.push_back(int64_t(s.track[t].loop));
-		tracks.push_back(a);
+		r->steps.push_back(int32_t(s.track[t].step));
+		r->positions.push_back(int32_t(s.track[t].pos));
+		r->loops.push_back(int32_t(s.track[t].loop));
 	}
-	d["playing"] = s.playing != 0;
-	d["beats"] = s.beats;
-	d["origin"] = o;
-	d["frames"] = int64_t(s.frames);
-	d["tracks"] = tracks;
-	return d;
+	return r;
+}
+
+void FeluccaSnapshot::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("is_bound"), &FeluccaSnapshot::is_bound);
+	ClassDB::bind_method(D_METHOD("is_playing"), &FeluccaSnapshot::is_playing);
+	ClassDB::bind_method(D_METHOD("get_beats"), &FeluccaSnapshot::get_beats);
+	ClassDB::bind_method(D_METHOD("get_origin"), &FeluccaSnapshot::get_origin);
+	ClassDB::bind_method(D_METHOD("get_frames"), &FeluccaSnapshot::get_frames);
+	ClassDB::bind_method(D_METHOD("get_slot"), &FeluccaSnapshot::get_slot);
+	ClassDB::bind_method(D_METHOD("get_steps"), &FeluccaSnapshot::get_steps);
+	ClassDB::bind_method(D_METHOD("get_positions"), &FeluccaSnapshot::get_positions);
+	ClassDB::bind_method(D_METHOD("get_loops"), &FeluccaSnapshot::get_loops);
+	const uint32_t ro = PROPERTY_USAGE_NONE;
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bound", PROPERTY_HINT_NONE, "", ro), "", "is_bound");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playing", PROPERTY_HINT_NONE, "", ro), "", "is_playing");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beats", PROPERTY_HINT_NONE, "", ro), "", "get_beats");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "origin", PROPERTY_HINT_NONE, "", ro), "", "get_origin");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "frames", PROPERTY_HINT_NONE, "", ro), "", "get_frames");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "slot", PROPERTY_HINT_NONE, "", ro), "", "get_slot");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "steps", PROPERTY_HINT_NONE, "", ro), "", "get_steps");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "positions", PROPERTY_HINT_NONE, "", ro), "", "get_positions");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "loops", PROPERTY_HINT_NONE, "", ro), "", "get_loops");
 }
 
 } // namespace godot

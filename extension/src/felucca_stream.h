@@ -11,10 +11,37 @@
 
 #include <godot_cpp/classes/audio_stream.hpp>
 #include <godot_cpp/classes/audio_stream_playback.hpp>
+#include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
 
 #include <vector>
 
 namespace godot {
+
+// where a source's instance is (FeluccaSource.get_snapshot), typed. As rendered: up to a half (128 frames) ahead of what
+// has been heard (DESIGN.md §13.15)
+class FeluccaSnapshot : public RefCounted {
+	GDCLASS(FeluccaSnapshot, RefCounted);
+
+protected:
+	static void _bind_methods();
+
+public:
+	bool bound = false, playing = false;
+	double beats = 0.0, origin = 0.0; // beats since step 1; B of step 1
+	int64_t frames = 0, slot = -1;
+	PackedInt32Array steps, positions, loops; // each part's step (0-based), samples into it, passes through its LEN
+
+	bool is_bound() const { return bound; }
+	bool is_playing() const { return playing; }
+	double get_beats() const { return beats; }
+	double get_origin() const { return origin; }
+	int64_t get_frames() const { return frames; }
+	int64_t get_slot() const { return slot; }
+	PackedInt32Array get_steps() const { return steps; }
+	PackedInt32Array get_positions() const { return positions; }
+	PackedInt32Array get_loops() const { return loops; }
+};
 
 class FeluccaStream : public AudioStream {
 	GDCLASS(FeluccaStream, AudioStream);
@@ -81,7 +108,7 @@ public:
 	int32_t _mix(AudioFrame *p_buffer, float p_rate_scale, int32_t p_frames) override;
 
 	bool is_bound() const { return core != nullptr; }
-	Dictionary position() const; // the instance's snapshot (main thread: takes the lock)
+	Ref<FeluccaSnapshot> snapshot() const; // the instance's (main thread: takes the lock)
 };
 
 } // namespace godot
