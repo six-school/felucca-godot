@@ -8,7 +8,7 @@ extends Node2D
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var project: FeluccaProject = cellar.project
+	var project := cellar.project
 	print("project \"%s\" (%s), %d BPM: %s" % [project.project_name, project.firmware, project.bpm, ", ".join(project.engines)])
 	FeluccaConductor.tempo = project.bpm
 	FeluccaConductor.boot_pool()
