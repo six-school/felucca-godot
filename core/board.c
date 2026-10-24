@@ -392,6 +392,27 @@ static uint32_t core_project_export(uint8_t out[FEL_PROJECT_SIZE])
     return PROJ_STORE_SIZE;
 }
 
+static project_t fel_info_proj;          /* project_info's own (import may run while the instance plays) */
+static project_store_t fel_info_store;
+
+static int32_t core_project_info(const uint8_t *b, uint32_t n, fel_project_info_t *out)
+{
+    uint32_t k;
+    if (!b || !out || n > sizeof fel_info_store)
+        return 1;
+    memcpy(fel_info_store.raw, b, n);
+    if (!proj_import(&fel_info_proj, fel_info_store.raw, (int)n) || !proj_ok(&fel_info_proj))
+        return 1;
+    memset(out, 0, sizeof *out);
+    (void)proj_name_get(out->name, (const uint8_t *)fel_info_proj.name);
+    out->bpm = clamp(fel_info_proj.g[G_BPM], GP[G_BPM].min, GP[G_BPM].max);
+    for (k = 0; k < NTRK; k++)
+        out->engine[k] = fel_info_proj.t[k].engine;
+    return 0;
+}
+
+static const char *core_engine_name(int engine) { return engine >= 0 && engine < NENGINES ? ENGINES[engine]->name : 0; }
+
 static void core_play(double at_beats)
 {
     if (!(at_beats > -1e15 && at_beats < 1e15))        /* (NaN, infinite: ignored) */
@@ -444,8 +465,8 @@ static void core_snapshot(fel_snapshot_t *s)
 
 static const fel_core_t FEL_CORE = {
     FEL_CORE_ABI, core_boot, core_render, core_tempo, core_param_get, core_param_set, core_global_get,
-    core_global_set, core_engine_get, core_engine_set, core_project_import, core_project_export, core_play, core_locate,
-    core_stop, core_note, core_snapshot,
+    core_global_set, core_engine_get, core_engine_set, core_project_import, core_project_export, core_project_info,
+    core_engine_name, core_play, core_locate, core_stop, core_note, core_snapshot,
 };
 #define FEL_CAT2(a, b) a##b
 #define FEL_CAT(a, b) FEL_CAT2(a, b)

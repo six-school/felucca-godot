@@ -4,12 +4,16 @@
 Godot 4.7 as a GDExtension: projects made on the device, parameters and scheduling from GDScript, a pool of instances
 kept in sync with the game, pause-safe.
 
-Status: M1 and M2 done, the C core (`core/`) with its host clock and `locate`; the Godot extension (M3) is not
-written yet.
+Status: M1–M3 done: the C core (`core/`) with its host clock and `locate`, and the GDExtension skeleton (`extension/`):
+sources play a project made on the device, in sync on one timeline, pause-safe. Next: the typed API (M4).
 
 - `docs/DESIGN.md`: requirements, decisions with their evidence, architecture, the alternatives and how to switch to each
 - `core/`: the board file and the `fel_core_t` table (L1), the project JSON reader, the pool build of N renamed copies
   (`core/build.sh`) and its tests (`core/tests/run.sh`)
+- `extension/`, `SConstruct`: the GDExtension (godot-cpp 10.0.0, API 4.7): conductor, sources, project importer; its
+  Godot-side tests (`extension/run_tests.sh`)
+- `demo/`: a Godot 4.7 project: the user's project in two sources (`main.tscn`), the tests (`tests/`)
+- `tools/setup_godot.sh`: Godot 4.7.2 (checked), godot-cpp 10.0.0-stable, SCons
 - `patches/`: the Felucca patch series (PR 269 and three of ours), on Felucca `63f88ec`
 - `tools/setup_felucca.sh`: clones Felucca at that commit, applies the series, generates its headers
 - `prototypes/`: the C experiments the decisions rest on; `prototypes/run_all.sh` rebuilds and reruns them

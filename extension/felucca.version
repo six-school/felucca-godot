@@ -1,0 +1,4 @@
+{
+    global: felucca_library_init;
+    local: *;
+};

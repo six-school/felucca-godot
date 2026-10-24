@@ -10,6 +10,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "fel_core.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     uint8_t data[FEL_PROJECT_SIZE];     /* the store object, size bytes */
@@ -27,5 +30,9 @@ enum {
 int fel_project_json(const char *json, size_t n, fel_project_file_t *out);
 const char *fel_project_json_error(int code);
 uint32_t fel_crc32(const uint8_t *b, size_t n);         /* CRC-32 (zlib), as the web app's backup code computes it */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

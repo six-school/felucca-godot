@@ -3,8 +3,15 @@
 #ifndef FEL_POOL_H
 #define FEL_POOL_H
 #include "fel_core.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 int fel_pool_size(void);
 const fel_core_t *fel_pool_core(int n);   /* 0 past the last */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

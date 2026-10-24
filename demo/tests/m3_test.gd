@@ -1,0 +1,186 @@
+# M3's checks in Godot 4.7.2 (extension/run_tests.sh: headless, the Dummy audio driver, which mixes on a thread of its
+# own under the driver lock, as the real drivers do):
+#   T12  the clock effect runs once a mix step on its muted bus, during a tree pause too, with B standing still
+#   T13  8 sources, 4000 nodes between each, started in one frame: through 300 tree pause / unpause cycles their
+#        music stays at one position and their players' mixed frames keep their spacing
+#   sync a source started later, quantize BAR, plays on the others' bars
+#   own pause  stream_paused on a source holds through the tree's pause and unpause (godot #65743); FOLLOW resumes
+#        where the music is, HOLD from where it stopped
+#   import  the .felucca imports as the user's project; load_json reads the web app's .json at run time
+# Positions are the instances' own, as rendered: at 44.1 kHz every mix step renders whole halves, so they agree exactly;
+# at another rate (the playback resamples) what an instance has rendered ahead of what was heard, up to a half (128
+# frames), differs between instances started at different times, and their blocks fall unlike: within a half and a
+# block (160 samples) there.
+extends Node
+
+const N := 8
+const FILLER := 4000
+var fails := 0
+var sources: Array[FeluccaSource] = []
+var project: FeluccaProject = preload("res://music/solar_signal.felucca")
+var tol := 0                       # samples a position may differ by (0: exact)
+
+func check(ok: bool, what: String) -> void:
+	print(("ok   " if ok else "FAIL ") + what)
+	if not ok:
+		fails += 1
+
+func wait(seconds: float) -> void:
+	await get_tree().create_timer(seconds, true, false, true).timeout
+
+func positions() -> Array:         # every source's music, read in one mix step (one lock)
+	AudioServer.lock()
+	var a := sources.map(func(s: FeluccaSource) -> Dictionary: return s.get_position())
+	AudioServer.unlock()
+	return a
+
+func mixed() -> Array:             # each player's mixed frames, in one mix step
+	AudioServer.lock()
+	var a := sources.map(func(s: FeluccaSource) -> int:
+		return roundi(s.get_playback_position() * AudioServer.get_mix_rate()) if s.playing else -1)
+	AudioServer.unlock()
+	return a
+
+func same_music(a: Dictionary, b: Dictionary) -> bool:
+	if not (a.get("bound", false) and b.get("bound", false) and a.playing and b.playing):
+		return false
+	if tol == 0:
+		return a.beats == b.beats and a.tracks == b.tracks
+	for t in 4:                    # (a step's end within tol: one has crossed it, the other not)
+		var x: Array = a.tracks[t]
+		var y: Array = b.tracks[t]
+		if x[0] == y[0] and abs(x[1] - y[1]) > tol or x[0] != y[0] and x[1] > tol and y[1] > tol:
+			return false
+	return abs(a.beats - b.beats) < 0.005
+
+func all_same(p: Array, idx: Array) -> bool:
+	for i in idx:
+		if not same_music(p[idx[0]], p[i]):
+			return false
+	return true
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	tol = 0 if AudioServer.get_mix_rate() == 44100.0 else 160
+	print("mix rate %d Hz, pool of %d" % [AudioServer.get_mix_rate(), FeluccaConductor.pool_size])
+	FeluccaConductor.tempo = project.bpm
+	FeluccaConductor.boot_pool()
+	FeluccaConductor.play()
+	await wait(0.2)
+	check(get_tree().root.get_child(0).name == "FeluccaConductor", "the conductor's node is the root's first child")
+
+	# ---- import
+	check(project.project_name == "SOLAR SIGNAL" and project.bpm == 68 and project.firmware == "FELUCCA v1.6.1"
+		and project.engines == PackedStringArray(["PHASE", "PHASE", "LOFI", "DRUM"]) and project.data.size() == 3840,
+		"import: the .felucca is the user's project (\"%s\", %d BPM, %s)" % [project.project_name, project.bpm,
+		", ".join(project.engines)])
+	var j := FeluccaProject.load_json("res://tests/project.json")
+	check(j != null and j.data == project.data, "load_json: the web app's .json at run time, the same bytes")
+	check(FeluccaProject.from_json("{\"format\": \"something else\"}") == null, "from_json: not a project -> null (its error above)")
+
+	# ---- T12
+	var b0 := FeluccaConductor.beats
+	var s0 := FeluccaConductor.get_mix_steps()
+	await wait(2.0)
+	var steps := FeluccaConductor.get_mix_steps() - s0
+	var moved := FeluccaConductor.beats - b0
+	check(steps > 100 and abs(moved - 2.0 * 68 / 60) < 0.2, "T12 the clock: %d mix steps in 2 s, B moved %.3f beats (%.3f at 68 BPM)"
+		% [steps, moved, 2.0 * 68 / 60])
+	get_tree().paused = true
+	var p0 := FeluccaConductor.get_paused_mix_steps()
+	var bp := FeluccaConductor.beats
+	await wait(1.0)
+	var ps := FeluccaConductor.get_paused_mix_steps() - p0
+	check(ps > 50 and FeluccaConductor.beats == bp, "T12 paused: the clock ran (%d mix steps), B stood (%.6f)" % [ps, FeluccaConductor.beats - bp])
+	get_tree().paused = false
+
+	# ---- T13
+	for i in N:
+		var holder := Node.new()
+		add_child(holder)
+		for k in FILLER:
+			holder.add_child(Node.new())
+		var s := FeluccaSource.new()
+		s.name = "source%d" % i
+		s.project = project
+		s.quantize = FeluccaSource.QUANTIZE_BAR
+		s.join = FeluccaSource.JOIN_HOLD if i == 1 else FeluccaSource.JOIN_FOLLOW
+		holder.add_child(s)
+		sources.append(s)
+	for s in sources.slice(0, 7):  # one frame: one origin, on the conductor's next bar (source 7 joins later)
+		s.play()
+	var t0 := Time.get_ticks_msec()
+	while not positions()[0].get("playing", false) and Time.get_ticks_msec() - t0 < 6000:
+		await wait(0.05)
+	await wait(0.5)
+	var start := positions()
+	var seven := range(7)
+	check(all_same(start, seven) and fmod(start[0].origin, 4.0) == 0.0, "T13 7 sources started in one frame: one position (beats %.4f, origin %.1f, on a bar)"
+		% [start[0].get("beats", -1.0), start[0].get("origin", -1.0)])
+	check(AudioServer.get_bus_peak_volume_left_db(0, 0) > -60.0, "T13 they sound (Master peak %.1f dB)" % AudioServer.get_bus_peak_volume_left_db(0, 0))
+	var m0 := mixed()
+	var out_of_step := 0
+	for k in 300:
+		get_tree().paused = true
+		await wait(randf_range(0.0, 0.03))
+		get_tree().paused = false
+		await wait(randf_range(0.0, 0.03))
+		if not all_same(positions(), seven):
+			out_of_step += 1
+	var m1 := mixed()
+	var spacing := 0
+	for i in 7:
+		spacing = max(spacing, abs((m1[i] - m1[0]) - (m0[i] - m0[0])))
+	var p := positions()
+	check(out_of_step == 0 and spacing == 0 and p[0].beats > start[0].beats,
+		"T13 300 tree pause / unpause cycles: %d checks out of step; the players' spacing moved %d frames (music at %.3f beats)"
+		% [out_of_step, spacing, p[0].beats])
+
+	# ---- a source started later, on the bar
+	sources[7].play()
+	t0 = Time.get_ticks_msec()
+	while not positions()[7].get("playing", false) and Time.get_ticks_msec() - t0 < 6000:
+		await wait(0.05)
+	await wait(0.3)
+	p = positions()
+	var d2: Array = p[2].tracks[3]
+	var d7: Array = p[7].tracks[3]
+	check(p[7].get("playing", false) and fmod(p[7].origin, 4.0) == 0.0 and fmod(p[7].origin - p[2].origin, 4.0) == 0.0
+		and d2[0] == d7[0] and abs(d2[1] - d7[1]) <= tol,
+		"sync: started %.0f beats later, on a bar: the DRUM track (a bar long) on its step with the others (%d / %d)"
+		% [p[7].get("origin", 0.0) - p[2].origin, p[7].tracks[3][0] + 1, p[2].tracks[3][0] + 1])
+
+	# ---- own pause: source 0 FOLLOW, source 1 HOLD; source 2 plays on
+	sources[0].stream_paused = true
+	sources[1].stream_paused = true
+	await wait(0.6)
+	var held := positions()
+	get_tree().paused = true
+	await wait(0.3)
+	get_tree().paused = false
+	await wait(0.2)
+	check(sources[0].stream_paused and sources[1].stream_paused, "own pause: still paused after the tree's pause and unpause (godot #65743)")
+	p = positions()
+	check(p[0].beats == held[0].beats and p[1].beats == held[1].beats and p[2].beats > held[2].beats,
+		"own pause: their music stood (%.3f), the others' moved on (%.3f -> %.3f)" % [p[0].beats, held[2].beats, p[2].beats])
+	await wait(0.6)
+	sources[0].stream_paused = false
+	sources[1].stream_paused = false
+	await wait(0.5)
+	p = positions()
+	check(same_music(p[0], p[2]), "own pause, FOLLOW: back where the music is (%.4f beats, as source 2's %.4f)" % [p[0].beats, p[2].beats])
+	var gap: float = p[1].origin - p[2].origin
+	check(gap > 1.0 and abs((p[2].beats - p[1].beats) - gap) < (0.005 if tol else 1.0 / 24000 + 1e-9),
+		"own pause, HOLD: on from where it stopped (%.3f beats behind: its origin %.3f beats later)" % [p[2].beats - p[1].beats, gap])
+
+	# ---- stop: the instance goes back to the pool
+	var bound := FeluccaConductor.get_bound_count()
+	sources[3].stop()
+	await wait(0.3)
+	check(FeluccaConductor.get_bound_count() == bound - 1, "stop: its instance back in the pool (%d -> %d bound)" % [bound, FeluccaConductor.get_bound_count()])
+
+	print("m3_test: %d failed" % fails)
+	for s in sources:
+		s.stop()
+	await wait(0.2)
+	get_tree().quit(1 if fails else 0)

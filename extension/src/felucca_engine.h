@@ -1,0 +1,59 @@
+// L2 (docs/DESIGN.md §4): the timeline B, the plan of each mix step, the pool of cores. The clock effect writes the
+// plan at the end of each mix step and the playbacks render the next step against it, both on Godot's audio thread.
+// What the main thread changes (tempo, running, paused) it writes only under AudioServer::lock(), which the audio
+// driver holds for every mix: a mix step sees all of a change or none of it, and every instance sees the same.
+#pragma once
+
+#include "fel_core.h"
+
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+namespace felucca {
+
+// the mix step about to be mixed: B moves linearly from b0 to b1 over its frames
+struct Plan {
+	double b0 = 0.0, b1 = 0.0, tempo = 120.0;
+	uint32_t frames = 512;
+};
+
+class Engine {
+public:
+	static Engine &get();
+
+	// audio thread reads; main thread writes under the lock (then republish())
+	Plan plan;
+	double tempo = 120.0;
+	bool running = false; // B moves (FeluccaConductor.play / stop)
+	bool paused = false; // the tree is paused (FeluccaConductor's node, D7)
+	double mix_rate = 44100.0;
+
+	// audio thread counts, main thread reads
+	std::atomic<uint64_t> steps{ 0 }, paused_steps{ 0 };
+
+	// the clock effect, at the end of each mix step: B moved over it; the next step's plan
+	void audio_step(uint32_t p_frames);
+	// main thread, under the lock: the pending step's plan after tempo, running or paused changed
+	void republish();
+
+	// the pool (main thread): a free copy, booted on its first use; -1 when every one is taken
+	int acquire();
+	void release(int p_slot);
+	void boot_all(); // every copy now (a loading screen's job: each takes ~25 ms)
+	const fel_core_t *core(int p_slot) const;
+	int size() const { return int(slots.size()); }
+	int bound() const;
+
+private:
+	struct Slot {
+		const fel_core_t *core = nullptr;
+		bool booted = false, used = false;
+	};
+	std::vector<Slot> slots;
+	void init();
+	double delta() const;
+};
+
+} // namespace felucca

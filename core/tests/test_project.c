@@ -71,6 +71,20 @@ int main(int argc, char **argv)
     CHECK(k == FEL_PJ_OK && file_.size == FEL_PROJECT_SIZE && file_.crc == 0x642C0757u && !strcmp(file_.firmware, "FELUCCA v1.6.1"),
           "T11: the file checks out (%s): %u bytes, CRC %08X, %s", fel_project_json_error((int)k), file_.size, file_.crc,
           file_.firmware);
+    {   /* what the importer reads, without loading: the instance (CUT 77, the project before) stays as it is */
+        fel_project_info_t info;
+        int t, eng = 1;
+        static const char *const ENG[4] = {"PHASE", "PHASE", "LOFI", "DRUM"};
+        CHECK(c->project_info(file_.data, file_.size, &info) == 0 && !strcmp(info.name, "SOLAR SIGNAL") &&
+              info.bpm == 68, "T11 info: \"%s\", %d BPM", info.name, info.bpm);
+        for (t = 0; t < 4; t++)
+            eng &= c->engine_name(info.engine[t]) && !strcmp(c->engine_name(info.engine[t]), ENG[t]);
+        CHECK(eng && !c->engine_name(-1) && !c->engine_name(NENGINES) && !strcmp(c->engine_name(1), "-"),
+              "T11 info: PHASE PHASE LOFI DRUM; engine names, the retired slot '-'");
+        CHECK(c->param_get(0, CUT) == 77 && c->engine_get(0) == 0, "T11 info: the instance untouched");
+        CHECK(c->project_info(bad, FEL_PROJECT_SIZE, &info) == 1 && c->project_info(file_.data, 100, &info) == 1,
+              "T11 info: not a project: 1");
+    }
     CHECK(c->project_import(file_.data, file_.size) == 0, "T11: imported");
     {
         static const char *const ENG[4] = {"PHASE", "PHASE", "LOFI", "DRUM"};

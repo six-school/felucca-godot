@@ -1,0 +1,59 @@
+// The conductor (D6, D7, §5.2): FeluccaConductor, an engine singleton as Input is (FeluccaConductor.tempo = 140.0),
+// owns the timeline B, its tempo and transport and the pool's playbacks. Its node, FeluccaConductorNode, installs
+// itself as the root's first child, so it hears the tree's PAUSED / UNPAUSED before any scene node: it stops B and
+// pauses every bound source's player in one AudioServer::lock(), and Godot's own per-node pauses after it change
+// nothing. It also owns the clock effect's muted bus, and resolves each frame's play()s to one origin.
+#pragma once
+
+#include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/classes/object.hpp>
+
+#include <vector>
+
+namespace godot {
+
+class FeluccaPlayback;
+
+class FeluccaConductor : public Object {
+	GDCLASS(FeluccaConductor, Object);
+	static FeluccaConductor *singleton;
+	ObjectID node;
+	std::vector<FeluccaPlayback *> live, pending; // main thread
+
+protected:
+	static void _bind_methods();
+
+public:
+	static FeluccaConductor *get_singleton() { return singleton; }
+	FeluccaConductor();
+	~FeluccaConductor();
+
+	void set_tempo(double p_bpm);
+	double get_tempo() const;
+	void play(); // B moves
+	void stop(); // B stands (the sources stay where they are)
+	bool is_running() const;
+	double get_beats() const; // B where the next mix step starts
+	int get_pool_size() const;
+	void boot_pool(); // boot every pool instance now (else each boots at its first play(), ~25 ms)
+	int get_bound_count() const;
+	int64_t get_mix_steps() const;
+	int64_t get_paused_mix_steps() const;
+
+	// the extension's own
+	void ensure_node(); // (a source entering the tree, or a call above, at run time)
+	void add_playback(FeluccaPlayback *p_playback);
+	void remove_playback(FeluccaPlayback *p_playback);
+	void resolve_pending(); // the node, last in each frame's process
+	void tree_paused(bool p_paused); // the node, first to hear the tree pause
+};
+
+class FeluccaConductorNode : public Node {
+	GDCLASS(FeluccaConductorNode, Node);
+
+protected:
+	static void _bind_methods() {}
+	void _notification(int p_what);
+};
+
+} // namespace godot

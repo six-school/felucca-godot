@@ -14,8 +14,13 @@ layer it replaces) and keep the seams of §4.1 intact.
   M2's (T5, T6, locate) on test copies (`core/tests/test_hooks.c`: white-box accessors, renamed as the pool).
 - Felucca's own suite (`tests/run_tests.sh`) needs the device image (AC79 toolchain) for a few tests; its ASan builds
   crash at random in this environment (DESIGN.md §13.11): cap the output (`| head -c`) and use a timeout.
-- `spikes/godot_clock_pause/run.sh <godot-4.7.2-binary>`: Godot-side checks (T12, T13).
-- Toolchain used so far: clang, Python 3 (Pillow + fontTools in a venv made by the setup script), Godot 4.7.2.
+- `tools/setup_godot.sh`: Godot 4.7.2 (release zip, SHA-512 pinned), godot-cpp `507ed9d` (10.0.0-stable), SCons
+  4.9.1 in the venv. Build: `third_party/.felucca-venv/bin/python -m SCons` (the venv's own scripts may name another
+  path) → `demo/bin/libfelucca.*.so`; `extension/run_tests.sh`: build, import, `demo/tests/m3_test.tscn` headless at
+  44.1 and 48 kHz.
+- `spikes/godot_clock_pause/run.sh <godot-4.7.2-binary>`: the GDScript spike of T12, T13.
+- Toolchain used so far: clang (the core), g++ (the extension: godot-cpp's default), Python 3 (Pillow + fontTools +
+  SCons in the venv), Godot 4.7.2.
 
 ## Rules of thumb
 

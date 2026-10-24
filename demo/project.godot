@@ -1,0 +1,13 @@
+; Felucca in Godot: the demo and the extension's Godot-side tests (tests/m3_test.tscn: extension/run_tests.sh)
+
+config_version=5
+
+[application]
+
+config/name="Felucca demo"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7")
+
+[audio]
+
+driver/mix_rate=44100
