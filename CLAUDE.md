@@ -9,6 +9,10 @@ layer it replaces) and keep the seams of §4.1 intact.
 
 - `tools/setup_felucca.sh`: Felucca `63f88ec` + `patches/` + generated headers into `third_party/felucca` (gitignored).
 - `prototypes/run_all.sh`: rebuilds and reruns the C prototypes; expected results are DESIGN.md §10.
+- `core/build.sh [N]`: the pool (N renamed copies of `core/board.c`) → `build/core/libfelucca_core.a`;
+  `core/tests/run.sh` builds it and runs M1's checks (T1–T4, T8, T11, the JSON reader, the 2-copy link test).
+- Felucca's own suite (`tests/run_tests.sh`) needs the device image (AC79 toolchain) for a few tests; its ASan builds
+  crash at random in this environment (DESIGN.md §13.11): cap the output (`| head -c`) and use a timeout.
 - `spikes/godot_clock_pause/run.sh <godot-4.7.2-binary>`: Godot-side checks (T12, T13).
 - Toolchain used so far: clang, Python 3 (Pillow + fontTools in a venv made by the setup script), Godot 4.7.2.
 

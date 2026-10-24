@@ -1,4 +1,4 @@
-From 90ac24136fad6b8528adc5e8bebf9c53c422b057 Mon Sep 17 00:00:00 2001
+From d2ed7de7dffcd11f61a3e7fada73fd35fa7de39d Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sat, 24 Oct 2026 06:28:03 +0000
 Subject: [PATCH 2/4] Host clock: a host feeds the external-clock grid directly
@@ -6,13 +6,15 @@ Subject: [PATCH 2/4] Host clock: a host feeds the external-clock grid directly
 FELUCCA_HOST_CLOCK (off unless defined): with host_clock_on and an external CLOCK mode, events_block takes each
 block's musical units from the board file's host_clock_units() instead of timestamped 24-ppqn pulses. The tempo
 rescale moves from midi_clock_pulse into midi_clock_retempo(), which the host calls when its tempo changes.
+host_clock_units() runs for every block, playing or not, so the host can start the transport inside the block
+it chooses (a MIDI Start in the queue would be processed just before) and decide what a stopped block moves.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01SuSq9wGdniKSxRn9Ez2WpY
 ---
  firmware/src/midi_clock.c | 61 ++++++++++++++++++++++-----------------
- firmware/src/seq.c        |  9 ++++++
- 2 files changed, 43 insertions(+), 27 deletions(-)
+ firmware/src/seq.c        | 11 +++++++
+ 2 files changed, 45 insertions(+), 27 deletions(-)
 
 diff --git a/firmware/src/midi_clock.c b/firmware/src/midi_clock.c
 index 70f80eb..3733d1b 100644
@@ -94,7 +96,7 @@ index 70f80eb..3733d1b 100644
          }
      }
 diff --git a/firmware/src/seq.c b/firmware/src/seq.c
-index fd432fd..985fbc0 100644
+index fd432fd..b6d22f4 100644
 --- a/firmware/src/seq.c
 +++ b/firmware/src/seq.c
 @@ -1345,6 +1345,10 @@ static int32_t click_beat_now(void)
@@ -108,18 +110,20 @@ index fd432fd..985fbc0 100644
  static void events_block(uint32_t n)
  {
      uint32_t i, pr, seq_n = n;
-@@ -1437,6 +1441,11 @@ static void events_block(uint32_t n)
+@@ -1437,6 +1441,13 @@ static void events_block(uint32_t n)
          } else
              midi_event(st, ch, d1, d2);
      }
 +#ifdef FELUCCA_HOST_CLOCK
 +    if (clock_mode && host_clock_on)
-+        seq_n = song.playing ? host_clock_units(n) : 0u;
++        seq_n = host_clock_units(n);              /* every block, playing or not: the host may start the transport
++                                                   * in it (as a MIDI Start in the queue above would), and says what
++                                                   * a stopped block moves (arps, the beat) */
 +    else
 +#endif
      if (clock_mode) {
          seq_n = 0;
          if (song.playing) {
 -- 
-2.43.0
+2.39.5
 

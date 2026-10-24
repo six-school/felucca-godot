@@ -96,7 +96,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the N most audible to instances, joining them at the timeline position (`locate`, §6.4). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
 | D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M8) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
-| D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0004 (`patches/`). | Series verified with `git am` on a clean checkout; all prototypes reproduce on it. | rebase if PR 269 changes |
+| D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0004 (`patches/`). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where `B` reaches `play()`'s beat, and stopped blocks move the arps and the beat with `B`, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
 
 ## 4. Architecture
 
@@ -178,6 +178,17 @@ typedef struct {
 Prototype equivalents: `felucca_api.c` (params, engines, projects, transport), `fel_core.h`/`fel_copy.c` (table + one
 symbol), `sched.c` (render loop, scheduler, events), `tempo.c` MODE 3 (host clock), `project_load.c` (JSON → core).
 
+**As built (M1, `core/fel_core.h`, ABI 1):** the draft above without `locate` (M2), `schedule`/`cancel`/`events` (M6)
+and `screen`/`input` (M7); those come with their milestones and an ABI bump. Differences from the draft: parameter
+calls return `int32_t` with `FEL_INVALID` for a track/id that does not exist; `engine_get` added, `engine_set` returns
+the engine taken; `global_set` takes only the sound's globals (swing, tune, delay, reverb, chorus): BPM is `tempo()`'s,
+CLK and ROUT are the core's (forced to USB clock and CH1-4 after boot and after every import), slots and actions are
+the UI's; `tempo()` clamps to 40..240 (the beat length only: steps follow `B` at any tempo); `boot()` is once per copy;
+`render()` takes null buffers (rendered, dropped); `snapshot` has playing, beats since `play()`, frames, each track's
+step and position (as rendered: up to one half ahead). MASTER is at its top (unity); output is the device's
+24-bit scale (−6 dBFS ceiling). The project JSON check is `core/project_json.c`, firmware-independent (one copy for the
+importer and the tests). The pool: `core/build.sh` → `build/core/libfelucca_core.a`, `fel_pool_core(n)`.
+
 ### 5.2 GDScript surface (sketch)
 
 ```gdscript
@@ -252,7 +263,8 @@ projects only (no song chain), with chain projects joining at their next section
   are approaching audibility (≥ −60 dB) because binding takes time.
 - **Bind:** worker: boot (or take a pre-booted spare) → import project → overrides → replay shadows → `locate(B −
   origin)` → hand-off under the lock with a short fade-in. **Unbind:** ~30 ms fade-out on the audio thread, release,
-  re-boot as a spare in the background.
+  re-boot as a spare in the background. (A copy boots once — its statics cannot be reset in place — so "re-boot"
+  means reuse by import, or a reset of the copy's data: §13.9.)
 - Unbound sources keep their state; their scripts keep working (shadows); they emit no events. More pinned sources than
   N: the lowest-priority pinned ones lose, with a warning.
 
@@ -293,6 +305,9 @@ M8 happens.
 ## 10. Evidence
 
 C tests reproduced on 63f88ec + series by `prototypes/run_all.sh`; Godot tests by `spikes/godot_clock_pause/run.sh`.
+The core itself (M1) asserts T1–T4, T8 and T11 through `fel_core_t` in `core/tests/run.sh`, on the host clock: T2 for
+all ten ARP RATE values (exact step counts, stopped and playing, 120 and 90 BPM); T8 on renamed pool copies (0 of
+51 680 mix steps differ in 10 min; the user's project identical in two copies); T4 0.7–0.8 % of a core on this machine.
 
 | | Test | Result |
 |---|---|---|
@@ -354,12 +369,21 @@ C tests reproduced on 63f88ec + series by `prototypes/run_all.sh`; Godot tests b
 6. Pattern switching with automation (shared motion store); v1 may swap steps and timing only.
 7. Pool size N and binary-size budget (default 8).
 8. User samples (SAMPLE engine user slots): unsupported; a backup's sample objects could go into the flash image later.
+9. Spares (§7): a copy cannot boot twice. Reuse a bound-then-released instance by importing the next project (what the
+   device does on a project load: transport stopped, notes released; FX tails and noise state carry over), or put each
+   copy's data in its own section (`#pragma clang section` / linker `__start_`) and restore it. Decide in M5.
+10. A jump in `B` larger than half a beat per 32-sample block is played as a fast-forward (capped at half a beat a
+    block) until M2's `locate` handles discontinuities.
+11. Felucca's ASan builds (its `drumfuzz`, `midi_drift_test`) crash at random here with `AddressSanitizer:DEADLYSIGNAL`
+    loops, on the unpatched base too (gcc 12's runtime on Linux 6.8; 2 of 6 identical runs of a deterministic test):
+    the environment, not the code. Their non-ASan builds pass. Cap the output when running the suite (one loop wrote
+    15 GB).
 
 ## 14. Implementation plan
 
 | M | Deliverable | Done when |
 |---|---|---|
-| M1 | `core/`: board file + `fel_core_t` (params, engines, projects incl. JSON validation, transport, render with `B`), rename-based pool build (N copies), C tests from the prototypes | T1–T4, T8, T11 as C tests, on Linux; 2-copy link test detects an unrenamed global |
+| M1 | `core/`: board file + `fel_core_t` (params, engines, projects incl. JSON validation, transport, render with `B`), rename-based pool build (N copies), C tests from the prototypes | T1–T4, T8, T11 as C tests, on Linux; 2-copy link test detects an unrenamed global. **Done** (2026-10-24): `core/tests/run.sh` |
 | M2 | `locate()` + host clock from `B` + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents |
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error |
