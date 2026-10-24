@@ -38,3 +38,16 @@ func _steps(p: Dictionary) -> String:
 func _unhandled_input(e: InputEvent) -> void:
 	if e.is_action_pressed("ui_accept"):
 		get_tree().paused = not get_tree().paused
+		queue_redraw()
+		
+func _draw():
+	if get_tree().paused:
+		draw_string(
+			ThemeDB.fallback_font,
+			Vector2(20, 40),
+			"Paused",
+			HORIZONTAL_ALIGNMENT_LEFT,
+			-1,
+			24,
+			Color.YELLOW
+		)
