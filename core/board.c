@@ -14,6 +14,7 @@
 #define FEL_COPY 0
 #endif
 #define FELUCCA_HOST_CLOCK 1
+#define FELUCCA_DELAY_GLIDE 1           /* patch 0003: a new delay TIME (the tempo moved) glides there, no click (D9) */
 #include "web/emu/felucca_web.c"
 #include "fel_core.h"
 
@@ -29,22 +30,64 @@ static uint32_t hclk_half, hclk_in;     /* the ring index the half being rendere
 static double hclk_origin;              /* B of step 1: play()'s at */
 static uint64_t hclk_fed;               /* units of MIDI_CLOCK_GRID since hclk_origin given to the firmware */
 static uint8_t hclk_armed;              /* play() waits for B to reach hclk_origin */
+static uint8_t hclk_locate;             /* locate() asked: applied in the next block */
 static uint64_t fel_frames;             /* frames render() returned */
+static uint32_t fel_loops[NTRK];        /* each track's passes through its LEN since step 1 (snapshot) */
+static uint16_t fel_last_idx[NTRK];     /* its step and position when last looked at: a step back is a pass */
+static uint32_t fel_last_pos[NTRK];
+
+static void fel_locate(uint64_t units);
+
+/* the passes: looked at before every block (a step lasts more than one) and when a snapshot is taken */
+static void fel_loops_count(void)
+{
+    uint32_t k;
+    if (!song.playing)
+        return;
+    for (k = 0; k < NTRK; k++) {
+        const track_t *t = &trk[k];
+        if (t->seq_pos >= 0x7FFFFFFFu)          /* (PLAY: step 1 is next) */
+            continue;
+        if (t->seq_idx < fel_last_idx[k] ||
+            (t->seq_idx == fel_last_idx[k] && t->p[P_SLEN] <= 1 && t->seq_pos < fel_last_pos[k]))   /* (LEN 1) */
+            fel_loops[k]++;
+        fel_last_idx[k] = t->seq_idx;
+        fel_last_pos[k] = t->seq_pos;
+    }
+}
+static void fel_loops_reset(void)
+{
+    memset(fel_loops, 0, sizeof fel_loops);
+    memset(fel_last_idx, 0, sizeof fel_last_idx);
+    memset(fel_last_pos, 0, sizeof fel_last_pos);
+}
 
 /* events_block, every block of n samples (patch 0002): B at the block's end -> the units the music moved in it.
  * Playing or not: stopped, the arps and the beat still run on B, as they run on the internal clock. */
 static uint32_t host_clock_units(uint32_t n)
 {
     double b = hclk_b0 + (double)(int32_t)(hclk_half + (hclk_in += n) - hclk_f0) * hclk_rate, due;
+    double start = b - n * hclk_rate;           /* B at the block's start */
     uint64_t total;
+    fel_loops_count();
+    if (hclk_locate) {
+        hclk_locate = 0;
+        if (start < hclk_origin)                /* the origin is ahead: as play() */
+            hclk_armed = 1;
+        else if (start < hclk_origin + 1e9)     /* (the units fit; NaN: no) */
+            fel_locate((uint64_t)floor((start - hclk_origin) * MIDI_CLOCK_GRID + 1e-9));
+    }
     if (hclk_armed && b > hclk_origin) {        /* B reaches play()'s at inside this block: step 1 starts in it, as a
                                                  * MIDI Start in its queue would (the steps are ticked after this) */
-        double start = b - n * hclk_rate;
         if (start > hclk_origin)                /* late (at was in the past): from this block, not a fast-forward */
             hclk_origin = start;
         hclk_armed = 0;
         hclk_fed = 0;
         midi_clock_transport(0xFAu, fm1_ms);
+        fel_loops_reset();
+        return 0;                               /* no time in it: the firmware drops a start block's own (seq_tick's
+                                                 * PLAY entry), so the next block's units, from hclk_origin, put the
+                                                 * sequencer's zero exactly at it, not a block late */
     }
     due = (b - hclk_origin) * MIDI_CLOCK_GRID;
     if (!(due > (double)hclk_fed && due < 9e15))   /* behind (B stood still or went back): hold until it is reached
@@ -65,6 +108,133 @@ static void fel_ms(void)
         hclk_in = 0;
     }
     web_ms();
+}
+
+/* ------------------------------------------------------------ locate (DESIGN.md §6.4) --- */
+/* NUDGE and the matrix's TIME of the step t lands in, pos samples into it, as seq_nd_start / seq_play_on latched them
+ * when continuous play entered it: a late play still to come is latched again (it sounds, as it would have); one due
+ * already is gone (no missed step sounds late); the next step's early play, latched, or marked played (nd_fired) when
+ * it is past */
+static void fel_locate_nudge(track_t *t, uint32_t period, uint32_t len, uint32_t pos)
+{
+    uint32_t idx = t->seq_idx, nx = (idx + 1u) % len, late = 0;
+    int32_t d;
+    if (t->p[P_SQNT]) {                                 /* QUANTIZE ON: on its start, or late by TIME only */
+        late = seq_time(t, idx, period);
+        if (late && pos < late)
+            t->nd_late = late + 1u;
+        return;
+    }
+    d = seq_nudge(t, &seq_steps(t)[idx]);
+    late = (uint32_t)(d > 0 ? d : 0) * period / NUDGE_DIV + seq_time(t, idx, period);
+    if (late && pos < late)
+        t->nd_late = late + 1u;
+    if ((!chain.running || nx) && (d = seq_nudge(t, &seq_steps(t)[nx])) < 0) {
+        uint32_t at = step_samples(t, period, idx), back = (uint32_t)-d * period / NUDGE_DIV;
+        at = (at > back ? at - back : 0u) + 1u;
+        at = at < t->nd_late ? t->nd_late : at;
+        if (pos >= at - 1u)
+            t->nd_fired = (uint8_t)(nx + 1u);
+        else
+            t->nd_early = at;
+    }
+}
+
+/* the automation of the steps of this pass up to idx (motion_step on each since step 1; seq_start's motion_begin put
+ * the base values back): each parameter at its latest record, the later in the list on one step. Not the locks:
+ * they hold on the step that plays them only, and the one it lands in does not play */
+static void fel_locate_motion(track_t *t, uint32_t idx)
+{
+    const motion_store_t *m = chain_motion(t);
+    uint32_t k = trk_index(t), i;
+    int8_t best[P_COUNT];
+    if (!m || !((m->on >> k) & 1u))
+        return;
+    memset(best, -1, sizeof best);
+    for (i = 0; i < m->count; i++) {
+        const motion_event_t *e = &m->event[i];
+        uint32_t id = MOTION_ID(e), s = e->place & 63u;
+        if ((e->place >> 6) != k || (e->param & MOTION_LOCK) || id >= P_COUNT || s > idx || (int32_t)s < best[id])
+            continue;
+        best[id] = (int8_t)s;
+        t->p[id] = (int16_t)param_fit(param_desc_of(eng_idx(t->eng_req), id), e->value);
+        motion_active[k][id / 32u] |= 1u << (id % 32u);
+    }
+}
+
+/* the sequencer as continuous play from step 1 would have it `units` (MIDI_CLOCK_GRID a beat) later, at the current
+ * tempo and patterns: what midi_grid_advance and seq_tick would have summed (exact while neither changed). The state
+ * that runs on samples, not on the clock (the FX layer's grid, SLICER, a FREE synced LFO 2), is set from the same
+ * time at the current tempo: in phase, though B's pauses do not stop them */
+static void fel_locate(uint64_t units)
+{
+    uint32_t q = beat_samples(), k;
+    uint64_t s, el;
+    if (song.playing)
+        seq_stop();                                     /* what sounds goes: notes, nudges, ratchets, the arps' note */
+    seq_start();                                        /* PLAY's state: motion bases, grids, conditions, slicer, .. */
+    fel_loops_reset();
+    hclk_fed = units;
+    el = units * q / MIDI_CLOCK_GRID;                   /* samples since step 1 at the beat length */
+    for (k = 0; k < NTRK; k++) {
+        track_t *t = &trk[k];
+        uint32_t div = (uint32_t)t->p[P_SDIV], len = t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u;
+        uint32_t period = div_samples(div), qd = div < 6u ? q / DIV_DEN[div] * DIV_DEN[div] : q, idx = 0, i;
+        uint64_t pass = 0, loops, r;
+        s = units * qd;                                 /* midi_grid_advance: the samples and the carried remainder */
+        midi_seq_grid[k].remainder = (uint32_t)(s % MIDI_CLOCK_GRID);
+        s /= MIDI_CLOCK_GRID;
+        for (i = 0; i < len; i++)
+            pass += step_samples(t, period, i);
+        if (!s || !pass)                                /* at step 1's start: PLAY's entry, as seq_start left it */
+            continue;
+        /* a position on a step's end belongs to that step (r == its length): the next one enters in this block and
+         * plays, as it starts here */
+        loops = (s - 1u) / pass;
+        r = s - loops * pass;
+        while (r > step_samples(t, period, idx))
+            r -= step_samples(t, period, idx++);
+        t->seq_idx = (uint16_t)idx;
+        t->seq_pos = (uint32_t)r;
+        t->cond_loop = (uint8_t)(loops % COND_LOOPS);
+        fel_loops[k] = (uint32_t)loops;
+        fel_last_idx[k] = (uint16_t)idx;
+        fel_last_pos[k] = (uint32_t)r;
+        fel_locate_nudge(t, period, len, (uint32_t)r);
+        fel_locate_motion(t, idx);
+        if (t->p[P_LTRIG] && t->p[P_LSYNC])            /* LFO 2 FREE + SYNC: in time with the bars from PLAY */
+            t->lfo_ph = ((uint32_t)t->p[P_LPHASE] << 25) + (uint32_t)(el / CTL * lfo_sync_inc(t));
+        {                                               /* SLICER (sl_enter): its 16 swung steps of a note value */
+            sl_t *sl_k = &sl[k];
+            uint32_t base = (uint32_t)FS * 60u / (uint32_t)song.g[G_BPM] / SL_DEN[(uint32_t)t->p[P_SLRATE] % 6u];
+            uint32_t len0 = swing_step_len(t, base, 0), st;
+            uint64_t pr = el % (2u * (uint64_t)base);
+            st = (uint32_t)(el / (2u * (uint64_t)base) * 2u);
+            if (pr >= len0) {
+                st++;
+                pr -= len0;
+            }
+            sl_k->idx = (uint8_t)(st & 15u);
+            sl_k->base = base;
+            sl_k->len = swing_step_len(t, base, sl_k->idx);
+            sl_k->pos = (uint32_t)pr;
+            sl_k->bit = (uint8_t)((sl_pattern(t) >> sl_k->idx) & 1u);
+            sl_k->rp = sl_k->loop = sl_k->rec = sl_k->rec_on = 0;
+        }
+    }
+    s = units * (q / 4u * 4u);                          /* the metronome (click_tick: DIV 1/16's grid) */
+    midi_click_grid.remainder = (uint32_t)(s % MIDI_CLOCK_GRID);
+    s /= MIDI_CLOCK_GRID;
+    clk_pos = (uint32_t)(s % div_samples(2));
+    clk_step = (uint32_t)(s / div_samples(2)) & 15u;
+    s = units * q;                                      /* the beat (the ARP LED's, events_block) */
+    midi_beat_grid.remainder = (uint32_t)(s % MIDI_CLOCK_GRID);
+    s /= MIDI_CLOCK_GRID;
+    beat_pos = (uint32_t)(s % q);
+    beat_n = (uint32_t)(s / q) & 3u;
+    pf.ph = (uint32_t)el;                               /* the FX layer's 1/16s (perform.c) */
+    pf.sync = 0;
+    song.tick = (uint32_t)(el / CTL);
 }
 
 /* ------------------------------------------------------------ the table --- */
@@ -111,12 +281,15 @@ static void core_render(uint32_t n, double b0, double b1, float *l, float *r)
 
 static void core_tempo(double bpm)
 {
+    uint32_t k;
     if (!(bpm >= 40.0))                 /* (NaN too) */
         bpm = 40.0;
     if (bpm > 240.0)
         bpm = 240.0;
     midi_clock_retempo(beat_samples(), (uint32_t)lround(60.0 * FS / bpm));   /* every phase keeps its musical place */
     song.g[G_BPM] = (int16_t)lround(bpm);
+    for (k = 0; k < NTRK; k++)                          /* (rescaled positions are no step back) */
+        fel_last_pos[k] = trk[k].seq_pos;
 }
 
 static int fel_track_ok(int track) { return track >= 0 && track < NTRK; }
@@ -225,11 +398,22 @@ static void core_play(double at_beats)
         return;
     hclk_origin = at_beats;
     hclk_armed = 1;
+    hclk_locate = 0;
+}
+
+static int32_t core_locate(double origin_beats)
+{
+    if (!(origin_beats > -1e15 && origin_beats < 1e15) || chain.running || chain.armed)
+        return 1;                                       /* (a SONG chain: not yet, DESIGN.md §6.4) */
+    hclk_origin = origin_beats;
+    hclk_armed = 0;
+    hclk_locate = 1;
+    return 0;
 }
 
 static void core_stop(void)
 {
-    hclk_armed = 0;
+    hclk_armed = hclk_locate = 0;
     if (song.playing)
         midi_clock_transport(0xFCu, fm1_ms);
 }
@@ -246,6 +430,7 @@ static void core_note(int track, int note, int vel)
 static void core_snapshot(fel_snapshot_t *s)
 {
     uint32_t t;
+    fel_loops_count();                                  /* (blocks rendered since the last look) */
     s->playing = song.playing;
     s->beats = (double)hclk_fed / MIDI_CLOCK_GRID;
     s->frames = fel_frames;
@@ -253,13 +438,14 @@ static void core_snapshot(fel_snapshot_t *s)
         int fresh = trk[t].seq_pos >= 0x7FFFFFFFu;     /* (PLAY: step 1 is next) */
         s->track[t].step = fresh ? 0u : trk[t].seq_idx;
         s->track[t].pos = fresh ? 0u : trk[t].seq_pos;
+        s->track[t].loop = fel_loops[t];
     }
 }
 
 static const fel_core_t FEL_CORE = {
     FEL_CORE_ABI, core_boot, core_render, core_tempo, core_param_get, core_param_set, core_global_get,
-    core_global_set, core_engine_get, core_engine_set, core_project_import, core_project_export, core_play, core_stop,
-    core_note, core_snapshot,
+    core_global_set, core_engine_get, core_engine_set, core_project_import, core_project_export, core_play, core_locate,
+    core_stop, core_note, core_snapshot,
 };
 #define FEL_CAT2(a, b) a##b
 #define FEL_CAT(a, b) FEL_CAT2(a, b)

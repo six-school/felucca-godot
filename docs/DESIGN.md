@@ -87,7 +87,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D5 | Audio out: `FeluccaStream : AudioStream`, playback `: AudioStreamPlaybackResampled` (`_get_stream_sampling_rate` = 44100, `_mix_resampled`). | Godot resamples to its mix rate (44100 on desktop by default; the browser's rate on the web). | — |
 | D6 | **One musical timeline** `B` (beats) owned by the conductor; every instance's host clock is fed so its musical position follows `B` (§6). `B` advances once per **mix step** in a clock `AudioEffect` on a muted bus (`_process_silence() → true`), by `buffer frames · tempo / (60 · mix rate)`, unless paused. Commands (tempo, transport, pause) are published to the audio thread under `AudioServer.lock()` and take effect on a step boundary. | Instances stay in sync even when Godot mixes them unevenly. *Measured* in Godot 4.7.2: the effect runs on every mix step on an empty muted bus, paused too (T12). | per-player rendering (only sync'd starts) |
 | D7 | **Pause** (R12): the conductor autoload (first child of the root, hears `NOTIFICATION_PAUSED` first) stops `B` and sets `stream_paused` on every bound source's player **in one `AudioServer.lock()`**; Godot's own per-node calls that follow are no-ops. Unpause likewise, except sources the user had paused themselves. A user's `stream_paused` on one source pauses just that source; on resume it relocates to `B` (`follow`, default) or carries on where it stopped (`hold`). | *Measured* (T13): with Godot's per-node pause, 8 players drifted 21 504 frames (0.49 s) apart over 300 pause/unpause cycles; atomic under the lock: 0. | — |
-| D8 | Clock: **host clock** = PR 269's grid fed per 32-sample block by the board file from `B` (patch 0002), `midi_clock_retempo()` on tempo changes. Tempo is a float; `G_BPM` only shows it. The project's own BPM is information (the game may copy it to the conductor). | R6/R7. 5 min of tempo tweens: step error ≤ 0.85 ms (block size), no growth; beat length steady at constant tempo (T5). | A4, A6 |
+| D8 | Clock: **host clock** = PR 269's grid fed per 32-sample block by the board file from `B` (patch 0002), `midi_clock_retempo()` on tempo changes. Tempo is a float; `G_BPM` only shows it. The project's own BPM is information (the game may copy it to the conductor). | R6/R7. 5 min of tempo tweens: step error ≤ 0.85 ms (block size), no growth; beat length steady at constant tempo (T5). In the core (M2): 0 to 0.725 ms early (one block), never late, float tempos and pauses too. | A4, A6 |
 | D9 | **Delay glide** (patch 0003). | Every tempo change otherwise clicks in the echoes (T6). | crossfade |
 | D10 | Scripting API: **generated typed classes** from the firmware's descriptor tables (§8). | R5. | A7 |
 | D11 | Scheduling on the audio thread in the board file, keyed to (track, loop, step) or timeline positions, applied before the half in which the step starts; relative targets resolved on the audio thread. | Knock prototype exact (T9). | — |
@@ -189,6 +189,11 @@ step and position (as rendered: up to one half ahead). MASTER is at its top (uni
 24-bit scale (−6 dBFS ceiling). The project JSON check is `core/project_json.c`, firmware-independent (one copy for the
 importer and the tests). The pool: `core/build.sh` → `build/core/libfelucca_core.a`, `fel_pool_core(n)`.
 
+**M2 (ABI 2):** `locate(origin_beats)` — by the origin on `B` (where step 1 was or will be), not "beats since start":
+an instance renders up to a half ahead of what it has returned, so a position "now" is ambiguous, while an origin is
+exact at whichever block it lands in (§6.4); 1 while a SONG chain plays. The snapshot's tracks add `loop` (passes
+through LEN since step 1). Delay glide (patch 0003) on.
+
 ### 5.2 GDScript surface (sketch)
 
 ```gdscript
@@ -228,6 +233,13 @@ instance renders its frames with its host clock moving linearly from `B_k` to `B
 step k), mapped onto its own 32-sample blocks (`host_clock_units`). An instance mixed late or early by a step (a race
 outside our control) snaps back on its next render: musical position always derives from `B`.
 
+As built (M2): a step is entered in the 32-sample block its time falls in, so it sounds from that block's start: 0 to
+0.73 ms early, never late, with no drift (T5 on the core). `play(at)` starts step 1 in the block containing `at` and
+gives that block no time: the firmware drops a start block's own (its PLAY entry), so the next block's units, counted
+from `at`, put the sequencer's zero exactly there. Frames rendered ahead (at most 127, the rest of a half) were clocked
+with the previous call's `B` extrapolated; the next call's `B` takes over from its first new block. At a pause those
+frames play on: a step due in them sounds up to 2.9 ms into the pause (Godot fades the playback then anyway).
+
 ### 6.2 Pause
 
 As D7. Details: Godot fades a pausing playback over one more mix step (state FADE_OUT_TO_PAUSE, then PAUSED: the
@@ -249,6 +261,21 @@ released, motion back to base values, metronome/beat phase; song mode: section a
 Used for: binding a source mid-timeline (D14), resuming a `follow` source after its own pause (D7). Verify by
 comparing step events of a located instance with one that played continuously (M2). First version may support pattern
 projects only (no song chain), with chain projects joining at their next section start.
+
+As built (M2, `core/board.c` `fel_locate`): `locate(origin)` takes effect at the start of the next block, from `B`
+there: (if playing, stop) PLAY's start state, then for each track the samples since `origin` as the clock's grid would
+have summed them (with its carried remainder), walked through the swung step lengths of its LEN: step, position, passes
+(`cond_loop` for the conditions), the nudge latches (a late play of the landed step still to come is latched again; a
+next step's early play is latched or marked played), the automation of the pass up to that step (not the locks: the
+landed step does not play). The metronome and the beat counter from the same grid; the FX layer's 1/16 grid, SLICER
+and a FREE synced LFO 2 from the elapsed time at the current tempo (they run on rendered samples, §13.12). A position
+on a step's end belongs to that step, so a step starting exactly there plays. The arps' held notes stay. An origin
+ahead of `B` is `play(origin)`. **Verified** (`core/tests/test_locate.c`, a pattern with odd LENs, swing, 1/16 1/8T
+1/4, nudges late and early, conditions 2:2 and 1:3, PAN automation): at constant tempo, instances located at 3.10 s and
+6.77 s, one relocated while playing from another origin, and one located to an origin ahead, equal the continuous ones
+in every 32-frame chunk (step, position to the sample, passes, conditions' loop, latches, automation); after a tempo
+tween within 2 samples (continuous play's phases were rescaled at each change). The joining instance is silent until
+its next step (or nudged play), then plays.
 
 ## 7. Sources and the pool (D14)
 
@@ -308,6 +335,9 @@ C tests reproduced on 63f88ec + series by `prototypes/run_all.sh`; Godot tests b
 The core itself (M1) asserts T1–T4, T8 and T11 through `fel_core_t` in `core/tests/run.sh`, on the host clock: T2 for
 all ten ARP RATE values (exact step counts, stopped and playing, 120 and 90 BPM); T8 on renamed pool copies (0 of
 51 680 mix steps differ in 10 min; the user's project identical in two copies); T4 0.7–0.8 % of a core on this machine.
+M2 adds T5 and T6 on the core (`test_timing.c`, `test_delay.c`, test copies with white-box accessors): T5, 5 min of
+int tweens and 3 min of a float tempo with pauses, every step 0 to 0.725 ms early, mean −0.36 ms, never late; T6, 0
+jumps constant / int tween / float tween (the same analysis finds 52 and 1140 without the glide); and locate (§6.4).
 
 | | Test | Result |
 |---|---|---|
@@ -359,7 +389,8 @@ all ten ARP RATE values (exact step counts, stopped and playing, 120 and 90 BPM)
 
 ## 13. Open questions / unverified
 
-1. `locate()` (§6.4): exact equivalence with continuous play; song-mode projects.
+1. `locate()` (§6.4): exact at constant tempo, within 2 samples after tempo changes (M2); song-mode projects not yet
+   (refused while a chain plays; the core never arms one).
 2. Felucca's own suite (`tests/run_tests.sh`) on the patched tree; arps, ratchets, nudge, swing, song mode under the
    host clock fed from `B` (PR 269's `midi_drift_test.c` covers the external-clock paths).
 3. Clock effect with a real driver (PulseAudio/WASAPI/CoreAudio) and with mix rates ≠ 44100; buffer size per step
@@ -372,19 +403,24 @@ all ten ARP RATE values (exact step counts, stopped and playing, 120 and 90 BPM)
 9. Spares (§7): a copy cannot boot twice. Reuse a bound-then-released instance by importing the next project (what the
    device does on a project load: transport stopped, notes released; FX tails and noise state carry over), or put each
    copy's data in its own section (`#pragma clang section` / linker `__start_`) and restore it. Decide in M5.
-10. A jump in `B` larger than half a beat per 32-sample block is played as a fast-forward (capped at half a beat a
-    block) until M2's `locate` handles discontinuities.
+10. The core does not detect a jump in `B` itself: L2 calls `locate` on a discontinuity it makes (binding, a
+    `follow` source resumed). Otherwise a jump larger than half a beat per 32-sample block plays as a fast-forward
+    (capped at half a beat a block).
 11. Felucca's ASan builds (its `drumfuzz`, `midi_drift_test`) crash at random here with `AddressSanitizer:DEADLYSIGNAL`
     loops, on the unpatched base too (gcc 12's runtime on Linux 6.8; 2 of 6 identical runs of a deterministic test):
     the environment, not the code. Their non-ASan builds pass. Cap the output when running the suite (one loop wrote
     15 GB).
+12. What runs on rendered samples, not on the clock's units: the FX layer's 1/16 grid (perform.c `pf.ph`), SLICER
+    (slicer.c, from the integer `G_BPM`), a FREE synced LFO 2 (voice.c `lfo_sync_inc`). Under the host clock they keep
+    moving through a pause of `B` and drift from it at fractional tempos (SLICER: `G_BPM` is rounded). `locate` puts
+    them in phase. A patch could feed them units (as PR 269 does the sequencer).
 
 ## 14. Implementation plan
 
 | M | Deliverable | Done when |
 |---|---|---|
 | M1 | `core/`: board file + `fel_core_t` (params, engines, projects incl. JSON validation, transport, render with `B`), rename-based pool build (N copies), C tests from the prototypes | T1–T4, T8, T11 as C tests, on Linux; 2-copy link test detects an unrenamed global. **Done** (2026-10-24): `core/tests/run.sh` |
-| M2 | `locate()` + host clock from `B` + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents |
+| M2 | `locate()` + host clock from `B` + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents. **Done** (2026-10-24): `core/tests/run.sh` |
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error |
 | M5 | Pool: scoring, hysteresis, prefetch, worker binding, spares, fades | the cellar/hallway/bedroom scenario with N = 8 |

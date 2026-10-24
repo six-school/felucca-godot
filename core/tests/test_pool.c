@@ -104,7 +104,7 @@ int main(int argc, char **argv)
         printf("  T8 10 min: copy 0 at %.4f beats, step %u + %u; copy 1 at %.4f, step %u + %u; %llu of %llu mix steps"
                " differ\n", sa.beats, sa.track[0].step, sa.track[0].pos, sb.beats, sb.track[0].step, sb.track[0].pos,
                (unsigned long long)diff, (unsigned long long)blocks);
-        CHECK(!memcmp(&sa, &sb, sizeof sa) && sa.playing && sa.beats > drive_b - b0 - 1.0 / 24000 &&
+        CHECK(snap_same(&sa, &sb) && sa.playing && sa.beats > drive_b - b0 - 1.0 / 24000 &&
               sa.beats < drive_b - b0 + 128.0 * 2 / FEL_RATE, "T8: the same positions after 10 min, on B (%.4f beats,"
               " B moved %.4f: within a clock unit behind, one half ahead)", sa.beats, drive_b - b0);
         CHECK(diff == 0, "T8: the same audio throughout");

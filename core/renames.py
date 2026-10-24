@@ -3,15 +3,16 @@ if every global symbol one defines has a name of its own. The list comes from `n
 so a Felucca update that adds a global is renamed too; the check catches what the list missed (the linker would not
 always: tentative definitions with -fcommon, and weak symbols, merge silently).
 
-    renames.py list OBJ          the globals OBJ defines, one a line, but the entry point (fel_core_<n>)
+    renames.py list OBJ          the globals OBJ defines, one a line, but the entry points (fel_core_<n>, a test
+                                 copy's fel_test_<n>: core/tests/test_hooks.c)
     renames.py header N LIST     a header for copy N: #define name fel<N>_name for each (force-included: -include)
-    renames.py check N OBJ       every global copy N defines is fel<N>_* or fel_core_<N>; else names the rest, exit 1
+    renames.py check N OBJ       every global copy N defines is fel<N>_* or an entry point of N; else names the rest
 
 NM (env) is the nm to run (default: nm). ELF/Linux so far (DESIGN.md §13.5: Mach-O adds a leading _, COFF later).
 """
 import os, re, subprocess, sys
 
-ENTRY = re.compile(r"fel_core_\d+$")
+ENTRY = re.compile(r"fel_(core|test)_\d+$")
 
 
 def defined_globals(obj):
@@ -37,7 +38,8 @@ def main(argv):
         sys.stdout.write("".join(f"#define {s} fel{n}_{s}\n" for s in names))
     elif len(argv) == 4 and argv[1] == "check":
         n = int(argv[2])
-        bad = [f"{s} ({t})" for s, t in defined_globals(argv[3]) if not (s.startswith(f"fel{n}_") or s == f"fel_core_{n}")]
+        own = (f"fel_core_{n}", f"fel_test_{n}")
+        bad = [f"{s} ({t})" for s, t in defined_globals(argv[3]) if not (s.startswith(f"fel{n}_") or s in own)]
         if bad:
             sys.stderr.write(f"{argv[3]}: copy {n} defines globals without its prefix fel{n}_: {', '.join(bad)}\n")
             return 1

@@ -4,7 +4,8 @@
 Godot 4.7 as a GDExtension: projects made on the device, parameters and scheduling from GDScript, a pool of instances
 kept in sync with the game, pause-safe.
 
-Status: M1 done, the C core (`core/`); the Godot extension itself (M3) is not written yet.
+Status: M1 and M2 done, the C core (`core/`) with its host clock and `locate`; the Godot extension (M3) is not
+written yet.
 
 - `docs/DESIGN.md`: requirements, decisions with their evidence, architecture, the alternatives and how to switch to each
 - `core/`: the board file and the `fel_core_t` table (L1), the project JSON reader, the pool build of N renamed copies
