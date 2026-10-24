@@ -1,0 +1,57 @@
+{
+  "_": [
+    "The typed API's readable names (docs/DESIGN.md §8), kept by hand. gen_api.py names each parameter after the page",
+    "it is first on (page + label: arp_rate) or, on no page, its label; an entry here renames one, keyed by its id with",
+    "the label it must still have, so a Felucca update that moves or relabels it fails the build instead of renaming",
+    "the API. The generated name stays as a hidden fallback. skip: ids not made properties (P_ED_FX: unused)."
+  ],
+  "skip_pages": ["STEP", "DETAIL", "MIXER"],
+  "skip": [8],
+  "part": {
+    "0": ["level", "LVL"],
+    "5": ["env_to_filter", "FLT"], "6": ["env_to_pitch", "PIT"], "7": ["env_to_shape", "SHP"],
+    "102": ["env_sync", "ESYNC"],
+    "11": ["lfo_phase", "PHS"],
+    "13": ["lfo_to_pitch", "PIT"], "14": ["lfo_to_filter", "FLT"], "15": ["lfo_to_shape", "SHP"], "16": ["lfo_to_amp", "AMP"],
+    "91": ["lfo2_sync", "SYNC"], "92": ["lfo2_trigger", "TRIG"], "93": ["lfo2_polarity", "POL"],
+    "19": ["arp_octaves", "OCT"], "21": ["arp_swing", "SWG"], "22": ["arp_chance", "PROB"], "23": ["arp_hold", "HOLD"],
+    "24": ["arp_order", "ORD"],
+    "25": ["scale_root", "ROOT"], "26": ["scale", "SCL"], "27": ["scale_quantize", "QNT"], "28": ["transpose", "TRN"],
+    "29": ["seq_length", "LEN"], "30": ["seq_division", "DIV"], "31": ["seq_swing", "SWG"], "32": ["seq_gate", "GATE"],
+    "94": ["seq_quantize", "QNTZ"],
+    "33": ["send_distortion", "DST"], "34": ["send_chorus", "CHO"], "35": ["send_delay", "DLY"], "36": ["send_reverb", "REV"],
+    "37": ["voice_mode", "VCE"], "38": ["glide", "GLD"], "39": ["pan", "PAN"], "40": ["mute", "MUTE"],
+    "41": ["glide_mode", "GLMOD"], "42": ["voice_priority", "PRIO"], "43": ["voice_alloc", "ALLOC"],
+    "44": ["detune", "DTUNE"], "95": ["spread", "SPRD"],
+    "45": ["slicer", "SLCR"], "46": ["slicer_pattern", "PAT"],
+    "49": ["mod1_source", "SRC1"], "50": ["mod1_dest", "DST1"], "51": ["mod1_amount", "AMT1"],
+    "52": ["mod2_source", "SRC2"], "53": ["mod2_dest", "DST2"], "54": ["mod2_amount", "AMT2"],
+    "55": ["mod3_source", "SRC3"], "56": ["mod3_dest", "DST3"], "57": ["mod3_amount", "AMT3"],
+    "58": ["mod4_source", "SRC4"], "59": ["mod4_dest", "DST4"], "60": ["mod4_amount", "AMT4"],
+    "65": ["op1_level", "LVL"], "70": ["op2_level", "LVL"], "75": ["op3_level", "LVL"], "80": ["op4_level", "LVL"],
+    "81": ["chord", "CHRD"], "82": ["chord_voicing", "VOIC"],
+    "83": ["lane_kick", "KICK"], "84": ["lane_snare", "SNARE"], "85": ["lane_clap", "CLAP"],
+    "86": ["lane_hat_closed", "HATCL"], "87": ["lane_hat_open", "HATOP"], "88": ["lane_tom", "TOM"],
+    "89": ["lane_rim", "RIM"], "90": ["lane_bell", "BELL"],
+    "96": ["insert", "INSRT"], "97": ["insert_a", "INS A"], "98": ["insert_b", "INS B"], "99": ["insert_c", "INS C"],
+    "100": ["insert_mix", "MIX"]
+  },
+  "song": {
+    "1": ["swing", "SWG"], "3": ["tune", "TUNE"],
+    "4": ["delay_time", "TIME"], "5": ["delay_feedback", "FDBK"], "6": ["delay_color", "COLR"], "7": ["delay_mix", "MIX"],
+    "24": ["reverb_type", "TYPE"], "8": ["reverb_size", "SIZE"], "9": ["reverb_damp", "DAMP"],
+    "10": ["chorus_rate", "CRT"], "11": ["chorus_depth", "CDP"]
+  },
+  "engines": {
+    "ANALOG": {"1": ["detune", "DTN"], "3": ["noise", "NOIS"], "4": ["cutoff", "CUT"], "5": ["resonance", "RES"],
+               "6": ["drive", "DRV"], "7": ["key_track", "KTR"]},
+    "PHASE": {"4": ["detune", "DTN"]},
+    "TRIO": {"3": ["detune", "DTN"], "5": ["cutoff", "CUT"], "6": ["resonance", "RES"], "7": ["pulse_width", "PW"]},
+    "SAMPLE": {"4": ["cutoff", "CUT"], "5": ["drive", "DRV"]},
+    "DRUM": {"3": ["decay", "DECY"], "7": ["drive", "DRV"]},
+    "NOISE": {"1": ["color", "COLR"], "3": ["resonance", "RES"], "4": ["track", "TRK"], "5": ["density", "DENS"],
+              "6": ["drift", "DRFT"], "7": ["crush", "CRSH"]},
+    "GRAIN": {"3": ["density", "DENS"], "4": ["pitch", "PTCH"], "5": ["spread", "SPRD"]},
+    "FM6": {"0": ["algorithm", "ALG"], "1": ["feedback", "FB"]}
+  }
+}

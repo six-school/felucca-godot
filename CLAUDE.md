@@ -27,6 +27,8 @@ layer it replaces) and keep the seams of §4.1 intact.
 - Never modify Felucca's sources in place: change them only through `patches/` (`git format-patch` series on
   `63f88ec`), each behind an `#ifdef` unless it is upstream code.
 - Never look a Felucca parameter up by its bare label (labels repeat across pages); use ids and page-qualified names.
+  The typed API is generated (`extension/codegen/gen_api.py`); readable names go in `extension/codegen/names.json`,
+  keyed by id and the label it must have.
 - The audio path (anything reached from a playback's mix or the clock effect) must not allocate, lock or log.
 - Anything that must take effect for several instances on the same mix step is published under `AudioServer.lock()`.
 - Firmware state is global per compiled copy: one copy per pool instance (DESIGN.md D3).

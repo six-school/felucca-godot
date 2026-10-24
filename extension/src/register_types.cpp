@@ -1,4 +1,5 @@
 // The extension's entry (felucca.gdextension: felucca_library_init) and its classes.
+#include "felucca_api.h"
 #include "felucca_clock.h"
 #include "felucca_conductor.h"
 #include "felucca_importer.h"
@@ -25,6 +26,13 @@ static void initialize_felucca(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(FeluccaPlayback);
 		GDREGISTER_ABSTRACT_CLASS(FeluccaConductor); // (the engine singleton only)
 		GDREGISTER_CLASS(FeluccaConductorNode); // (the autoload's: addons/felucca/felucca.tscn)
+		GDREGISTER_CLASS(FeluccaPart);
+		GDREGISTER_CLASS(FeluccaSong);
+		GDREGISTER_ABSTRACT_CLASS(FeluccaEngineView);
+#define FELUCCA_REGISTER_VIEW(m_class, m_view, m_engine, m_access) GDREGISTER_CLASS(m_class);
+		FELUCCA_ENGINE_VIEWS(FELUCCA_REGISTER_VIEW)
+		GDREGISTER_CLASS(FeluccaOverride);
+		GDREGISTER_CLASS(FeluccaOverrides);
 		GDREGISTER_CLASS(FeluccaSource);
 		GDREGISTER_CLASS(FeluccaSource2D);
 		GDREGISTER_CLASS(FeluccaSource3D);

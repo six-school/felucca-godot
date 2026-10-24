@@ -89,7 +89,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D7 | **Pause** (R12): the conductor autoload (first child of the root, hears `NOTIFICATION_PAUSED` first) stops `B` and sets `stream_paused` on every bound source's player **in one `AudioServer.lock()`**; Godot's own per-node calls that follow are no-ops. Unpause likewise, except sources the user had paused themselves. A user's `stream_paused` on one source pauses just that source; on resume it relocates to `B` (`follow`, default) or carries on where it stopped (`hold`). As built (M3): an engine singleton, `FeluccaConductor` (as `Input`), whose node `FeluccaConductorNode` is the project's autoload `Felucca` (`addons/felucca/felucca.tscn`): it must be an autoload, because Godot tells a pause to children in the order they were *added* (§11), not by child index (a node added after the scene and moved first still hears it after the scene's sources; without the autoload one is added at run time, with a warning). **Decision (2026-10-24, user): the pause stops every bound source, whatever its process mode** (a source left playing while `B` stands only rings on, "stuck"); sources that keep their own musical time while `B` is paused (pause-menu music) are deferred to M5/M6 (§13.17). A source's own pause is kept through Godot's unpause by the source re-pausing itself (godot #65743), its playback silent until then and through the fade step after. | *Measured* (T13): with Godot's per-node pause, 8 players drifted 21 504 frames (0.49 s) apart over 300 pause/unpause cycles; atomic under the lock: 0. With Felucca sources (M3): 0 checks out of step, the players' spacing 0 frames, at 44.1 and 48 kHz; every one of 600 pause / unpause notifications found every source already paused / unpaused by the conductor. | — |
 | D8 | Clock: **host clock** = PR 269's grid fed per 32-sample block by the board file from `B` (patch 0002), `midi_clock_retempo()` on tempo changes. Tempo is a float; `G_BPM` only shows it. The project's own BPM is information (the game may copy it to the conductor). | R6/R7. 5 min of tempo tweens: step error ≤ 0.85 ms (block size), no growth; beat length steady at constant tempo (T5). In the core (M2): 0 to 0.725 ms early (one block), never late, float tempos and pauses too. | A4, A6 |
 | D9 | **Delay glide** (patch 0003). | Every tempo change otherwise clicks in the echoes (T6). | crossfade |
-| D10 | Scripting API: **generated typed classes** from the firmware's descriptor tables (§8). | R5. | A7 |
+| D10 | Scripting API: **generated typed classes** from the firmware's descriptor tables (§8). As built (M4): every parameter a real ClassDB property (GDScript's analyzer knows its name, type and enum); a game raises `debug/gdscript/warnings/unsafe_property_access` to Error (the demo does) for a misspelled property to be a parse error — Godot 4.7 only warns of an unknown property, even on `Node` (enum values and types it checks always). | R5. *Measured* (M4): `demo/tests/typo/`: a typo in a property, an enum value, an engine view's property, a song property: four parse errors; spelled right, it parses. | A7 |
 | D11 | Scheduling on the audio thread in the board file, keyed to (track, loop, step) or timeline positions, applied before the half in which the step starts; relative targets resolved on the audio thread. | Knock prototype exact (T9). | — |
 | D12 | Events: audio thread → lock-free queue (sample + `B` stamps) → signals **when heard**; plus a polled, heard-time snapshot for continuous visuals. | Polling alone misses steps, can't tag, reports rendered time. | A8 |
 | D13 | Projects: import plugin turns the web app's `.json` into a `FeluccaProject` resource (validated: format, version, size, CRC-32); loaded with `proj_import` + `project_restore_runtime`. As built (M3): the importer takes **`.felucca`** files (the export renamed: an importer of `.json` would take every JSON file of the game); `FeluccaProject.load_json(path)` reads the `.json` itself at run time; name, BPM and engines from the core's `project_info`. | R2; *measured* with the user's export (T11; M3: imported and played in Godot). | backup → flash image (user samples, later) |
@@ -218,7 +218,7 @@ create_tween().tween_property(FeluccaConductor, "tempo", 140.0, 2.0)
 
 @onready var cellar: FeluccaSource3D = $Cellar/Drone
 var bass: FeluccaPart = cellar.part_1                    # part_1..part_4, also parts: Array[FeluccaPart]
-bass.arp_rate = FeluccaPart.ArpRate.R_1_16               # stored on the source; applied now if bound, on binding if not
+bass.arp_rate = FeluccaPart.ArpRate.ARP_RATE_1_16        # stored on the source; applied now if bound, on binding if not
 var synth := bass.analog                                 # FeluccaAnalog, null unless the engine is ANALOG
 if synth: create_tween().tween_method(func(v: int) -> void: synth.cutoff = v, 30, 127, 0.8)
 
@@ -236,6 +236,17 @@ the next mix step starts), `running`, `play()`, `stop()`, `boot_pool()`, `pool_s
 `_HOLD`), `is_bound()`, `get_position()` (the instance's snapshot, a Dictionary), and the player's own `play()`,
 `stop()`, `stream_paused`; `FeluccaProject`: `project_name`, `bpm`, `engines`, `firmware`, `slot`, `data`,
 `load_json(path)`, `from_json(text)`. `demo/main.tscn` plays the user's project in two `FeluccaSource2D`s.
+
+As built (M4): `FeluccaSource*.part_1` .. `part_4` / `parts` (`FeluccaPart`), `song` (`FeluccaSong`), `overrides`
+(`FeluccaOverrides`: `entries` of `FeluccaOverride` {`part` 1..4, `param` a `FeluccaPart.Param`, `value`}, `muted`
+parts); `FeluccaPart`: one property a parameter, `engine` (`FeluccaPart.Engine`), a view a engine (`analog` ..
+`slice`, typed `FeluccaAnalog` ..: `null` unless it is the part's engine). Enum constants carry their enum's name, as
+Godot's do (a class's constants share one namespace): `FeluccaPart.ArpRate.ARP_RATE_1_16`, `FeluccaPart.Engine.ENGINE_ANALOG`,
+`FeluccaAnalog.Wave.WAVE_SIN`, `FeluccaPart.Param.PARAM_SEQ_LENGTH`. Values (§4.2): a part bound reads and writes its
+instance under the lock (no command queue yet); unbound it keeps what is set, reading what was set, else its
+overrides', else its project's (the core's `project_info`: ABI 4), else the descriptor's default; a binding applies
+engines, overrides, then what was set; setting an engine loads its first preset, forgets the old engine's eight and
+applies the part's other set values again.
 
 Conventions: steps **1-based** in the API (as on the device), 0-based inside; raw firmware integers with range hints;
 optional normalized floats. Actions: `hit`, `note`, `set(part, Param, value)`, `pattern(part, FeluccaPattern)`, `mark`.
@@ -333,6 +344,13 @@ Rules (from the real tables, `gen_preview.py`):
   fallbacks so a Felucca update never silently renames.
 - Mode-dependent engine descriptors (`e->desc`) exist at runtime; the generator uses `edit[]`, the core clamps anyway.
 - Counts (1.6.1): FeluccaPart 88 properties, song 17, 31 enums, 13 engine views.
+- As built (M4): `core/tools/dump_params.c` (white-box: every track parameter by id, every global and whether the core
+  takes a write of it, the pages, each engine's `edit[]`) → `extension/codegen/gen_api.py` (+ `names.json`) → C++
+  tables, 13 view classes, the class reference (compiled in: the editor's help); SCons runs the chain. Parameters on
+  no page are made too (pattern LEN DIV SWG GATE, QUANTIZE, the mod matrix's slots 2–4), the placeholder pages STEP
+  DETAIL MIXER skipped, P_ED_FX (unused) left out; `names.json` renames by id *and* the label it must still have (a
+  relabel or a move fails the build). 1.6.1: FeluccaPart 102 properties, FeluccaSong 11 (the core's writable globals),
+  13 engine views; 58 enums.
 
 ## 9. Web export (D16)
 
@@ -463,6 +481,12 @@ pool.
 17. **Decided, deferred to M5/M6:** a source that processes while the tree is paused (`PROCESS_MODE_ALWAYS`, e.g.
     pause-menu music) should keep its own musical time while `B` stands, and rejoin `B` (`locate`) on unpause. Until
     then the conductor pauses every bound source (D7).
+18. Method typos stay warnings unless `unsafe_method_access` is raised too, which most untyped code trips (a
+    Dictionary's `.map`); the demo raises property access only.
+19. Changing the importer's format version did not make the 4.7.2 editor re-import (`--import` kept version 1): the
+    resource computes what an older import lacks from its bytes (`FeluccaProject.fill_values`).
+20. A bound part's reads and writes take `AudioServer.lock()` each (cheap, but a tween of several values a frame takes
+    it several times); §4.2's per-instance command queue would replace them.
 
 ## 14. Implementation plan
 
@@ -471,7 +495,7 @@ pool.
 | M1 | `core/`: board file + `fel_core_t` (params, engines, projects incl. JSON validation, transport, render with `B`), rename-based pool build (N copies), C tests from the prototypes | T1–T4, T8, T11 as C tests, on Linux; 2-copy link test detects an unrenamed global. **Done** (2026-10-24): `core/tests/run.sh` |
 | M2 | `locate()` + host clock from `B` + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents. **Done** (2026-10-24): `core/tests/run.sh` |
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources. **Done** (2026-10-24): `extension/run_tests.sh` |
-| M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error |
+| M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
 | M5 | Pool: scoring, hysteresis, prefetch, worker binding, spares, fades | the cellar/hallway/bedroom scenario with N = 8 |
 | M6 | Scheduler + events + heard-time signals; `FeluccaWhen`/`FeluccaAction`; `FeluccaPattern` | the knock-and-door scene |
 | M7 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |

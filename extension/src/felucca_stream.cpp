@@ -18,6 +18,7 @@ Ref<AudioStreamPlayback> FeluccaStream::_instantiate_playback() const {
 	if (project.is_valid()) {
 		p->data = project->get_data();
 	}
+	p->values = values;
 	p->source = source;
 	p->quantize = quantize;
 	p->join = join;
@@ -35,6 +36,9 @@ FeluccaPlayback::FeluccaPlayback() {
 FeluccaPlayback::~FeluccaPlayback() {
 	if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
 		c->remove_playback(this);
+	}
+	if (std::shared_ptr<FelValues> v = values.lock(); v && v->core == core) {
+		v->core = nullptr;
 	}
 	if (slot >= 0) {
 		felucca::Engine::get().release(slot);
@@ -64,6 +68,10 @@ void FeluccaPlayback::_start(double p_from_pos) {
 		e.release(slot);
 		slot = -1;
 		return;
+	}
+	if (std::shared_ptr<FelValues> v = values.lock()) { // the source's overrides and what its scripts set; from now
+		v->apply(c);                                     // its parts write through to c
+		v->core = c;
 	}
 	core = c;
 	if (FeluccaConductor *fc = FeluccaConductor::get_singleton()) {

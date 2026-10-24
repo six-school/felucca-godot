@@ -82,6 +82,20 @@ int main(int argc, char **argv)
         CHECK(eng && !c->engine_name(-1) && !c->engine_name(NENGINES) && !strcmp(c->engine_name(1), "-"),
               "T11 info: PHASE PHASE LOFI DRUM; engine names, the retired slot '-'");
         CHECK(c->param_get(0, CUT) == 77 && c->engine_get(0) == 0, "T11 info: the instance untouched");
+        CHECK(info.p[0][P_SLEN] == 32 && info.p[3][P_SLEN] == 16 && info.g[G_BPM] == 68,
+              "T11 info: its values (track 1 LEN %d, track 4 LEN %d, BPM %d)", info.p[0][P_SLEN], info.p[3][P_SLEN],
+              info.g[G_BPM]);
+        {   /* the same as loading puts them: every track parameter of every track */
+            fel_project_info_t i2;
+            int same = 1, k2, id;
+            c->project_info(file_.data, file_.size, &i2);
+            c->project_import(file_.data, file_.size);
+            for (k2 = 0; k2 < 4; k2++)
+                for (id = 0; id < P_COUNT; id++)
+                    same &= i2.p[k2][id] == c->param_get(k2, id);
+            CHECK(same, "T11 info: every value as project_import loads it");
+            c->param_set(0, CUT, 77);
+        }
         CHECK(c->project_info(bad, FEL_PROJECT_SIZE, &info) == 1 && c->project_info(file_.data, 100, &info) == 1,
               "T11 info: not a project: 1");
     }

@@ -20,6 +20,7 @@ void FelSource::update(Node *p_owner) {
 		stream->source = p_owner->get_instance_id();
 	}
 	stream->project = project;
+	stream->values = values;
 	stream->quantize = quantize;
 	stream->join = join;
 	if (Object::cast_to<FeluccaStream>(p_owner->call("get_stream")) != stream.ptr()) {
@@ -74,6 +75,33 @@ bool FelSource::bound(Node *p_owner) const {
 	return p && p->is_bound();
 }
 
+Ref<FeluccaPart> FelSource::part(int p_index) {
+	if (p_index < 0 || p_index >= FEL_TRACKS) {
+		return Ref<FeluccaPart>();
+	}
+	if (parts[p_index].is_null()) {
+		parts[p_index].instantiate();
+		parts[p_index]->init(values, p_index);
+	}
+	return parts[p_index];
+}
+
+TypedArray<FeluccaPart> FelSource::all_parts() {
+	TypedArray<FeluccaPart> a;
+	for (int i = 0; i < FEL_TRACKS; i++) {
+		a.push_back(part(i));
+	}
+	return a;
+}
+
+Ref<FeluccaSong> FelSource::get_song() {
+	if (song.is_null()) {
+		song.instantiate();
+		song->init(values);
+	}
+	return song;
+}
+
 template <typename T>
 void FelSource::bind() {
 	ClassDB::bind_method(D_METHOD("set_project", "project"), &T::set_project);
@@ -84,7 +112,23 @@ void FelSource::bind() {
 	ClassDB::bind_method(D_METHOD("get_join"), &T::get_join);
 	ClassDB::bind_method(D_METHOD("is_bound"), &T::is_bound);
 	ClassDB::bind_method(D_METHOD("get_position"), &T::get_position);
+	ClassDB::bind_method(D_METHOD("set_overrides", "overrides"), &T::set_overrides);
+	ClassDB::bind_method(D_METHOD("get_overrides"), &T::get_overrides);
+	ClassDB::bind_method(D_METHOD("_get_part", "index"), &T::_get_part);
+	ClassDB::bind_method(D_METHOD("get_parts"), &T::get_parts);
+	ClassDB::bind_method(D_METHOD("get_song"), &T::get_song);
 	const StringName c = T::get_class_static();
+	for (int i = 0; i < FEL_TRACKS; i++) { // (part_1 .. part_4: as the device counts them)
+		ClassDB::add_property(c, PropertyInfo(Variant::OBJECT, "part_" + String::num_int64(i + 1), PROPERTY_HINT_NONE, "",
+										 PROPERTY_USAGE_NONE, "FeluccaPart"),
+				"", "_get_part", i);
+	}
+	ClassDB::add_property(c, PropertyInfo(Variant::ARRAY, "parts", PROPERTY_HINT_ARRAY_TYPE, "FeluccaPart", PROPERTY_USAGE_NONE),
+			"", "get_parts");
+	ClassDB::add_property(c, PropertyInfo(Variant::OBJECT, "song", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE, "FeluccaSong"),
+			"", "get_song");
+	ClassDB::add_property(c, PropertyInfo(Variant::OBJECT, "overrides", PROPERTY_HINT_RESOURCE_TYPE, "FeluccaOverrides"),
+			"set_overrides", "get_overrides");
 	ClassDB::add_property(c, PropertyInfo(Variant::OBJECT, "project", PROPERTY_HINT_RESOURCE_TYPE, "FeluccaProject"),
 			"set_project", "get_project");
 	ClassDB::add_property(c, PropertyInfo(Variant::INT, "quantize", PROPERTY_HINT_ENUM, "Now,Beat,Bar"), "set_quantize",

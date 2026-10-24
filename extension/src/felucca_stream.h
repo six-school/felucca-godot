@@ -6,6 +6,7 @@
 #pragma once
 
 #include "fel_core.h"
+#include "felucca_api.h"
 #include "felucca_project.h"
 
 #include <godot_cpp/classes/audio_stream.hpp>
@@ -23,6 +24,7 @@ protected:
 
 public:
 	Ref<FeluccaProject> project;
+	std::shared_ptr<FelValues> values; // its source's typed values (applied at binding)
 	ObjectID source; // the FeluccaSource it is the stream of (its pause, its settings)
 	int quantize = 0, join = 0; // FeluccaSource's enums
 
@@ -56,6 +58,7 @@ public:
 	// set by its stream when made (main thread): the project's bytes, not the resource (a playback still mixing when
 	// the game quits is never freed by Godot 4.7: it would keep the resource "in use")
 	PackedByteArray data;
+	std::weak_ptr<FelValues> values; // (weak: a playback Godot never frees at quit must not keep the resources)
 	ObjectID source;
 	int quantize = 0, join = 0;
 	// published under the lock (main thread), read by _mix (audio thread)

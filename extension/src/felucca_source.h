@@ -4,6 +4,7 @@
 // M5 adds the pool's scoring.
 #pragma once
 
+#include "felucca_api.h"
 #include "felucca_project.h"
 
 #include <godot_cpp/classes/audio_stream_player.hpp>
@@ -19,6 +20,13 @@ struct FelSource {
 	Ref<FeluccaProject> project;
 	int quantize = 0, join = 0;
 	Ref<FeluccaStream> stream;
+	std::shared_ptr<FelValues> values = std::make_shared<FelValues>(); // (its parts', its song's, its playbacks')
+	Ref<FeluccaPart> parts[FEL_TRACKS];
+	Ref<FeluccaSong> song;
+
+	Ref<FeluccaPart> part(int p_index);
+	Ref<FeluccaSong> get_song();
+	TypedArray<FeluccaPart> all_parts();
 
 	void update(Node *p_owner);
 	void notification(Node *p_owner, int p_what);
@@ -38,8 +46,14 @@ protected:                                                                      
 public:                                                                                             \
 	void set_project(const Ref<FeluccaProject> &p_project) {                                        \
 		src.project = p_project;                                                                    \
+		src.values->project = p_project;                                                            \
 		src.update(this);                                                                           \
 	}                                                                                               \
+	void set_overrides(const Ref<FeluccaOverrides> &p_v) { src.values->overrides = p_v; }           \
+	Ref<FeluccaOverrides> get_overrides() const { return src.values->overrides; }                   \
+	Ref<FeluccaPart> _get_part(int p_index) { return src.part(p_index); }                           \
+	TypedArray<FeluccaPart> get_parts() { return src.all_parts(); }                                 \
+	Ref<FeluccaSong> get_song() { return src.get_song(); }                                          \
 	Ref<FeluccaProject> get_project() const { return src.project; }                                 \
 	void set_quantize(int p_v) {                                                                    \
 		src.quantize = p_v;                                                                         \

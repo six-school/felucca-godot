@@ -19,5 +19,20 @@ for rate in 44100 48000; do
     grep -E "^(ERROR|SCRIPT ERROR)" build/m3_test_$rate.log | grep -v "FeluccaProject: \"format\"\|not a Felucca project" || true
 done
 rm -f demo/override.cfg
+echo "== demo/tests/m4_test.tscn"
+timeout 180 "$G" --headless --audio-driver Dummy --path demo res://tests/m4_test.tscn > build/m4_test.log 2>&1 || fail=1
+grep -E "^(ok|FAIL|m4_test)" build/m4_test.log || true
+grep -E "^(ERROR|SCRIPT ERROR)" build/m4_test.log || true
+# M4 done when a typo is a parse error: the typed API spelled right parses, each script with one typo does not
+echo "== demo/tests/typo: the typed API checked by GDScript's analyzer"
+for f in demo/tests/typo/*.gd; do
+    n=$(basename "$f")
+    if timeout 60 "$G" --headless --path demo --check-only --script "res://tests/typo/$n" > "build/typo_$n.log" 2>&1; then r=0; else r=1; fi
+    e=$(grep -m1 -E "Parse Error|SCRIPT ERROR" "build/typo_$n.log" | sed 's/^ *//' | cut -c1-110)
+    case $n in
+        ok.gd) [ $r = 0 ] && [ -z "$e" ] && echo "ok   $n parses" || { echo "FAIL $n: $e"; fail=1; } ;;
+        *) [ $r != 0 ] && [ -n "$e" ] && echo "ok   $n: $e" || { echo "FAIL $n parsed"; fail=1; } ;;
+    esac
+done
 [ $fail = 0 ] && echo "extension: all passed" || echo "extension: FAILED"
 exit $fail

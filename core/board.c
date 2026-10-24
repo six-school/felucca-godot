@@ -18,7 +18,8 @@
 #include "web/emu/felucca_web.c"
 #include "fel_core.h"
 
-_Static_assert(PROJ_STORE_SIZE == FEL_PROJECT_SIZE && NTRK == FEL_TRACKS && FS == FEL_RATE, "fel_core.h's constants");
+_Static_assert(PROJ_STORE_SIZE == FEL_PROJECT_SIZE && NTRK == FEL_TRACKS && FS == FEL_RATE && P_COUNT <= FEL_PARAMS &&
+               G_COUNT <= FEL_GLOBALS, "fel_core.h's constants");
 
 #define FEL_BOOT_MS 1500u               /* device time run at boot: past the splash (430 ms) and the LED sweep, as every
                                          * prototype measured */
@@ -406,8 +407,14 @@ static int32_t core_project_info(const uint8_t *b, uint32_t n, fel_project_info_
     memset(out, 0, sizeof *out);
     (void)proj_name_get(out->name, (const uint8_t *)fel_info_proj.name);
     out->bpm = clamp(fel_info_proj.g[G_BPM], GP[G_BPM].min, GP[G_BPM].max);
-    for (k = 0; k < NTRK; k++)
-        out->engine[k] = fel_info_proj.t[k].engine;
+    for (k = 0; k < NTRK; k++) {
+        uint32_t e = fel_info_proj.t[k].engine, i;
+        out->engine[k] = (int32_t)e;
+        for (i = 0; i < P_COUNT; i++)                   /* (project_restore_runtime: param_fit to the engine's) */
+            out->p[k][i] = (int16_t)param_fit(param_desc_of(e, i), fel_info_proj.t[k].p[i]);
+    }
+    for (k = 0; k < G_COUNT; k++)
+        out->g[k] = (int16_t)clamp(fel_info_proj.g[k], GP[k].min, GP[k].max);
     return 0;
 }
 

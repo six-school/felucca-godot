@@ -13,6 +13,7 @@
 # at another rate (the playback resamples) what an instance has rendered ahead of what was heard, up to a half (128
 # frames), differs between instances started at different times, and their blocks fall unlike: within a half and a
 # block (160 samples) there.
+class_name M3Test
 extends Node
 
 const N := 8
@@ -25,7 +26,7 @@ var told := 0                      # pauses / unpauses the probe heard
 var told_late := 0                 # .. with a source not yet paused / unpaused by the conductor
 
 class Probe extends Node:          # a scene node before the sources: by the time it hears the pause, the conductor
-	var test: Node                 # has paused (unpaused) every one
+	var test: M3Test               # has paused (unpaused) every one
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_PAUSED or what == NOTIFICATION_UNPAUSED:
 			test.told += 1

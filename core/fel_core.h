@@ -9,12 +9,14 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 3                  /* bump on any change to this file (2: locate, the passes in the snapshot;
-                                         * 3: project_info, engine_name) */
+#define FEL_CORE_ABI 4                  /* bump on any change to this file (2: locate, the passes in the snapshot;
+                                         * 3: project_info, engine_name; 4: project_info's values) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
 #define FEL_INVALID INT32_MIN           /* a parameter call on a track / id that does not exist, or one the core owns */
+#define FEL_PARAMS 128                  /* track parameter ids are below this (the formats keep P_COUNT under 128) */
+#define FEL_GLOBALS 32                  /* .. global ids */
 
 typedef struct {
     uint32_t playing;
@@ -29,6 +31,8 @@ typedef struct {
     char name[16];                      /* as the device shows it ("" for none) */
     int32_t bpm;                        /* the project's own tempo (information: the conductor's is the game's) */
     int32_t engine[FEL_TRACKS];         /* each track's engine (engine_name) */
+    int16_t p[FEL_TRACKS][FEL_PARAMS];  /* each track's parameters as loading puts them (inside the engine's ranges) */
+    int16_t g[FEL_GLOBALS];             /* the globals, as stored (the core keeps CLK and ROUT its own when it loads) */
 } fel_project_info_t;
 
 typedef struct {

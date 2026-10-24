@@ -5,6 +5,7 @@
 
 #include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 
 namespace godot {
@@ -16,6 +17,9 @@ class FeluccaProject : public Resource {
 	String firmware, project_name;
 	int64_t slot = -1, bpm = 0;
 	PackedStringArray engines;
+	mutable PackedInt32Array engine_ids, track_values, song_values; // (the typed API's while no instance plays it;
+																	// from data when an older import has none)
+	void fill_values() const;
 
 protected:
 	static void _bind_methods();
@@ -38,6 +42,21 @@ public:
 	int64_t get_bpm() const { return bpm; }
 	void set_engines(const PackedStringArray &p_v) { engines = p_v; }
 	PackedStringArray get_engines() const { return engines; }
+	void set_engine_ids(const PackedInt32Array &p_v) { engine_ids = p_v; }
+	PackedInt32Array get_engine_ids() const {
+		fill_values();
+		return engine_ids;
+	}
+	void set_track_values(const PackedInt32Array &p_v) { track_values = p_v; }
+	PackedInt32Array get_track_values() const {
+		fill_values();
+		return track_values;
+	}
+	void set_song_values(const PackedInt32Array &p_v) { song_values = p_v; }
+	PackedInt32Array get_song_values() const {
+		fill_values();
+		return song_values;
+	}
 };
 
 } // namespace godot

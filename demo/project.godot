@@ -17,3 +17,7 @@ config/features=PackedStringArray("4.7")
 [autoload]
 
 Felucca="*res://addons/felucca/felucca.tscn"
+
+[debug]
+
+gdscript/warnings/unsafe_property_access=2

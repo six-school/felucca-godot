@@ -18,9 +18,29 @@ core_lib = env.Command(
     "OUT=%s core/build.sh %d" % (core_dir, POOL),
 )
 
-env.Append(CPPPATH=["extension/src", "core"])
+# the typed API (D10, §8): the firmware's tables (core/tools/dump_params.c) -> extension/codegen/gen_api.py -> C++ tables
+# and the class reference
+felucca = "third_party/felucca"
+version = open(felucca + "/firmware/src/felucca.c").read().split('#define FELUCCA_VERSION "', 1)[1].split('"', 1)[0]
+dump = env.Command(
+    "build/gen_api/dump_params",
+    ["core/tools/dump_params.c", "core/board.c", "core/fel_core.h"] + Glob(felucca + "/firmware/src/*.c") +
+    Glob(felucca + "/firmware/src/*.h"),
+    "clang -O1 -ffp-contract=off -std=gnu99 -w '-DFELUCCA_VERSION=\"%s\"' -I%s -I%s/build/gen -I%s/firmware/src -Icore "
+    "-o $TARGET core/tools/dump_params.c -lm" % (version, felucca, felucca, felucca),
+)
+params = env.Command("build/gen_api/params.json", dump, "$SOURCE > $TARGET")
+gen = env.Command(
+    ["build/gen_api/felucca_api.gen.cpp", "build/gen_api/felucca_api.gen.h", "build/gen_api/doc_data.gen.cpp"],
+    [params, "extension/codegen/gen_api.py", "extension/codegen/names.json"],
+    "python3 -I extension/codegen/gen_api.py ${SOURCES[0]} extension/codegen/names.json build/gen_api third_party/godot-cpp",
+)
+
+env.Append(CPPPATH=["extension/src", "core", "build/gen_api"])
 env.Append(CPPDEFINES=[("FEL_POOL_SIZE", POOL)])
-sources = Glob("extension/src/*.cpp")
+sources = Glob("extension/src/*.cpp") + [gen[0]]
+if env["target"] in ["editor", "template_debug"]:
+    sources.append(gen[2])
 # only the GDExtension entry is exported: the core copies' own exports (felucca_web.c's web_*) stay inside
 env.Append(LINKFLAGS=["-Wl,--version-script=extension/felucca.version", "-Wl,--no-undefined"])
 env.Prepend(LIBS=[core_lib])
