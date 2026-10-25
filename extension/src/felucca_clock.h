@@ -1,6 +1,6 @@
 // The conductor's per-mix-step hook (D6, T12): an effect on a muted, empty bus that asks to run in silence too. Godot
-// mixes every playback first and processes the buses' effects after, so this sees the end of each mix step: B moved
-// over it, and the plan of the next one is made here (felucca::Engine::audio_step).
+// mixes every playback first and processes the buses' effects after, so this sees the end of each mix step: the
+// conductor's timeline moved over it, and the plan of the next one is made here (felucca::Engine::audio_step).
 #pragma once
 
 #include <godot_cpp/classes/audio_effect.hpp>

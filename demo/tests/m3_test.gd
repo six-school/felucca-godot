@@ -1,6 +1,7 @@
 # M3's checks in Godot 4.7.2 (extension/run_tests.sh: headless, the Dummy audio driver, which mixes on a thread of its
 # own under the driver lock, as the real drivers do):
-#   T12  the clock effect runs once a mix step on its muted bus, during a tree pause too, with B standing still
+#   T12  the clock effect runs once a mix step on its muted bus, during a tree pause too, with the conductor's timeline
+#        standing still
 #   T13  7 sources, 4000 nodes between each, started in one frame (one of them PROCESS_MODE_ALWAYS: paused all the
 #        same, DESIGN.md D7): through 300 tree pause / unpause cycles, each pause stops every source before any scene
 #        node hears it (the Felucca autoload hears it first), each unpause starts every one again, their music stays
@@ -108,14 +109,17 @@ func _ready() -> void:
 	await wait(2.0)
 	var steps := FeluccaConductor.get_mix_steps() - s0
 	var moved := FeluccaConductor.beats - b0
-	check(steps > 100 and abs(moved - 2.0 * 68 / 60) < 0.2, "T12 the clock: %d mix steps in 2 s, B moved %.3f beats (%.3f at 68 BPM)"
+	check(steps > 100 and abs(moved - 2.0 * 68 / 60) < 0.2,
+		"T12 the clock: %d mix steps in 2 s, the conductor's timeline moved %.3f beats (%.3f at 68 BPM)"
 		% [steps, moved, 2.0 * 68 / 60])
 	get_tree().paused = true
 	var p0 := FeluccaConductor.get_paused_mix_steps()
 	var bp := FeluccaConductor.beats
 	await wait(1.0)
 	var ps := FeluccaConductor.get_paused_mix_steps() - p0
-	check(ps > 50 and FeluccaConductor.beats == bp, "T12 paused: the clock ran (%d mix steps), B stood (%.6f)" % [ps, FeluccaConductor.beats - bp])
+	check(ps > 50 and FeluccaConductor.beats == bp,
+		"T12 paused: the clock ran (%d mix steps), the conductor's timeline stood (%.6f)"
+		% [ps, FeluccaConductor.beats - bp])
 	get_tree().paused = false
 
 	# ---- T13

@@ -46,7 +46,7 @@ run "T1 T2: CUT and ARP RATE from code" "$OUT/test_params"
 run "T3 T11: projects, the user's export" "$OUT/test_project" "$FIX"
 run "T4: CPU of the heavy song" "$OUT/test_cpu"
 run "T8: the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIX"
-run "T5: step timing on B, tempo tweened (int, float), paused" "$OUT/test_timing"
+run "T5: step timing on the conductor's timeline, tempo tweened (int, float), paused" "$OUT/test_timing"
 run "T6: no clicks in the delay when the tempo moves it" "$OUT/test_delay"
 run "locate: an instance that joins = one that played since the origin" "$OUT/test_locate"
 

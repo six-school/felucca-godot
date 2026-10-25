@@ -1,7 +1,7 @@
 /* T4 (docs/DESIGN.md §10): the cost of one instance playing the heavy test song (felucca_web.c web_test_heavy: FM6
- * pad, PHYS drone, GRAIN cloud, 4-note chords on every step, DRUM) on B, as a share of one core. White-box (one copy
- * compiled in) for the song; the rest through fel_core_t. The bound is loose (machines differ): it catches an order of
- * magnitude, the number is printed. */
+ * pad, PHYS drone, GRAIN cloud, 4-note chords on every step, DRUM) on the conductor's timeline, as a share of one core.
+ * White-box (one copy compiled in) for the song; the rest through fel_core_t. The bound is loose (machines differ): it
+ * catches an order of magnitude, the number is printed. */
 #include "board.c"
 #include "drive.h"
 #include "check.h"
@@ -14,7 +14,7 @@ int main(void)
     double s;
     c->boot();
     web_test_heavy();
-    c->play(drive_b);
+    c->play(drive_timeline);
     drive1(c, frames_ms(500), 0);
     clock_gettime(CLOCK_MONOTONIC, &a);
     drive1(c, 10 * FEL_RATE, 0);

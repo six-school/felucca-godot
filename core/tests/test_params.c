@@ -1,7 +1,8 @@
 /* T1, T2 (docs/DESIGN.md §10) through fel_core_t: parameters set directly from code take effect live, never through
  * the emulated UI. White-box: one copy compiled in (board.c), the firmware's own ids and state for the checks.
  *   T1  ANALOG's CUT while a note is held: the sound brightens with it, CUT 0 near-silent
- *   T2  ARP RATE: every value plays at its note length, with the transport stopped and playing, at the tempo of B
+ *   T2  ARP RATE: every value plays at its note length, with the transport stopped and playing, at the tempo of the
+ *      conductor's timeline
  * plus the API's edges: clamping, ids that do not exist, the globals the core keeps for itself. */
 #include "board.c"
 #include "drive.h"
@@ -79,7 +80,7 @@ int main(void)
         drive1(c, frames_ms(500), 0);
     }
 
-    /* ---- T2: ARP RATE, every value: the arp's own steps counted (arp_idx), against its note length at B's tempo ---- */
+    /* ---- T2: ARP RATE, every value: the arp's steps (arp_idx) vs its note length at the timeline's tempo ---- */
     {
         static const char *const NAME[10] = {"1/4", "1/8", "1/16", "1/32", "8T", "16T", "1/2", "1/1", "2BAR", "4BAR"};
         static const double BEATS[10] = {1, 0.5, 0.25, 0.125, 1.0 / 3, 1.0 / 6, 2, 4, 8, 16};
@@ -104,9 +105,9 @@ int main(void)
             printf("  T2 ARP RATE %-4s (stopped): %3u steps in %4.1f s, %5.1f expected\n", NAME[k], got, sec, want);
             CHECK(fabs(got - want) <= 1.0, "T2: ARP RATE %s, stopped: %u steps, %.1f expected", NAME[k], got, want);
         }
-        /* playing (an empty pattern), then at another tempo: B's */
+        /* playing (an empty pattern), then at another tempo: the timeline's */
         c->param_set(0, P_ARATE, 2);
-        c->play(drive_b);
+        c->play(drive_timeline);
         for (k = 0; k < 2; k++) {
             uint32_t i0, got;
             double want;

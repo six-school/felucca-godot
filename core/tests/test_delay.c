@@ -30,14 +30,14 @@ static void scenario(const char *name, int prog, const fel_test_t *on, const fel
     float *ls[2] = {wet_on, wet_off};
     uint32_t i, k, n = SECS * FEL_RATE, a = 5u * FEL_RATE, jumps = 0, changes = 0, last_len = 0;
     double last_bpm = 0, p99, big = 0, r = 0;
-    drive_b = 0;
+    drive_timeline = 0;
     for (k = 0; k < 2; k++) {
         xs[k]->core->boot();
         xs[k]->setup(k ? FEL_TEST_DELAY_DRY : FEL_TEST_DELAY);
     }
     for (k = 0; k < 2; k++) {
         xs[k]->core->tempo(128);
-        xs[k]->core->play(drive_b);
+        xs[k]->core->play(drive_timeline);
         xs[k]->core->note(0, 57, 100);                  /* A3, held */
     }
     for (i = 0; i < n; i += 512) {

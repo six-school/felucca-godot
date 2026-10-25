@@ -1,12 +1,14 @@
-/* M2's locate (docs/DESIGN.md §6.4) on test copies (core/tests/test_hooks.c) sharing one timeline B, all rendering
- * the same chunks from boot (so their blocks fall alike): an instance that joins by locate(origin) must from then on be
- * where one that played continuously since origin is. Compared every chunk of 32 frames, on every track: the step, the
- * samples into it, the passes through LEN (snapshot); the conditions' loop, the nudge latches, an automated PAN.
+/* M2's locate (docs/DESIGN.md §6.4) on test copies (core/tests/test_hooks.c) sharing one timeline (the conductor's),
+ * all rendering the same chunks from boot (so their blocks fall alike): an instance that joins by locate(origin) must
+ * from then on be where one that played continuously since origin is. Compared every chunk of 32 frames, on every
+ * track: the step, the samples into it, the passes through LEN (snapshot); the conditions' loop, the nudge latches, an
+ * automated PAN.
  * FEL_TEST_LOCATE's pattern: 1/16 x 13 swung, 1/8T x 7 with nudges late and early (QUANTIZE OFF), 1/4 x 5 with PAN
  * automation, DRUM 1/16 x 16 with conditions 2:2 and 1:3; global swing.
- *   A  120 BPM: copy 0 plays from B0; 1 locates at 3.10 s, 2 at 6.77 s; 7 plays from another origin and is relocated
- *      to B0 at 5.00 s; 3 locates to B0 + 12 (ahead) at 1 s, against 4, which play()s at B0 + 12 at 1 s. Exact.
- *   B  copies 5 (plays from B0) and 6 (locates at 7.00 s), the tempo tweened 120 -> 133.7 between 4 and 6 s (every mix
+ *   A  120 BPM: copy 0 plays from b0 (the timeline at the start); 1 locates at 3.10 s, 2 at 6.77 s; 7 plays from
+ *      another origin and is relocated to b0 at 5.00 s; 3 locates to b0 + 12 (ahead) at 1 s, against 4, which
+ *      play()s at b0 + 12 at 1 s. Exact.
+ *   B  copies 5 (plays from b0) and 6 (locates at 7.00 s), the tempo tweened 120 -> 133.7 between 4 and 6 s (every mix
  *      step): continuous play rescaled its phases at each change, locate computes them at the tempo it finds; the
  *      same steps and passes, the positions within 2 samples.
  * And the instance that joins sounds nothing of the step it lands in (copy 1: silent until a step starts), then plays. */
@@ -59,7 +61,7 @@ int main(void)
         {"locate at 3.10 s", 1, 0, 1, 3.10, 0, 0, 0, 0, 0},
         {"locate at 6.77 s", 2, 0, 1, 6.77, 0, 0, 0, 0, 0},
         {"playing from elsewhere, relocated at 5.00 s", 7, 0, 1, 5.00, 0, 0, 0, 0, 0},
-        {"origin ahead (locate at 1 s to B0 + 12) = play()", 3, 4, 1, 1.00, 0, 0, 0, 0, 0},
+        {"origin ahead (locate at 1 s to b0 + 12) = play()", 3, 4, 1, 1.00, 0, 0, 0, 0, 0},
         {"after a tempo tween (locate at 7.00 s)", 6, 5, 0, 7.00, 0, 0, 0, 0, 0},
     };
     const int NCMP = (int)(sizeof c / sizeof c[0]);
@@ -73,11 +75,11 @@ int main(void)
         cs[k]->tempo(120);
     }
     drive(cs, NC, frames_ms(500), 0);
-    b0 = drive_b + 0.37;
+    b0 = drive_timeline + 0.37;
     cs[0]->play(b0);
     cs[5]->play(b0);
     cs[7]->play(b0 + 3.3);
-    bt = drive_b;
+    bt = drive_timeline;
     for (i = 0; i < n; i += CH) {
         double t = (double)i / FEL_RATE;
         if (i % 512u == 0) {                            /* B: copies 5 and 6 on a timeline of their own, tweened */
@@ -96,11 +98,11 @@ int main(void)
                     CHECK(cs[c[j].copy]->locate(b0) == 0, "%s: taken", c[j].what);
             }
         {
-            double a1 = drive_b + CH * 120.0 / (60.0 * FEL_RATE), b1 = bt + CH * bpm_b / (60.0 * FEL_RATE);
+            double a1 = drive_timeline + CH * 120.0 / (60.0 * FEL_RATE), b1 = bt + CH * bpm_b / (60.0 * FEL_RATE);
             for (k = 0; k < NC; k++)
-                cs[k]->render(CH, k == 5 || k == 6 ? bt : drive_b, k == 5 || k == 6 ? b1 : a1,
+                cs[k]->render(CH, k == 5 || k == 6 ? bt : drive_timeline, k == 5 || k == 6 ? b1 : a1,
                               k == 1 ? out1 + i : 0, 0);
-            drive_b = a1;
+            drive_timeline = a1;
             bt = b1;
         }
         for (j = 0; j < NCMP; j++)

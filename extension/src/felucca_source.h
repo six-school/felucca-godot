@@ -74,7 +74,8 @@ class FeluccaSource : public AudioStreamPlayer {
 	FELUCCA_SOURCE_BODY(FeluccaSource)
 
 public:
-	// where step 1 goes when play() is called: B where the next mix step starts, or that rounded up to a beat / a bar
+	// where step 1 goes when play() is called: the conductor's timeline where the next mix step starts, or that rounded
+	// up to a beat / a bar
 	enum Quantize { QUANTIZE_NOW, QUANTIZE_BEAT, QUANTIZE_BAR };
 	// on resuming after its own stream_paused: back where the music is (FOLLOW) or on from where it stopped (HOLD)
 	enum Join { JOIN_FOLLOW, JOIN_HOLD };

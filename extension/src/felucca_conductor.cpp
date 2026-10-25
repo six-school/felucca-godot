@@ -143,8 +143,8 @@ void FeluccaConductor::remove_playback(FeluccaPlayback *p_playback) {
 	pending.erase(std::remove(pending.begin(), pending.end(), p_playback), pending.end());
 }
 
-// every play() of this frame starts at one origin: B where the next mix step starts, rounded up to the source's
-// beat or bar (4 beats from B = 0) when it asks
+// every play() of this frame starts at one origin: the conductor's timeline where the next mix step starts, rounded up
+// to the source's beat or bar (4 beats from the timeline's 0) when it asks
 void FeluccaConductor::resolve_pending() {
 	if (pending.empty()) {
 		return;
@@ -160,10 +160,11 @@ void FeluccaConductor::resolve_pending() {
 	pending.clear();
 }
 
-// D7: one lock for B and every bound source, whatever its process mode (a source left playing would only ring on,
-// its music standing with B; DESIGN.md §13.17: its own time while B stands is for M5 / M6). A source its own
-// stream_paused had paused already is noted and left paused; one Godot will unpause (it is told the pause: it cannot
-// process while the tree is paused) is kept so through that (godot #65743) by its own UNPAUSED (FeluccaSource)
+// D7: one lock for the conductor's timeline and every bound source, whatever its process mode (a source left playing
+// would only ring on, its music standing with the timeline; DESIGN.md §13.17: its own time while the timeline stands is
+// for M5 / M6). A source its own stream_paused had paused already is noted and left paused; one Godot will unpause (it
+// is told the pause: it cannot process while the tree is paused) is kept so through that (godot #65743) by its own
+// UNPAUSED (FeluccaSource)
 void FeluccaConductor::tree_paused(bool p_paused) {
 	AudioServer::get_singleton()->lock();
 	felucca::Engine::get().paused = p_paused;

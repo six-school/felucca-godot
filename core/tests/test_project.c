@@ -1,8 +1,9 @@
 /* T3, T11 (docs/DESIGN.md §10) through fel_core_t, white-box (one copy compiled in):
  *   T3   a project's bytes out and back in: 3840 bytes, magic ANUF, values restored; damaged bytes refused; the clock
- *        and MIDI routing the project carries do not take the core's over (the transport plays on B after)
+ *        and MIDI routing the project carries do not take the core's over (the transport plays on the conductor's
+ *        timeline after)
  *   T11  the user's own export (tests/fixtures): JSON checked (core/project_json.c), imported, what it holds, played
- *        16 s on B at its own tempo
+ *        16 s on the conductor's timeline at its own tempo
  *   test_project tests/fixtures/Felucca-project-D-2026-10-24.json */
 #include "board.c"
 #include "project_json.h"
@@ -30,7 +31,7 @@ int main(int argc, char **argv)
     CHECK(c->project_export(proj) == FEL_PROJECT_SIZE && !memcmp(proj, "ANUF", 4), "T3: 3840 bytes out, magic ANUF");
     c->param_set(0, CUT, 0);
     c->param_set(1, P_SLEN, 16);
-    c->play(drive_b);
+    c->play(drive_timeline);
     drive1(c, frames_ms(500), 0);
     song.g[G_CLOCK] = 0;                               /* (as a project made on an internal clock carries it: the */
     song.g[G_ROUTE] = 1;                               /* export below stores these) */
@@ -42,13 +43,13 @@ int main(int argc, char **argv)
     CHECK(!song.playing, "T3: an import stops the transport");
     CHECK(c->project_import(bad, FEL_PROJECT_SIZE) == 0 && c->global_get(G_CLOCK) == 1 && c->global_get(G_ROUTE) == 0,
           "T3: a project's CLK and ROUT do not reach the core (still USB clock, CH1-4)");
-    c->play(drive_b);
+    c->play(drive_timeline);
     drive1(c, frames_ms(1000), 0);
     {
         fel_snapshot_t s;
         c->snapshot(&s);
-        CHECK(s.playing && fabs(s.beats - 2.0) < 0.01, "T3: after the import it plays on B (%.4f beats in 1 s at 120)",
-              s.beats);
+        CHECK(s.playing && fabs(s.beats - 2.0) < 0.01,
+              "T3: after the import it plays on the conductor's timeline (%.4f beats in 1 s at 120)", s.beats);
     }
     c->param_set(0, CUT, 77);
     memcpy(bad, proj, sizeof proj);
@@ -117,7 +118,7 @@ int main(int argc, char **argv)
         fel_snapshot_t s;
         drive_bpm = c->global_get(G_BPM);               /* the project's tempo, as the game may copy it */
         c->tempo(drive_bpm);
-        b0 = drive_b;
+        b0 = drive_timeline;
         c->play(b0);
         drive1(c, 16 * FEL_RATE, audio);
         c->snapshot(&s);
@@ -131,8 +132,9 @@ int main(int argc, char **argv)
         printf("\n");
         CHECK(pk > 0.1 && pk < 1.0 && lo > 0.02, "T11: it plays throughout (peak %.3f, quietest 2 s %.3f)", pk, lo);
         /* where the music is: 16 s at 68 BPM = 18.13 beats = 72.5 sixteenths; track 4 (LEN 16) in its step 9 */
-        CHECK(s.playing && fabs(s.beats - (drive_b - b0)) < 0.01 && s.track[3].step == 8,
-              "T11: at %.4f beats (B moved %.4f), track 4 on step %u", s.beats, drive_b - b0, s.track[3].step + 1);
+        CHECK(s.playing && fabs(s.beats - (drive_timeline - b0)) < 0.01 && s.track[3].step == 8,
+              "T11: at %.4f beats (the conductor's timeline moved %.4f), track 4 on step %u", s.beats, drive_timeline - b0,
+              s.track[3].step + 1);
     }
     return check_done("T3 T11 projects (core/tests/test_project.c)");
 }

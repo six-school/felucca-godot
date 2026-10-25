@@ -1,11 +1,11 @@
 // The conductor (D6, D7, §5.2): FeluccaConductor, an engine singleton as Input is (FeluccaConductor.tempo = 140.0),
-// owns the timeline B, its tempo and transport and the pool's playbacks. Its node, FeluccaConductorNode, is the
-// project's autoload (addons/felucca/felucca.tscn): Godot tells a pause to the root's children in the order they were
-// added (Node::_propagate_pause_notification walks data.children, not the child index), and autoloads are added before
-// the main scene, so it hears the tree's PAUSED / UNPAUSED before any scene node: it stops B and pauses every bound
-// source's player in one AudioServer::lock(), and Godot's own per-node pauses after it change nothing. It also owns
-// the clock effect's muted bus, and resolves each frame's play()s to one origin. Without the autoload one is added at
-// run time, after the scene: then the pause is not atomic (a warning says so).
+// owns the timeline, its tempo and transport and the pool's playbacks. Its node, FeluccaConductorNode, is the project's
+// autoload (addons/felucca/felucca.tscn): Godot tells a pause to the root's children in the order they were added
+// (Node::_propagate_pause_notification walks data.children, not the child index), and autoloads are added before the
+// main scene, so it hears the tree's PAUSED / UNPAUSED before any scene node: it stops the timeline and pauses every
+// bound source's player in one AudioServer::lock(), and Godot's own per-node pauses after it change nothing. It also
+// owns the clock effect's muted bus, and resolves each frame's play()s to one origin. Without the autoload one is added
+// at run time, after the scene: then the pause is not atomic (a warning says so).
 #pragma once
 
 #include <godot_cpp/classes/node.hpp>
@@ -33,10 +33,10 @@ public:
 
 	void set_tempo(double p_bpm);
 	double get_tempo() const;
-	void play(); // B moves
-	void stop(); // B stands (the sources stay where they are)
+	void play(); // the conductor's timeline moves
+	void stop(); // the conductor's timeline stands (the sources stay where they are)
 	bool is_running() const;
-	double get_beats() const; // B where the next mix step starts
+	double get_beats() const; // the conductor's timeline where the next mix step starts
 	int get_pool_size() const;
 	void boot_pool(); // boot every pool instance now (else each boots at its first play(), ~25 ms)
 	int get_bound_count() const;

@@ -1,15 +1,16 @@
 /* The board file (docs/DESIGN.md D2): Felucca's browser build, web/emu/felucca_web.c, included as it is and driven
  * headless by a game engine. On top of it this file owns the render loop around web_ms() (one device millisecond),
- * feeds PR 269's external-clock grid from the caller's timeline B (FELUCCA_HOST_CLOCK, patch 0002), and offers the
- * firmware's state as the table of core/fel_core.h.
+ * feeds PR 269's external-clock grid from the conductor's timeline (FELUCCA_HOST_CLOCK, patch 0002), and offers
+ * the firmware's state as the table of core/fel_core.h.
  *
  * One compiled copy of this file is one instance. core/build.sh compiles it N times with every global the firmware
  * defines renamed (D3); the copy's own export is fel_core_<FEL_COPY>() and nothing else.
  *
  * Timing: the firmware renders I2S halves of 128 frames, each as four 32-sample blocks; events_block runs once per
  * block and asks host_clock_units() (below) how far the music moved in it. Frames rendered ahead (at most 127) wait
- * in felucca_web.c's ring for the next render() call; their blocks were clocked with that call's B, extrapolated, and
- * the next call's B takes over from its first new block: units come from the absolute position, so nothing drifts. */
+ * in felucca_web.c's ring for the next render() call; their blocks were clocked with that call's conductor's timeline,
+ * extrapolated, and the next call's takes over from its first new block: units come from the absolute position, so
+ * nothing drifts. */
 #ifndef FEL_COPY
 #define FEL_COPY 0
 #endif
@@ -26,11 +27,11 @@ _Static_assert(PROJ_STORE_SIZE == FEL_PROJECT_SIZE && NTRK == FEL_TRACKS && FS =
 
 /* ------------------------------------------------------------ the host clock --- */
 static uint32_t hclk_f0;                /* the ring index render()'s b0 belongs to (its first frame) */
-static double hclk_b0, hclk_rate;       /* B there, beats per frame for this render() */
+static double hclk_b0, hclk_rate;       /* the conductor's timeline there, beats per frame for this render() */
 static uint32_t hclk_half, hclk_in;     /* the ring index the half being rendered starts at, its samples so far */
-static double hclk_origin;              /* B of step 1: play()'s at */
+static double hclk_origin;              /* the conductor's timeline at step 1: play()'s at */
 static uint64_t hclk_fed;               /* units of MIDI_CLOCK_GRID since hclk_origin given to the firmware */
-static uint8_t hclk_armed;              /* play() waits for B to reach hclk_origin */
+static uint8_t hclk_armed;              /* play() waits for the conductor's timeline to reach hclk_origin */
 static uint8_t hclk_locate;             /* locate() asked: applied in the next block */
 static uint64_t fel_frames;             /* frames render() returned */
 static uint32_t fel_loops[NTRK];        /* each track's passes through its LEN since step 1 (snapshot) */
@@ -63,12 +64,13 @@ static void fel_loops_reset(void)
     memset(fel_last_pos, 0, sizeof fel_last_pos);
 }
 
-/* events_block, every block of n samples (patch 0002): B at the block's end -> the units the music moved in it.
- * Playing or not: stopped, the arps and the beat still run on B, as they run on the internal clock. */
+/* events_block, every block of n samples (patch 0002): the conductor's timeline at the block's end -> the units the
+ * music moved in it. Playing or not: stopped, the arps and the beat still run on the conductor's timeline, as they run
+ * on the internal clock. */
 static uint32_t host_clock_units(uint32_t n)
 {
     double b = hclk_b0 + (double)(int32_t)(hclk_half + (hclk_in += n) - hclk_f0) * hclk_rate, due;
-    double start = b - n * hclk_rate;           /* B at the block's start */
+    double start = b - n * hclk_rate;           /* the conductor's timeline at the block's start */
     uint64_t total;
     fel_loops_count();
     if (hclk_locate) {
@@ -78,8 +80,9 @@ static uint32_t host_clock_units(uint32_t n)
         else if (start < hclk_origin + 1e9)     /* (the units fit; NaN: no) */
             fel_locate((uint64_t)floor((start - hclk_origin) * MIDI_CLOCK_GRID + 1e-9));
     }
-    if (hclk_armed && b > hclk_origin) {        /* B reaches play()'s at inside this block: step 1 starts in it, as a
-                                                 * MIDI Start in its queue would (the steps are ticked after this) */
+    if (hclk_armed && b > hclk_origin) {        /* the conductor's timeline reaches play()'s at inside this block:
+                                                 * step 1 starts in it, as a MIDI Start in its queue would (the steps
+                                                 * are ticked after this) */
         if (start > hclk_origin)                /* late (at was in the past): from this block, not a fast-forward */
             hclk_origin = start;
         hclk_armed = 0;
@@ -91,12 +94,13 @@ static uint32_t host_clock_units(uint32_t n)
                                                  * sequencer's zero exactly at it, not a block late */
     }
     due = (b - hclk_origin) * MIDI_CLOCK_GRID;
-    if (!(due > (double)hclk_fed && due < 9e15))   /* behind (B stood still or went back): hold until it is reached
-                                                    * again. (NaN, infinite: hold) */
+    if (!(due > (double)hclk_fed && due < 9e15))   /* behind (the conductor's timeline stood still or went back): hold
+                                                    * until it is reached again. (NaN, infinite: hold) */
         return 0;
     total = (uint64_t)floor(due + 1e-9) - hclk_fed;
     n = total > MIDI_CLOCK_GRID / 2u ? MIDI_CLOCK_GRID / 2u : (uint32_t)total;   /* (midi_grid_advance's bound; a
-                                                                                  * jump in B: M2's locate) */
+                                                                                  * jump in the conductor's timeline:
+                                                                                  * M2's locate) */
     hclk_fed += n;
     return n;
 }
@@ -166,7 +170,7 @@ static void fel_locate_motion(track_t *t, uint32_t idx)
 /* the sequencer as continuous play from step 1 would have it `units` (MIDI_CLOCK_GRID a beat) later, at the current
  * tempo and patterns: what midi_grid_advance and seq_tick would have summed (exact while neither changed). The state
  * that runs on samples, not on the clock (the FX layer's grid, SLICER, a FREE synced LFO 2), is set from the same
- * time at the current tempo: in phase, though B's pauses do not stop them */
+ * time at the current tempo: in phase, though the timeline's pauses do not stop them */
 static void fel_locate(uint64_t units)
 {
     uint32_t q = beat_samples(), k;

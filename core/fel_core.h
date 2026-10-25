@@ -4,7 +4,8 @@
  *
  * Threads: every call for one instance comes from one thread at a time (the audio thread once it is bound; a worker
  * before that). Nothing here allocates, locks or logs.
- * Time: the instance runs at FEL_RATE; render() advances its host clock along the caller's timeline B (beats). */
+ * Time: the instance runs at FEL_RATE; render() advances its host clock along the conductor's timeline (in
+ * beats). */
 #ifndef FEL_CORE_H
 #define FEL_CORE_H
 #include <stdint.h>
@@ -45,7 +46,7 @@ typedef struct {
      * stands still (pause), voices ring on. */
     void (*render)(uint32_t n, double b0, double b1, float *l, float *r);
     /* the beat length the delay, synced LFOs, gates and ratchets use (40..240 BPM, the firmware's range); the step
-     * timing comes from B whatever it is. Shown as BPM (global G_BPM) */
+     * timing comes from the conductor's timeline whatever it is. Shown as BPM (global G_BPM) */
     void (*tempo)(double bpm);
     /* parameters, as the editor protocol writes them (ED_TRACK_PARAM, ED_SET): clamped to the descriptor of the
      * engine asked for, the motion sequencer's base follows. -> the value taken, or FEL_INVALID */
@@ -66,14 +67,14 @@ typedef struct {
      * -> 0, or 1 when the bytes are not a project */
     int32_t (*project_info)(const uint8_t *b, uint32_t n, fel_project_info_t *out);
     const char *(*engine_name)(int engine);             /* "ANALOG" .. ("-": the retired slot), 0 past the last */
-    /* transport: step 1 of every track starts in the block in which B reaches at_beats (now if it has); the steps
-     * after it from at_beats exactly (each in the block its time falls in) */
+    /* transport: step 1 of every track starts in the block in which the conductor's timeline reaches at_beats (now if
+     * it has); the steps after it from at_beats exactly (each in the block its time falls in) */
     void (*play)(double at_beats);
     /* join a timeline in progress (DESIGN.md §6.4): from the next block, every track where continuous play since step
      * 1 at origin_beats would have it at the current tempo and patterns (step, position, its passes and conditions,
      * automation, nudges; the metronome, the FX layer, SLICER, a synced LFO 2 in phase), without what it would have
      * played on the way: the step it lands in does not sound (a nudged play of it still to come does). origin ahead of
-     * B: as play(). -> 0, or 1 while a SONG chain plays (not yet) */
+     * the conductor's timeline: as play(). -> 0, or 1 while a SONG chain plays (not yet) */
     int32_t (*locate)(double origin_beats);
     void (*stop)(void);
     /* a note on a track now (in the next block): vel 0 = off. Played as MIDI IN would (arps, chords, scales) */

@@ -1,12 +1,12 @@
-/* T5 (docs/DESIGN.md §10) on the core: step timing against the conductor's exact timeline B, with B's tempo tweened.
- * A test copy (core/tests/test_hooks.c) reports the block each step is entered in (patch 0004's hook); B at that
- * block's first frame is compared with where the step belongs (play()'s beat + k steps).
+/* T5 (docs/DESIGN.md §10) on the core: step timing against the conductor's exact timeline, with its tempo tweened.
+ * A test copy (core/tests/test_hooks.c) reports the block each step is entered in (patch 0004's hook); the conductor's
+ * timeline at that block's first frame is compared with where the step belongs (play()'s beat + k steps).
  *   A  5 min, an int tween as Godot's (tempo.c's program: 120 -> 140 -> 100 -> 120 in whole BPM, holds between)
  *   B  3 min, a float tempo (110 +- 30, a sine of 23 s: e.g. the player's distance) set every mix step, and a 2 s
- *      pause every 40 s (B stands still; the tempo moves on meanwhile)
+ *      pause every 40 s (the conductor's timeline stands still; the tempo moves on meanwhile)
  * A step is entered in the block its time falls in: from 0 to one block (32 samples, 0.73 ms) early, never late, and
  * no drift. At a pause the half rendered ahead (at most 127 frames) plays on, so a step due in it is up to 2.9 ms
- * ahead of the stopped B (the edge). The beat length moves only with the tempo. */
+ * ahead of the conductor's stopped timeline (the edge). The beat length moves only with the tempo. */
 #include "test_hooks.h"
 #include "check.h"
 #include <math.h>
@@ -20,21 +20,21 @@ static struct { uint32_t f0; double b0, rate, bpm; } mix[MAXMIX];
 static uint32_t nmix;
 static fel_test_entry_t ent[60000];
 static uint32_t nent;
-static double B;
+static double timeline;
 
 static void mix_step(const fel_test_t *x, double bpm, int paused)
 {
-    double b1 = paused ? B : B + MIX * bpm / (60.0 * FEL_RATE);
+    double b1 = paused ? timeline : timeline + MIX * bpm / (60.0 * FEL_RATE);
     mix[nmix].f0 = x->frame();
-    mix[nmix].b0 = B;
-    mix[nmix].rate = (b1 - B) / MIX;
+    mix[nmix].b0 = timeline;
+    mix[nmix].rate = (b1 - timeline) / MIX;
     mix[nmix].bpm = bpm;
     nmix++;
-    x->core->render(MIX, B, b1, 0, 0);
-    B = b1;
+    x->core->render(MIX, timeline, b1, 0, 0);
+    timeline = b1;
     nent += x->entries(ent + nent, (uint32_t)(sizeof ent / sizeof ent[0]) - nent);
 }
-/* B where frame f is heard (the exact timeline: the mix step it belongs to); *k its mix step */
+/* the conductor's timeline where frame f is heard (the exact timeline: the mix step it belongs to); *k its mix step */
 static double b_at(uint32_t f, uint32_t *k)
 {
     uint32_t lo = 0, hi = nmix - 1;
@@ -68,7 +68,7 @@ static void run(const fel_test_t *x, const char *name, int prog, double seconds)
     uint32_t len_changes = 0, last_len = 0;
     nent = 0;
     x->restart();
-    origin = B + 0.25 + 0.0137;                         /* (a quarter ahead, inside some block) */
+    origin = timeline + 0.25 + 0.0137;                  /* (a quarter ahead, inside some block) */
     x->core->play(origin);
     for (i = 0; i < steps; i++) {
         double t = (double)i * MIX / FEL_RATE, bpm;
@@ -111,11 +111,11 @@ static void run(const fel_test_t *x, const char *name, int prog, double seconds)
     }
     printf("  T5 %s, %.0f s:\n", name, seconds);
     for (i = 0; i < 3; i++) {
-        double want = (B - origin) / SPB[i];
-        printf("    %s track: %5u steps (%.1f beats of B / its length), error max %.3f ms, mean %.3f ms\n", TN[i],
-               cnt[i], want, emax[i], cnt[i] ? esum[i] / cnt[i] : 0.0);
+        double want = (timeline - origin) / SPB[i];
+        printf("    %s track: %5u steps (%.1f beats of the conductor's timeline / its length), error max %.3f ms,"
+               " mean %.3f ms\n", TN[i], cnt[i], want, emax[i], cnt[i] ? esum[i] / cnt[i] : 0.0);
         CHECK(cnt[i] >= (uint32_t)floor(want) + 1 && cnt[i] <= (uint32_t)floor(want) + 2,
-              "T5 %s: %s entered %u steps, B covered %.2f", name, TN[i], cnt[i], want);
+              "T5 %s: %s entered %u steps, the conductor's timeline covered %.2f", name, TN[i], cnt[i], want);
     }
     printf("    early at most %.3f ms, late at most %.3f ms; %u steps at a pause's edge, up to %.3f ms ahead\n", -eearly,
            elate, nedge, fabs(edge));

@@ -1,12 +1,13 @@
-/* What the tests drive cores with: a conductor's timeline B at a tempo, rendered in mix steps of 512 frames as Godot
- * asks for them (the cores share B), and the measures the checks use. */
+/* What the tests drive cores with: a conductor's timeline at a tempo, rendered in mix steps of 512 frames as
+ * Godot asks for them (the cores share it), and the measures the checks use. */
 #include "fel_core.h"
 #include <math.h>
 #include <string.h>
 
-static double drive_b, drive_bpm = 120.0;
+static double drive_timeline, drive_bpm = 120.0;
 
-/* frames of every core in cs (k of them) on the same B; core i's left channel into l[i] (when l and l[i]) */
+/* frames of every core in cs (k of them) on the same timeline; core i's left channel into l[i] (when l and
+ * l[i]) */
 static inline void drive(const fel_core_t *const *cs, int k, uint32_t frames, float *const *l)
 {
     static float scratch_r[512];
@@ -15,10 +16,10 @@ static inline void drive(const fel_core_t *const *cs, int k, uint32_t frames, fl
     for (done = 0; done < frames; done += m) {
         double b1;
         m = frames - done < 512u ? frames - done : 512u;
-        b1 = drive_b + m * drive_bpm / (60.0 * FEL_RATE);
+        b1 = drive_timeline + m * drive_bpm / (60.0 * FEL_RATE);
         for (i = 0; i < k; i++)
-            cs[i]->render(m, drive_b, b1, l && l[i] ? l[i] + done : 0, scratch_r);
-        drive_b = b1;
+            cs[i]->render(m, drive_timeline, b1, l && l[i] ? l[i] + done : 0, scratch_r);
+        drive_timeline = b1;
     }
 }
 static inline void drive1(const fel_core_t *c, uint32_t frames, float *l) { drive(&c, 1, frames, &l); }

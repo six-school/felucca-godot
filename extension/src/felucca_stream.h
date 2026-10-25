@@ -1,8 +1,8 @@
 // Audio out (D5): a FeluccaSource's stream and its playback, one pool instance each (D3). The playback is an
 // AudioStreamPlayback of its own rather than an AudioStreamPlaybackResampled: Godot calls _mix once a mix step with
-// that step's frames, so they map exactly onto the step's plan (B from b0 to b1); the resampled base would ask for
-// 128-frame chunks at a phase of each player's own, putting instances up to 2.9 ms apart. At a mix rate other than
-// the FM-1's 44.1 kHz it resamples itself (cubic).
+// that step's frames, so they map exactly onto the step's plan (the conductor's timeline from b0 to b1); the resampled
+// base would ask for 128-frame chunks at a phase of each player's own, putting instances up to 2.9 ms apart. At a mix
+// rate other than the FM-1's 44.1 kHz it resamples itself (cubic).
 #pragma once
 
 #include "fel_core.h"
@@ -28,7 +28,7 @@ protected:
 
 public:
 	bool bound = false, playing = false;
-	double beats = 0.0, origin = 0.0; // beats since step 1; B of step 1
+	double beats = 0.0, origin = 0.0; // beats since step 1; the conductor's timeline at step 1
 	int64_t frames = 0, slot = -1;
 	PackedInt32Array steps, positions, loops; // each part's step (0-based), samples into it, passes through its LEN
 
@@ -91,7 +91,7 @@ public:
 	// published under the lock (main thread), read by _mix (audio thread)
 	const fel_core_t *core = nullptr;
 	bool armed = false; // play() resolved: step 1 at origin
-	double origin = 0.0; // B of its step 1
+	double origin = 0.0; // the conductor's timeline at its step 1
 	bool tree_held = false; // the tree pause holds it (the conductor paused it, or noted its own pause)
 	bool tree_told = false; // .. and Godot tells it the pause (it cannot process while the tree is paused)
 	bool user_paused = false; // its source was paused by its own stream_paused when the tree paused

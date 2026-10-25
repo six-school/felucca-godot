@@ -105,8 +105,8 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 		started = true;
 		core->play(origin);
 	} else if (started && std::fabs(p.b0 - last_b1) > 1e-9) {
-		// B moved while this playback was not mixed: its source was paused on its own. FOLLOW: back where the music
-		// is now; HOLD: on from where it stopped (its origin later by the pause)
+		// the conductor's timeline moved while this playback was not mixed: its source was paused on its own. FOLLOW:
+		// back where the music is now; HOLD: on from where it stopped (its origin later by the pause)
 		if (join == 1) {
 			origin += p.b0 - last_b1;
 		}
@@ -121,7 +121,7 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 	return p_frames;
 }
 
-// p_frames output frames, B moving from p_b0 to p_b1 over them
+// p_frames output frames, the conductor's timeline moving from p_b0 to p_b1 over them
 void FeluccaPlayback::render(AudioFrame *p_out, int32_t p_frames, double p_b0, double p_b1) {
 	const double rate = felucca::Engine::get().mix_rate;
 	if (rate == double(FEL_RATE)) { // the FM-1's own rate: frame for frame
@@ -137,7 +137,8 @@ void FeluccaPlayback::render(AudioFrame *p_out, int32_t p_frames, double p_b0, d
 		return;
 	}
 	// resampled: the instance's frames at 44.1 kHz into rs_l / rs_r, read between them (4-point Hermite) at
-	// FEL_RATE / rate a frame. rs_pos - 1 .. rs_pos + 2 must be there; B maps onto the frames rendered this step
+	// FEL_RATE / rate a frame. rs_pos - 1 .. rs_pos + 2 must be there; the conductor's
+	// timeline maps onto the frames rendered this step
 	const double inc = double(FEL_RATE) / rate;
 	const int32_t max_out = int32_t(CHUNK / inc) - 4;
 	for (int32_t done = 0; done < p_frames;) {
