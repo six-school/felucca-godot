@@ -2,14 +2,24 @@
 
 [ext_resource type="Script" uid="uid://c1x0mbyldgula" path="res://main.gd" id="1"]
 [ext_resource type="FeluccaProject" uid="uid://2e7qbmax0y8y" path="res://music/solar_signal.felucca" id="2"]
-[ext_resource type="FeluccaProject" uid="uid://dqr5stjblexvq" path="res://music/test-2.felucca" id="3_1bvp3"]
+[ext_resource type="FeluccaProject" uid="uid://ba6n2ov2o2pco" path="res://music/test-3.felucca" id="2_h2yge"]
 [ext_resource type="Script" uid="uid://dfqkc0d33qa5d" path="res://simple_move.gd" id="3_h2yge"]
+
+[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_lquwl"]
+muted = 8
+
+[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_7mycd"]
+muted = 8
+
+[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_1bvp3"]
+muted = 7
 
 [node name="Main" type="Node2D" unique_id=541490935]
 script = ExtResource("1")
 
 [node name="Cellar" type="FeluccaSource2D" parent="." unique_id=1283450278]
-project = ExtResource("2")
+overrides = SubResource("FeluccaOverrides_lquwl")
+project = ExtResource("2_h2yge")
 position = Vector2(100, 300)
 max_distance = 1000.0
 
@@ -26,9 +36,32 @@ offset_bottom = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 color = Color(1, 0, 0, 1)
+metadata/_edit_use_anchors_ = true
+
+[node name="Cellar2" type="FeluccaSource2D" parent="." unique_id=1973825979]
+overrides = SubResource("FeluccaOverrides_7mycd")
+project = ExtResource("2")
+position = Vector2(515, -200)
+max_distance = 1000.0
+
+[node name="ColorRect" type="ColorRect" parent="Cellar2" unique_id=988411388]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 1, 0, 1)
+metadata/_edit_use_anchors_ = true
 
 [node name="Hallway" type="FeluccaSource2D" parent="." unique_id=1553841019]
-project = ExtResource("3_1bvp3")
+overrides = SubResource("FeluccaOverrides_1bvp3")
+project = ExtResource("2_h2yge")
 position = Vector2(900, 300)
 max_distance = 1000.0
 
