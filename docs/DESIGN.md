@@ -279,6 +279,12 @@ never over what its scripts set (a source given another resource does the same).
 (flags, live, saved with the scene) is OR'd over each part's mute: a part sounds only when neither its own mute (the
 project's, under the overrides', under what scripts set) nor `muted_parts` says it is muted. Checked in `m4_test`.
 
+The player's `pitch_scale` (and a 3D player's `doppler_tracking`) has no effect on a Felucca source: the playback
+renders the step's frames on the timeline whatever rate Godot asks for (Godot still mixes it, out of range or quiet:
+measured, the sources stay in step). It is said, at no cost per frame: a node warning in the editor (refreshed when
+either is set through Godot's property system: the inspector, scene loading) and a warning at each `play()` with
+either set (`m5_test`, counted by `extension/run_tests.sh`).
+
 Conventions: steps **1-based** in the API (as on the device), 0-based inside; raw firmware integers with range hints;
 optional normalized floats. Actions: `hit`, `note`, `set(part, Param, value)`, `pattern(part, FeluccaPattern)`, `mark`.
 Targets: `next_loop(part, step)`, `loops_ahead(part, n, step)`, `next_step(part, step)`, `bar_beat(bar, beat)`. Late
@@ -349,7 +355,8 @@ Decided with the user before M5 (2026-10-25); §13.7 and §13.9 have the measure
 
 - **Sources** are scene nodes; **instances** (pool slots, N fixed at build time, 8) are cores. A source holds: project,
   overrides, priority, join mode (for a resume after its own `stream_paused`: `FOLLOW`, back where the music is;
-  `HOLD`, on from where it stopped, on its beats or bars; D7), its musical origin (the timeline's value at its `play()`, optionally quantized
+  `HOLD`, on from where it stopped, on its beats or bars; D7; `quantize` and `join` are live: set while a source
+  plays, its next resume or `play()` uses them), its musical origin (the timeline's value at its `play()`, optionally quantized
   to a beat or bar), script-set values (shadows, replayed on binding), schedules. An unbound source keeps its place in
   the music: binding it again always locates it to where it would be (no restart-on-bar join).
 - **Assumption:** at most N sources are audible at once (a level-design rule); the pool is built for that, and
@@ -549,7 +556,9 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 11. What runs on rendered samples, not on the clock's units: the FX layer's 1/16 grid (perform.c `pf.ph`), SLICER
     (slicer.c, from the integer `G_BPM`), a FREE synced LFO 2 (voice.c `lfo_sync_inc`). Under the host clock they keep
     moving through a pause of the conductor's timeline and drift from it at fractional tempos (SLICER: `G_BPM` is
-    rounded). `locate` puts them in phase. A patch could feed them units (as PR 269 does the sequencer).
+    rounded). `locate` puts them in phase. A patch could feed them units (as PR 269 does the sequencer). **Deferred
+    (2026-10-25, user): until after the other milestones** (effects are secondary to the notes, which follow the
+    timeline exactly).
 12. Snapshots are as rendered, up to a half ahead of what has been heard; at 44.1 kHz every mix step renders whole
     halves, so instances agree exactly, at other rates within a half and a block (M3's test tolerances). M6's heard
     time (§6.3) maps them.

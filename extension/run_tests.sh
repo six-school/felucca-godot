@@ -26,6 +26,8 @@ for rate in 44100 48000; do
     timeout 180 "$G" --headless --audio-driver Dummy --path demo res://tests/m5_test.tscn > build/m5_test_$rate.log 2>&1 || fail=1
     grep -E "^(ok|FAIL|mix rate|m5_test)" build/m5_test_$rate.log || true
     grep -E "^(ERROR|SCRIPT ERROR)" build/m5_test_$rate.log || true
+    n=$(grep -c "WARNING: .*pitch_scale has no effect on a Felucca source" build/m5_test_$rate.log || true)
+    [ "$n" = 1 ] && echo "ok   play() with pitch_scale 2: one warning" || { echo "FAIL play() with pitch_scale 2: $n warnings"; fail=1; }
 done
 rm -f demo/override.cfg
 echo "== demo/tests/m4_test.tscn"

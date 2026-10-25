@@ -32,6 +32,11 @@ struct FelSource {
 	void update(Node *p_owner);
 	void set_overrides(Node *p_owner, const Ref<FeluccaOverrides> &p_overrides); // (live: their changes heard)
 	void notification(Node *p_owner, int p_what);
+	// the player's properties a Felucca source does not follow (its music is the conductor's: FeluccaConductor.tempo):
+	// a node warning in the editor, refreshed when one is set; a warning when it starts playing with them
+	void on_set(Node *p_owner, const StringName &p_name);
+	PackedStringArray warnings(const Node *p_owner) const;
+	static String ignored(const Node *p_owner); // "" none, else what it ignores
 	Ref<FeluccaSnapshot> snapshot(Node *p_owner) const;
 	bool bound(Node *p_owner) const;
 	template <typename T>
@@ -56,6 +61,12 @@ public:                                                                         
 	void _on_overrides_changed() { src.values->overrides_changed(); }                               \
 	void set_muted_parts(int p_v) { src.values->set_muted(p_v); }                                   \
 	int get_muted_parts() const { return src.values->muted; }                                       \
+	/* (a property set through Godot's: pitch_scale's or doppler_tracking's warning refreshed) */   \
+	bool _set(const StringName &p_name, const Variant &p_value) {                                   \
+		src.on_set(this, p_name);                                                                   \
+		return false;                                                                               \
+	}                                                                                               \
+	PackedStringArray _get_configuration_warnings() const override { return src.warnings(this); }   \
 	Ref<FeluccaPart> _get_part(int p_index) { return src.part(p_index); }                           \
 	TypedArray<FeluccaPart> get_parts() { return src.all_parts(); }                                 \
 	Ref<FeluccaSong> get_song() { return src.get_song(); }                                          \

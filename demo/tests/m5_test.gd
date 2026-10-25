@@ -167,9 +167,39 @@ func _ready() -> void:
 	check(after.origin - o0 == roundf(paused) and fmod(after.origin, 1.0) == 0.0,
 		"HOLD, QUANTIZE_BEAT: paused %.3f beats, its origin %.0f beats later, still on a beat (%.2f)" % [paused, after.origin - o0, after.origin])
 
+	# ---- quantize and join are live: set on a source playing, its next resume uses them
+	var live := source(FeluccaSource.JOIN_FOLLOW)
+	live.quantize = FeluccaSource.QUANTIZE_BEAT
+	beat.stop()
+	live.play()
+	await frames_until_bound(live)
+	await wait(0.6)
+	var lo := live.get_snapshot().origin
+	live.join = FeluccaSource.JOIN_HOLD
+	live.quantize = FeluccaSource.QUANTIZE_NOW
+	b0 = FeluccaConductor.beats
+	live.stream_paused = true
+	await wait(0.8)
+	paused = FeluccaConductor.beats - b0
+	live.stream_paused = false
+	await wait(0.3)
+	var moved := live.get_snapshot().origin - lo
+	check(abs(moved - paused) < 0.05 and fmod(moved, 1.0) != 0.0,
+		"join and quantize set while it plays (FOLLOW -> HOLD, BEAT -> NOW): its resume holds, by the pause exactly (%.3f, the pause %.3f)"
+		% [moved, paused])
+
+	# ---- pitch_scale has no effect: a warning when it starts playing (extension/run_tests.sh counts it in the log; the
+	# editor's node warning says the same, FelSource::ignored, and scripts cannot call it)
+	var pitched := FeluccaSource2D.new()
+	pitched.project = project
+	add_child(pitched)
+	pitched.pitch_scale = 2.0
+	pitched.play()
+	await wait(0.2)
+
 	for s in get_children():
-		if s is FeluccaSource:
-			(s as FeluccaSource).stop()
+		if s is FeluccaSource or s is FeluccaSource2D:
+			s.call("stop")
 	await wait(0.3)
 	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every copy free (%d bound)" % FeluccaConductor.get_bound_count())
 	print("m5_test: %d failed" % fails)

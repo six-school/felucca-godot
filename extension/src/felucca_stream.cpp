@@ -2,6 +2,7 @@
 
 #include "felucca_conductor.h"
 #include "felucca_engine.h"
+#include "felucca_source.h"
 
 #include <godot_cpp/classes/audio_server.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -62,6 +63,11 @@ void FeluccaPlayback::_start(double p_from_pos) {
 	registered = true;
 	if (FeluccaConductor *fc = FeluccaConductor::get_singleton()) {
 		fc->add_playback(this);
+	}
+	if (const Node *n = Object::cast_to<Node>(ObjectDB::get_instance(source))) {
+		if (String w = FelSource::ignored(n); !w.is_empty()) {
+			UtilityFunctions::push_warning(n->get_name(), ": ", w);
+		}
 	}
 }
 

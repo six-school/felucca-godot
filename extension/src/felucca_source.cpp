@@ -9,8 +9,11 @@
 
 namespace godot {
 
+static FeluccaPlayback *playback_of(Node *p_owner);
+
 // the stream the player plays: made at run time (in the editor the player's stream stays as it was: nothing of it
-// is saved with the scene)
+// is saved with the scene); quantize and join reach the playback playing now too (live: its next resume or play
+// resolved uses them)
 void FelSource::update(Node *p_owner) {
 	if (Engine::get_singleton()->is_editor_hint()) {
 		return;
@@ -25,6 +28,12 @@ void FelSource::update(Node *p_owner) {
 	stream->join = join;
 	if (Object::cast_to<FeluccaStream>(p_owner->call("get_stream")) != stream.ptr()) {
 		p_owner->call("set_stream", stream);
+	}
+	if (FeluccaPlayback *p = playback_of(p_owner); p && (p->quantize != quantize || p->join != join)) {
+		AudioServer::get_singleton()->lock(); // (the audio thread reads them: HOLD's resume)
+		p->quantize = quantize;
+		p->join = join;
+		AudioServer::get_singleton()->unlock();
 	}
 }
 
@@ -71,6 +80,33 @@ void FelSource::notification(Node *p_owner, int p_what) {
 			AudioServer::get_singleton()->unlock();
 		}
 	}
+}
+
+void FelSource::on_set(Node *p_owner, const StringName &p_name) {
+	if (p_name == StringName("pitch_scale") || p_name == StringName("doppler_tracking")) {
+		p_owner->call_deferred("update_configuration_warnings"); // (after the setter: _set comes before it)
+	}
+}
+
+String FelSource::ignored(const Node *p_owner) {
+	String w;
+	if (double(p_owner->get("pitch_scale")) != 1.0) {
+		w = "pitch_scale has no effect on a Felucca source: its music follows the conductor's tempo (FeluccaConductor.tempo)";
+	}
+	const Variant d = p_owner->get("doppler_tracking"); // (3D only)
+	if (d.get_type() == Variant::INT && int64_t(d) != 0) {
+		w += String(w.is_empty() ? "" : "; ") + "Doppler tracking has no effect on a Felucca source (its pitch would be its tempo)";
+	}
+	return w;
+}
+
+PackedStringArray FelSource::warnings(const Node *p_owner) const {
+	PackedStringArray a;
+	const String w = ignored(p_owner);
+	if (!w.is_empty()) {
+		a.push_back(w);
+	}
+	return a;
 }
 
 Ref<FeluccaSnapshot> FelSource::snapshot(Node *p_owner) const {
