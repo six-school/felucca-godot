@@ -14,6 +14,13 @@ func check(ok: bool, what: String) -> void:
 func wait(seconds: float) -> void:
 	await get_tree().create_timer(seconds, true, false, true).timeout
 
+func mute_entry(part: int) -> FeluccaOverride:
+	var m := FeluccaOverride.new()
+	m.part = part
+	m.param = FeluccaPart.Param.PARAM_MUTE
+	m.value = 1
+	return m
+
 func source(overrides: FeluccaOverrides = null) -> FeluccaSource:
 	var s := FeluccaSource.new()
 	s.project = project
@@ -91,8 +98,8 @@ func _ready() -> void:
 	e.part = 1
 	e.param = FeluccaPart.Param.PARAM_SEQ_LENGTH
 	e.value = 8
-	o.entries = [e]
-	o.muted = 0b1000
+	var m4 := mute_entry(4)
+	o.entries = [e, m4]
 	var b := source(o)
 	check(b.part_1.seq_length == 8 and b.part_4.mute == 1 and b.part_2.seq_length == 16,
 		"overrides, unbound: part 1 LEN %d, part 4 muted %d" % [b.part_1.seq_length, b.part_4.mute])
@@ -100,6 +107,47 @@ func _ready() -> void:
 	await wait(0.2)
 	check(b.is_bound() and b.part_1.seq_length == 8 and b.part_4.mute == 1, "overrides, bound: the instance's (LEN %d, MUTE %d)"
 		% [b.part_1.seq_length, b.part_4.mute])
+
+	# ---- overrides are live: a change reaches the bound instance at once, never over what a script set
+	var plain := source(null)               # (the project's own values, read unbound)
+	var len1 := plain.part_1.seq_length
+	var mutes := plain.parts.map(func(p: FeluccaPart) -> int: return p.mute)
+	m4.part = 1
+	check(b.part_1.mute == 1 and b.part_4.mute == mutes[3], "an entry moved to another part, bound: part 1 muted, part 4 back to the project's (%d, %d)"
+		% [b.part_1.mute, b.part_4.mute])
+	e.value = 12
+	check(b.part_1.seq_length == 12, "an entry's value changed, bound: LEN %d" % b.part_1.seq_length)
+	o.entries = [m4]
+	check(b.part_1.seq_length == len1, "the entry removed: back to the project's (LEN %d, the project's %d)" % [b.part_1.seq_length, len1])
+	b.part_2.mute = 0
+	o.entries = [m4, mute_entry(2)]
+	check(b.part_2.mute == 0 and b.part_1.mute == 1, "what a script set wins over a change of the overrides (part 2 MUTE %d)" % b.part_2.mute)
+	var o2 := FeluccaOverrides.new()
+	o2.entries = [mute_entry(3)]
+	b.overrides = o2
+	check(b.part_3.mute == 1 and b.part_1.mute == mutes[0], "another overrides resource, bound: its values at once, the old one's undone (part 3 %d, part 1 %d)"
+		% [b.part_3.mute, b.part_1.mute])
+	o2.entries = []
+	o.entries = [mute_entry(3)]
+	check(b.part_3.mute == mutes[2], "the old resource no longer heard (part 3 %d)" % b.part_3.mute)
+	plain.overrides = o2
+	o2.entries = [mute_entry(4)]
+	check(plain.part_4.mute == 1, "unbound: the reads follow the overrides (part 4 %d)" % plain.part_4.mute)
+
+	# ---- the source's own muted_parts: OR'd over each part's mute, live
+	b.muted_parts = 0b0100
+	check(b.part_3.mute == 1 and b.muted_parts == 0b0100, "muted_parts, bound: part 3 muted at once")
+	b.part_3.mute = 0
+	check(b.part_3.mute == 1, "a part's own mute set to 0 meanwhile: still muted (muted_parts holds it)")
+	b.muted_parts = 0
+	check(b.part_3.mute == 0, "muted_parts cleared: the part's own mute again (%d)" % b.part_3.mute)
+	plain.muted_parts = 0b0010
+	check(plain.part_2.mute == 1 and plain.part_1.mute == mutes[0], "muted_parts, unbound: read as muted (part 2 %d)" % plain.part_2.mute)
+	plain.play()
+	await wait(0.2)
+	check(plain.is_bound() and plain.part_2.mute == 1 and plain.part_4.mute == 1, ".. and so at binding (part 2 %d, part 4 by its overrides %d)"
+		% [plain.part_2.mute, plain.part_4.mute])
+	plain.stop()
 
 	# ---- a new binding gets what was set
 	a.stop()

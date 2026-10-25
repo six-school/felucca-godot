@@ -41,6 +41,22 @@ struct Locked { // the audio thread is not mixing meanwhile: a bound instance is
 
 // ---------------------------------------------------------------- the values ---
 
+int FelValues::mute_id() {
+	static const int m = api_id(API_PART, "mute");
+	return m;
+}
+
+bool FelValues::project_value(int p_track, int p_id, int32_t &r_v) const {
+	if (project.is_valid()) { // (its values hold for its own engines: a part switched to another has that one's)
+		PackedInt32Array ids = project->get_engine_ids(), pv = project->get_track_values();
+		if (ids.size() == FEL_TRACKS && pv.size() == FEL_TRACKS * FEL_PARAMS && get_engine(p_track) == ids[p_track]) {
+			r_v = pv[p_track * FEL_PARAMS + p_id];
+			return true;
+		}
+	}
+	return false;
+}
+
 int32_t FelValues::get_track(int p_track, int p_id, int p_min, int p_max, int p_def) const {
 	int32_t v;
 	if (core) {
@@ -48,18 +64,13 @@ int32_t FelValues::get_track(int p_track, int p_id, int p_min, int p_max, int p_
 		return core->param_get(p_track, p_id);
 	}
 	if (track_set[p_track][p_id]) {
-		return track[p_track][p_id];
+		v = track[p_track][p_id];
+	} else if (overrides.is_valid() && overrides->value_of(p_track, p_id, v)) {
+		v = clampi(v, p_min, p_max);
+	} else if (!project_value(p_track, p_id, v)) {
+		v = p_def;
 	}
-	if (overrides.is_valid() && overrides->value_of(p_track, p_id, v)) {
-		return clampi(v, p_min, p_max);
-	}
-	if (project.is_valid()) { // (its values hold for its own engines: a part switched to another has that one's)
-		PackedInt32Array ids = project->get_engine_ids(), pv = project->get_track_values();
-		if (ids.size() == FEL_TRACKS && pv.size() == FEL_TRACKS * FEL_PARAMS && get_engine(p_track) == ids[p_track]) {
-			return pv[p_track * FEL_PARAMS + p_id];
-		}
-	}
-	return p_def;
+	return muted_value(p_track, p_id, v);
 }
 
 void FelValues::set_track(int p_track, int p_id, int32_t p_value, int p_min, int p_max) {
@@ -67,9 +78,73 @@ void FelValues::set_track(int p_track, int p_id, int32_t p_value, int p_min, int
 	if (core) {
 		Locked l;
 		v = core->param_set(p_track, p_id, v);
+		if (muted_value(p_track, p_id, v) != v) {
+			core->param_set(p_track, p_id, 1); // (the source's muted_parts holds it muted: the value is kept for later)
+		}
 	}
 	track[p_track][p_id] = int16_t(v);
 	track_set[p_track][p_id] = 1;
+}
+
+void FelValues::set_muted(int p_parts) {
+	const int was = muted;
+	muted = p_parts & ((1 << FEL_TRACKS) - 1);
+	if (!core) {
+		return;
+	}
+	Locked l;
+	for (int t = 0; t < FEL_TRACKS; t++) {
+		if (((was ^ muted) >> t) & 1) { // (unmuted: back to what the part's own mute says)
+			int32_t v = 0;
+			if (track_set[t][mute_id()]) {
+				v = track[t][mute_id()];
+			} else if (!(overrides.is_valid() && overrides->value_of(t, mute_id(), v))) {
+				project_value(t, mute_id(), v);
+			}
+			core->param_set(t, mute_id(), muted_value(t, mute_id(), v));
+		}
+	}
+}
+
+// what the overrides set, entry by entry (the last for a parameter wins)
+void FelValues::overrides_now(int16_t r_val[FEL_TRACKS][FEL_PARAMS], uint8_t r_on[FEL_TRACKS][FEL_PARAMS]) const {
+	std::memset(r_on, 0, sizeof(uint8_t) * FEL_TRACKS * FEL_PARAMS);
+	if (overrides.is_null()) {
+		return;
+	}
+	TypedArray<FeluccaOverride> e = overrides->get_entries();
+	for (int64_t i = 0; i < e.size(); i++) {
+		Ref<FeluccaOverride> o = e[i];
+		if (o.is_valid() && o->get_part() >= 1 && o->get_part() <= FEL_TRACKS && o->get_param() >= 0 && o->get_param() < FEL_PARAMS) {
+			r_val[o->get_part() - 1][o->get_param()] = int16_t(o->get_value());
+			r_on[o->get_part() - 1][o->get_param()] = 1;
+		}
+	}
+}
+
+void FelValues::overrides_changed() {
+	int16_t val[FEL_TRACKS][FEL_PARAMS];
+	uint8_t on[FEL_TRACKS][FEL_PARAMS];
+	overrides_now(val, on);
+	if (core) {
+		Locked l;
+		for (int t = 0; t < FEL_TRACKS; t++) {
+			for (int id = 0; id < FEL_PARAMS; id++) {
+				int32_t v;
+				if (track_set[t][id] || !(on[t][id] || ov_on[t][id])) {
+					continue; // (what scripts set wins; what neither the old nor the new set is not touched)
+				}
+				if (on[t][id]) {
+					v = val[t][id];
+				} else if (!project_value(t, id, v)) {
+					continue; // (an override gone, the project's value unknown for this engine: as it is)
+				}
+				core->param_set(t, id, muted_value(t, id, v));
+			}
+		}
+	}
+	std::memcpy(ov_val, val, sizeof val);
+	std::memcpy(ov_on, on, sizeof on);
 }
 
 int32_t FelValues::get_song(int p_id, int p_def) const {
@@ -138,35 +213,49 @@ void FelValues::apply_track(const fel_core_t *p_core, int p_track) const {
 	}
 }
 
-void FelValues::apply(const fel_core_t *p_core) const {
+void FelValues::apply(const fel_core_t *p_core) {
 	for (int t = 0; t < FEL_TRACKS; t++) {
 		if (engine_set[t]) {
 			p_core->engine_set(t, engine[t]);
 		}
 	}
-	if (overrides.is_valid()) {
-		TypedArray<FeluccaOverride> e = overrides->get_entries();
-		for (int64_t i = 0; i < e.size(); i++) {
-			Ref<FeluccaOverride> o = e[i];
-			if (o.is_valid() && o->get_part() >= 1 && o->get_part() <= FEL_TRACKS) {
-				p_core->param_set(o->get_part() - 1, o->get_param(), o->get_value());
-			}
-		}
-		static const int mute = api_id(API_PART, "mute");
-		for (int t = 0; t < FEL_TRACKS; t++) {
-			if ((overrides->get_muted() >> t) & 1) {
-				p_core->param_set(t, mute, 1);
+	overrides_now(ov_val, ov_on);
+	for (int t = 0; t < FEL_TRACKS; t++) {
+		for (int id = 0; id < FEL_PARAMS; id++) {
+			if (ov_on[t][id]) {
+				p_core->param_set(t, id, ov_val[t][id]);
 			}
 		}
 	}
 	for (int t = 0; t < FEL_TRACKS; t++) {
 		apply_track(p_core, t);
+		if ((muted >> t) & 1) {
+			p_core->param_set(t, mute_id(), 1);
+		}
 	}
 	for (int id = 0; id < FEL_GLOBALS; id++) {
 		if (song_set[id]) {
 			p_core->global_set(id, song[id]);
 		}
 	}
+}
+
+void FeluccaOverrides::set_entries(const TypedArray<FeluccaOverride> &p_v) {
+	const Callable relay(this, "emit_changed");
+	for (int64_t i = 0; i < entries.size(); i++) {
+		Ref<FeluccaOverride> o = entries[i];
+		if (o.is_valid() && o->is_connected("changed", relay)) {
+			o->disconnect("changed", relay);
+		}
+	}
+	entries = p_v;
+	for (int64_t i = 0; i < entries.size(); i++) {
+		Ref<FeluccaOverride> o = entries[i];
+		if (o.is_valid() && !o->is_connected("changed", relay)) {
+			o->connect("changed", relay);
+		}
+	}
+	emit_changed();
 }
 
 bool FeluccaOverrides::value_of(int p_track, int p_id, int32_t &r_value) const {
@@ -177,10 +266,6 @@ bool FeluccaOverrides::value_of(int p_track, int p_id, int32_t &r_value) const {
 			r_value = o->get_value();
 			found = true;
 		}
-	}
-	if (p_id == api_id(API_PART, "mute") && ((muted >> p_track) & 1)) {
-		r_value = 1;
-		found = true;
 	}
 	return found;
 }
@@ -359,12 +444,9 @@ void FeluccaOverride::_bind_methods() {
 void FeluccaOverrides::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_entries", "entries"), &FeluccaOverrides::set_entries);
 	ClassDB::bind_method(D_METHOD("get_entries"), &FeluccaOverrides::get_entries);
-	ClassDB::bind_method(D_METHOD("set_muted", "parts"), &FeluccaOverrides::set_muted);
-	ClassDB::bind_method(D_METHOD("get_muted"), &FeluccaOverrides::get_muted);
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "entries", PROPERTY_HINT_TYPE_STRING,
 						 String::num_int64(Variant::OBJECT) + "/" + String::num_int64(PROPERTY_HINT_RESOURCE_TYPE) + ":FeluccaOverride"),
 			"set_entries", "get_entries");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "muted", PROPERTY_HINT_FLAGS, "Part 1,Part 2,Part 3,Part 4"), "set_muted", "get_muted");
 }
 
 } // namespace godot

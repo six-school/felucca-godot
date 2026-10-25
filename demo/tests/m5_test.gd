@@ -139,11 +139,29 @@ func _ready() -> void:
 	var bt := FeluccaConductor.beats
 	AudioServer.unlock()
 	check(q[0].bound and q[1].bound and abs(q[1].origin - q[0].origin - paused) < 0.05,
-		"paused 1 s by their own stream_paused while waiting, then bound: HOLD's origin %.3f beats later than FOLLOW's (the pause: %.3f)"
+		"paused 1 s by their own stream_paused while waiting, then bound: HOLD's origin %.3f beats later than FOLLOW's (the pause: %.3f; QUANTIZE_NOW: exactly)"
 		% [q[1].origin - q[0].origin, paused])
 	check(abs(q[0].beats - (bt - q[0].origin)) < 0.02 and abs(q[1].beats - (bt - q[1].origin)) < 0.02,
 		".. each where its origin puts it (%.3f, %.3f beats; the timeline at %.3f, origins %.3f, %.3f)"
 		% [q[0].beats, q[1].beats, bt, q[0].origin, q[1].origin])
+
+	# ---- HOLD quantized to the beat: its origin moves by a whole number of beats, the nearest to the pause
+	var beat := source(FeluccaSource.JOIN_HOLD)
+	beat.quantize = FeluccaSource.QUANTIZE_BEAT
+	follow.stop()
+	beat.play()
+	await frames_until_bound(beat)
+	await wait(1.2)
+	var o0 := beat.get_snapshot().origin
+	b0 = FeluccaConductor.beats
+	beat.stream_paused = true
+	await wait(1.0)                    # (~1.1 beats: clear of 1.5, where the nearest beat changes)
+	paused = FeluccaConductor.beats - b0
+	beat.stream_paused = false
+	await wait(0.3)
+	var after := beat.get_snapshot()
+	check(after.origin - o0 == roundf(paused) and fmod(after.origin, 1.0) == 0.0,
+		"HOLD, QUANTIZE_BEAT: paused %.3f beats, its origin %.0f beats later, still on a beat (%.2f)" % [paused, after.origin - o0, after.origin])
 
 	for s in get_children():
 		if s is FeluccaSource:

@@ -6,7 +6,9 @@
 // Values (§4.2): what a source's scripts set is kept on the source (FelValues), applied at once to the instance that
 // plays it (under AudioServer::lock(), as the audio thread is then not mixing) and at binding to the next one; read
 // back, a bound part gives what sounds (recorded automation included), an unbound one what was set, else what its
-// overrides and its project say.
+// overrides and its project say. A part's value: its project's, under its overrides' (FeluccaOverrides, live: a
+// change reaches a bound instance at once), under what scripts set; its mute besides OR'd with the source's own
+// muted_parts (a part sounds only when neither says it is muted).
 #pragma once
 
 #include "fel_core.h"
@@ -72,6 +74,7 @@ struct FelValues {
 	uint8_t song_set[FEL_GLOBALS] = {};
 	int32_t engine[FEL_TRACKS] = {};
 	uint8_t engine_set[FEL_TRACKS] = {};
+	int muted = 0; // the source's muted_parts: bit t, part t + 1
 
 	int32_t get_track(int p_track, int p_id, int p_min, int p_max, int p_def) const;
 	void set_track(int p_track, int p_id, int32_t p_value, int p_min, int p_max);
@@ -79,11 +82,23 @@ struct FelValues {
 	void set_song(int p_id, int32_t p_value, int p_min, int p_max);
 	int32_t get_engine(int p_track) const;
 	void set_engine(int p_track, int32_t p_engine);
-	// at binding, on the main thread before the instance is mixed: engines, overrides, then what scripts set
-	void apply(const fel_core_t *p_core) const;
+	// at binding, on the main thread before the instance is mixed: engines, overrides, then what scripts set, the
+	// source's muted_parts
+	void apply(const fel_core_t *p_core);
+	// main thread: the source's muted_parts changed (bound: the instance's mutes at once)
+	void set_muted(int p_parts);
+	// main thread: the overrides changed, or another resource took their place (bound: what they set now, and what
+	// they no longer set back to the project's, at once; never what scripts set)
+	void overrides_changed();
 
 private:
+	int16_t ov_val[FEL_TRACKS][FEL_PARAMS] = {}; // what the overrides set when last applied
+	uint8_t ov_on[FEL_TRACKS][FEL_PARAMS] = {};
 	void apply_track(const fel_core_t *p_core, int p_track) const;
+	void overrides_now(int16_t r_val[FEL_TRACKS][FEL_PARAMS], uint8_t r_on[FEL_TRACKS][FEL_PARAMS]) const;
+	bool project_value(int p_track, int p_id, int32_t &r_v) const; // (its values hold for its own engines only)
+	int32_t muted_value(int p_track, int p_id, int32_t p_v) const { return p_id == mute_id() && ((muted >> p_track) & 1) ? 1 : p_v; }
+	static int mute_id();
 };
 
 // a part's engine (the engine's eight parameters), while it is the part's engine: set otherwise, it says so
@@ -154,7 +169,8 @@ public:
 };
 
 
-// one override (D14, §5.2): a part's parameter set to a value when the source binds an instance, over its project's
+// one override (D14, §5.2): a part's parameter set to a value over its project's, at binding and live (a source hears its
+// overrides' changes); to mute parts, a source's muted_parts
 class FeluccaOverride : public Resource {
 	GDCLASS(FeluccaOverride, Resource);
 	int part = 1, param = 0, value = 0;
@@ -163,27 +179,34 @@ protected:
 	static void _bind_methods();
 
 public:
-	void set_part(int p_v) { part = p_v; }
+	void set_part(int p_v) {
+		part = p_v;
+		emit_changed();
+	}
 	int get_part() const { return part; }
-	void set_param(int p_v) { param = p_v; }
+	void set_param(int p_v) {
+		param = p_v;
+		emit_changed();
+	}
 	int get_param() const { return param; }
-	void set_value(int p_v) { value = p_v; }
+	void set_value(int p_v) {
+		value = p_v;
+		emit_changed();
+	}
 	int get_value() const { return value; }
 };
 
+// a source's overrides: a list of them, shareable between sources (a .tres)
 class FeluccaOverrides : public Resource {
 	GDCLASS(FeluccaOverrides, Resource);
 	TypedArray<FeluccaOverride> entries;
-	int muted = 0; // bit p: part p + 1 muted
 
 protected:
 	static void _bind_methods();
 
 public:
-	void set_entries(const TypedArray<FeluccaOverride> &p_v) { entries = p_v; }
+	void set_entries(const TypedArray<FeluccaOverride> &p_v); // (an entry's change is the whole's: its sources hear it)
 	TypedArray<FeluccaOverride> get_entries() const { return entries; }
-	void set_muted(int p_v) { muted = p_v; }
-	int get_muted() const { return muted; }
 	// the value it gives part p_track's p_id (true), or none
 	bool value_of(int p_track, int p_id, int32_t &r_value) const;
 };

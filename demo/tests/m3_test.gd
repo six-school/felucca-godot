@@ -198,6 +198,7 @@ func _ready() -> void:
 
 	# ---- own pause: source 0 FOLLOW, source 1 HOLD; source 2 plays on
 	own = [sources[0], sources[1]]
+	var b_pause := FeluccaConductor.beats
 	sources[0].stream_paused = true
 	sources[1].stream_paused = true
 	await wait(0.6)
@@ -210,7 +211,8 @@ func _ready() -> void:
 	p = positions()
 	check(p[0].beats == held[0].beats and p[1].beats == held[1].beats and p[2].beats > held[2].beats,
 		"own pause: their music stood (%.3f), the others' moved on (%.3f -> %.3f)" % [p[0].beats, held[2].beats, p[2].beats])
-	await wait(0.6)
+	await wait(1.6)                    # (over 2 beats in all: HOLD's origin moves by a bar, these sources' quantize)
+	var missed := FeluccaConductor.beats - b_pause
 	sources[0].stream_paused = false
 	sources[1].stream_paused = false
 	own = []
@@ -218,8 +220,8 @@ func _ready() -> void:
 	p = positions()
 	check(same_music(p[0], p[2]), "own pause, FOLLOW: back where the music is (%.4f beats, as source 2's %.4f)" % [p[0].beats, p[2].beats])
 	var gap: float = p[1].origin - p[2].origin
-	check(gap > 1.0 and abs((p[2].beats - p[1].beats) - gap) < (0.005 if tol else 1.0 / 24000 + 1e-9),
-		"own pause, HOLD: on from where it stopped (%.3f beats behind: its origin %.3f beats later)" % [p[2].beats - p[1].beats, gap])
+	check(gap == 4.0 * roundf(missed / 4.0) and gap > 0.0 and abs((p[2].beats - p[1].beats) - gap) < (0.005 if tol else 1.0 / 24000 + 1e-9),
+		"own pause, HOLD: its origin later by the pause (%.3f beats) to the nearest bar, %.0f beats: on its bars still" % [missed, gap])
 
 	# ---- a pausable source whose play() comes in a pause: its music does not start until the unpause (then on its
 	# bar: these sources quantize BAR), and it has no copy in it (the conductor binds in its process, which the pause

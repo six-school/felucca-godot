@@ -135,9 +135,11 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 		started = start = true;
 	} else if (started && std::fabs(p.b0 - last_b1) > 1e-9) {
 		// the conductor's timeline moved while this playback was not mixed: its source was paused on its own. FOLLOW:
-		// back where the music is now; HOLD: on from where it stopped (its origin later by the pause)
+		// back where the music is now; HOLD: on from where it stopped, its origin later by the pause rounded to the
+		// nearest of the source's beats or bars (on the grid still; QUANTIZE_NOW: by the pause exactly)
 		if (join == 1) {
-			origin += p.b0 - last_b1;
+			const double gap = p.b0 - last_b1, unit = quantize == 2 ? 4.0 : quantize == 1 ? 1.0 : 0.0;
+			origin += unit > 0.0 ? std::round(gap / unit) * unit : gap;
 		}
 		relocate = true;
 	}

@@ -28,6 +28,19 @@ void FelSource::update(Node *p_owner) {
 	}
 }
 
+void FelSource::set_overrides(Node *p_owner, const Ref<FeluccaOverrides> &p_overrides) {
+	const Callable heard(p_owner, "_on_overrides_changed");
+	Ref<FeluccaOverrides> &o = values->overrides;
+	if (o.is_valid() && o->is_connected("changed", heard)) {
+		o->disconnect("changed", heard);
+	}
+	o = p_overrides;
+	if (o.is_valid() && !o->is_connected("changed", heard)) {
+		o->connect("changed", heard);
+	}
+	values->overrides_changed(); // (another resource: what it sets, and what the old one set back, at once)
+}
+
 static FeluccaPlayback *playback_of(Node *p_owner) {
 	if (!bool(p_owner->call("has_stream_playback"))) {
 		return nullptr;
@@ -114,6 +127,9 @@ void FelSource::bind() {
 	ClassDB::bind_method(D_METHOD("get_snapshot"), &T::get_snapshot); // (not get_position: Node2D / 3D's position's)
 	ClassDB::bind_method(D_METHOD("set_overrides", "overrides"), &T::set_overrides);
 	ClassDB::bind_method(D_METHOD("get_overrides"), &T::get_overrides);
+	ClassDB::bind_method(D_METHOD("_on_overrides_changed"), &T::_on_overrides_changed);
+	ClassDB::bind_method(D_METHOD("set_muted_parts", "parts"), &T::set_muted_parts);
+	ClassDB::bind_method(D_METHOD("get_muted_parts"), &T::get_muted_parts);
 	ClassDB::bind_method(D_METHOD("_get_part", "index"), &T::_get_part);
 	ClassDB::bind_method(D_METHOD("get_parts"), &T::get_parts);
 	ClassDB::bind_method(D_METHOD("get_song"), &T::get_song);
@@ -129,6 +145,9 @@ void FelSource::bind() {
 			"", "get_song");
 	ClassDB::add_property(c, PropertyInfo(Variant::OBJECT, "overrides", PROPERTY_HINT_RESOURCE_TYPE, "FeluccaOverrides"),
 			"set_overrides", "get_overrides");
+	// (a part sounds only when neither its own mute nor this says it is muted; live)
+	ClassDB::add_property(c, PropertyInfo(Variant::INT, "muted_parts", PROPERTY_HINT_FLAGS, "Part 1,Part 2,Part 3,Part 4"),
+			"set_muted_parts", "get_muted_parts");
 	ClassDB::add_property(c, PropertyInfo(Variant::OBJECT, "project", PROPERTY_HINT_RESOURCE_TYPE, "FeluccaProject"),
 			"set_project", "get_project");
 	ClassDB::add_property(c, PropertyInfo(Variant::INT, "quantize", PROPERTY_HINT_ENUM, "Now,Beat,Bar"), "set_quantize",

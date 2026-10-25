@@ -30,6 +30,7 @@ struct FelSource {
 	TypedArray<FeluccaPart> all_parts();
 
 	void update(Node *p_owner);
+	void set_overrides(Node *p_owner, const Ref<FeluccaOverrides> &p_overrides); // (live: their changes heard)
 	void notification(Node *p_owner, int p_what);
 	Ref<FeluccaSnapshot> snapshot(Node *p_owner) const;
 	bool bound(Node *p_owner) const;
@@ -50,8 +51,11 @@ public:                                                                         
 		src.values->project = p_project;                                                            \
 		src.update(this);                                                                           \
 	}                                                                                               \
-	void set_overrides(const Ref<FeluccaOverrides> &p_v) { src.values->overrides = p_v; }           \
+	void set_overrides(const Ref<FeluccaOverrides> &p_v) { src.set_overrides(this, p_v); }          \
 	Ref<FeluccaOverrides> get_overrides() const { return src.values->overrides; }                   \
+	void _on_overrides_changed() { src.values->overrides_changed(); }                               \
+	void set_muted_parts(int p_v) { src.values->set_muted(p_v); }                                   \
+	int get_muted_parts() const { return src.values->muted; }                                       \
 	Ref<FeluccaPart> _get_part(int p_index) { return src.part(p_index); }                           \
 	TypedArray<FeluccaPart> get_parts() { return src.all_parts(); }                                 \
 	Ref<FeluccaSong> get_song() { return src.get_song(); }                                          \
@@ -77,7 +81,8 @@ public:
 	// where step 1 goes when play() is called: the conductor's timeline where the next mix step starts, or that rounded
 	// up to a beat / a bar
 	enum Quantize { QUANTIZE_NOW, QUANTIZE_BEAT, QUANTIZE_BAR };
-	// on resuming after its own stream_paused: back where the music is (FOLLOW) or on from where it stopped (HOLD)
+	// on resuming after its own stream_paused: back where the music is (FOLLOW) or on from where it stopped (HOLD: its
+	// origin later by the pause, rounded to the nearest beat or bar as it quantizes; exactly with QUANTIZE_NOW)
 	enum Join { JOIN_FOLLOW, JOIN_HOLD };
 	static bool is_source(Object *p_object);
 };
