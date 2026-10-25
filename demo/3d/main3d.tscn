@@ -1,7 +1,7 @@
-[gd_scene format=3 uid="uid://b7lvv24ybajbw"]
+[gd_scene format=3 uid="uid://b7lvv24dbajbw"]
 
 [ext_resource type="Script" uid="uid://cs0cyf4j12iog" path="res://3d/main3d.gd" id="1_xkn7e"]
-[ext_resource type="FeluccaProject" uid="uid://2e7qbmax0y8y" path="res://music/solar_signal.felucca" id="2"]
+[ext_resource type="FeluccaProject" uid="uid://kbf7b42vyd28" path="res://music/test-4.felucca" id="2_xkn7e"]
 [ext_resource type="FeluccaProject" uid="uid://dqr5stjblexvq" path="res://music/test-2.felucca" id="3_1bvp3"]
 [ext_resource type="PackedScene" uid="uid://bs72ogkvdd7d6" path="res://3d/proto_controller.tscn" id="5_8fitx"]
 
@@ -21,7 +21,7 @@ size = Vector2(1, 1)
 script = ExtResource("1_xkn7e")
 
 [node name="Cellar" type="FeluccaSource3D" parent="." unique_id=1815355735]
-project = ExtResource("2")
+project = ExtResource("2_xkn7e")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.8116436, 1.3065257, 3.2705636)
 max_distance = 7.0
 
