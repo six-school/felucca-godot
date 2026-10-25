@@ -450,6 +450,55 @@ static void core_stop(void)
         midi_clock_transport(0xFCu, fm1_ms);
 }
 
+/* fel_core.h cut: what an import leaves ringing (it only releases the notes, as the device's project load does),
+ * silenced. One translation unit with the firmware: its statics are ours to reach, as locate's are */
+static void core_cut(void)
+{
+    uint32_t k, i;
+    core_stop();
+    for (k = 0; k < NTRK; k++) {
+        track_t *t = &trk[k];
+        midi_forget_track(k);                           /* (seq.c's panic, at once: notes held, the arp's, chords) */
+        trk_all_off(t);
+        t->nheld = 0;
+        t->arp_phys = 0;
+        t->latched = 0;
+        arp_forget(t);
+        for (i = 0; i < NVOICE; i++) {                  /* no release: off now, and a fresh voice for the next note
+                                                         * (a PHYS string restarts from rest on env == env_out == 0) */
+            voice_t *v = &t->v[i];
+            v->gate = v->active = v->stage = 0;
+            v->env = v->env_out = 0;
+        }
+        t->nmono = 0;
+        t->mono_note = 0;
+        t->xf_on = t->xf = 0;                           /* (an engine switch's fade: nothing left to fade) */
+        t->xp_n = 0;
+        t->tail = 0;                                    /* (blocks of DIST / INSERT to run out: none) */
+        t->dist_hp = t->dist_lp1 = t->dist_lp2 = 0;
+        ins_rest(t);
+        memset(&sl[k], 0, sizeof sl[k]);                /* SLICER: no repeat playing (STUT replays its recording
+                                                         * with no note held), no gate closing */
+        sl[k].idx = 15;                                 /* (as slicer_start: the next block enters step 0) */
+    }
+    memset(sl_buf, 0, sizeof sl_buf);                   /* (STUT's recordings; the FX layer's buffer effects too) */
+    memset(dly_buf, 0, sizeof dly_buf);
+    fx.dly_lp = 0;
+    memset(cho_buf, 0, sizeof cho_buf);
+    rev_clear();                                        /* ROOM, SPRING; HALL's lines with them, */
+    memset(&hl, 0, sizeof hl);                          /* .. its line ends and half-rate blocks (sz 0: its gains are
+                                                         * made again) */
+    memset(fl_buf, 0, sizeof fl_buf);
+    dc_l = dc_r = dce_l = dce_r = 0;                    /* the master: its DC blockers (~2 Hz: a DC-heavy sound's
+                                                         * state lets go over a few hundred ms), */
+    lc_l1 = lc_l2 = lc_r1 = lc_r2 = 0;                  /* .. the speaker's LOWCUT, BASS+ */
+    memset(lce, 0, sizeof lce);
+    sb_lp1 = sb_lp2 = sb_lp3 = sb_lp4 = sb_env = sb_h1 = sb_h2 = sb_hl = 0;
+    lim_env = LIM_T;                                    /* .. and its limiter, at rest */
+    for (i = ring_r; i != ring_w; i++)                  /* rendered ahead (up to 127 frames): the old sound */
+        ring[(i % RING) * 2u] = ring[(i % RING) * 2u + 1u] = 0.0f;
+}
+
 static void core_note(int track, int note, int vel)
 {
     if (!fel_track_ok(track) || note < 0 || note > 127)
@@ -477,7 +526,7 @@ static void core_snapshot(fel_snapshot_t *s)
 static const fel_core_t FEL_CORE = {
     FEL_CORE_ABI, core_boot, core_render, core_tempo, core_param_get, core_param_set, core_global_get,
     core_global_set, core_engine_get, core_engine_set, core_project_import, core_project_export, core_project_info,
-    core_engine_name, core_play, core_locate, core_stop, core_note, core_snapshot,
+    core_engine_name, core_play, core_locate, core_stop, core_cut, core_note, core_snapshot,
 };
 #define FEL_CAT2(a, b) a##b
 #define FEL_CAT(a, b) FEL_CAT2(a, b)

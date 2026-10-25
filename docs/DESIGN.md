@@ -209,6 +209,12 @@ while an origin is exact at whichever block it lands in (§6.4); 1 while a SONG 
 **M3 (ABI 3):** `project_info(bytes, n, &info)` — name, BPM, engines as import would read them, the copy's instance
 left alone (the importer uses copy 0 even while it plays) — and `engine_name(e)`.
 
+**M5 (ABI 5):** `cut()` — back to silence at once, for the copy's next source (§7, §13.9): the transport stopped,
+every note forgotten and every voice stopped without its release, every line that rings zeroed (delay, chorus, the
+reverb's three models, each part's DIST, INSERT and SLICER, the FX layer's flanger), the master's DC blockers,
+low-cuts and limiter at rest, and the frames rendered ahead zeroed. In the board file (`core/board.c`), not a Felucca
+patch: it is one translation unit with the firmware, so the firmware's statics are its to reach, as `locate`'s are.
+
 ### 5.2 GDScript surface (sketch)
 
 ```gdscript
@@ -500,10 +506,16 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 8. User samples (SAMPLE engine user slots): unsupported; a backup's sample objects could go into the flash image later.
 9. **Decided (2026-10-25, user): a released copy is cut, then reused by import.** A copy cannot boot twice, and an
    import only releases the notes (`panic_req`): the voices' releases (PHYS's sympathetic strings ring 0.8–11 s), the
-   delay (1.49 s, fed back), the reverb, the chorus and the FX layer's flanger ring on into the next source. A patch
-   (behind an `#ifdef`) adds a cut: every voice stopped at once, `rev_clear()`, the delay, chorus and flanger lines
-   zeroed. Inaudible state carries over (noise seeds, filter memories, phases), so a reused copy is silent, not fresh:
-   it sounds like a fresh one but is not identical to it. The alternative weighed: each copy's state in its own linker
+   delay (1.49 s, fed back), the reverb, a part's INSERT and SLICER (STUT replays its recording with no note held),
+   the FX layer's flanger and the master's DC blocker (a few hundred ms) ring on into the next source. The core's
+   `cut()` (ABI 5, §5.1) silences them all; planned as a Felucca patch, it needed none (the board file reaches the
+   firmware's statics, as `locate` does). Inaudible state carries over (noise seeds, filter memories, phases, the
+   engines' own memory, which a fresh note starts from rest), so a reused copy is silent, not fresh: it sounds like a
+   fresh one but is not identical to it. *Measured* (`core/tests/test_cut.c`, PHYS SYMP through a full-feedback
+   flanger and SLICER STUT, a long-release pad, a delay fed back at 120 %, the longest HALL): cut, then given the
+   user's project, exact zeros on both channels for 10 s, where an import alone still rang at rms 0.12 in the first
+   second and 0.02 nine seconds on; then playing it beside a fresh copy, the same positions in every 32-frame chunk
+   for 16 s, the first sound in the same frame, the level within 0.05 dB; reused 100 times, silent after every cut. The alternative weighed: each copy's state in its own linker
    section, restored to the compile-time image (`.bss` zero, `.data`'s 528 bytes) and booted again (5–6 ms): exact,
    but per-platform linker work. Measured: after boot, copies differ only in 3 pointers to their own code and
    constants, and boot is deterministic (two runs, byte-identical).
@@ -533,7 +545,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M2 | `locate()` + host clock from the conductor's timeline + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents. **Done** (2026-10-24): `core/tests/run.sh` |
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources. **Done** (2026-10-24): `extension/run_tests.sh` |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
-| M5 | Pool (§7): synchronous boot at game start, a scoring pass every frame, lazy eviction (3 dB margin and a warning on overflow), the cut (patch 0005), fades | the cellar/hallway/bedroom scenario with N = 8; a teleport; 9 audible sources; a reused copy carries no tail |
+| M5 | Pool (§7): synchronous boot at game start, a scoring pass every frame, lazy eviction (3 dB margin and a warning on overflow), the cut (`fel_core_t.cut`, ABI 5), fades | the cellar/hallway/bedroom scenario with N = 8; a teleport; 9 audible sources; a reused copy carries no tail |
 | M6 | Scheduler + events + heard-time signals; `FeluccaWhen`/`FeluccaAction`; `FeluccaPattern` | the knock-and-door scene |
 | M7 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M8 | Web (if the spike after M2/M3 says yes) | demo scene in a browser, threads on |

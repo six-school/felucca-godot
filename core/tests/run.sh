@@ -37,6 +37,7 @@ W="-O2 -std=gnu99 -Wall -Wextra -Werror -I$CORE"
     "$CC" $W -I"$HERE" -o "$OUT/test_timing" "$HERE/test_timing.c" "$OUT/test_copy_0.o" -lm
     "$CC" $W -I"$HERE" -o "$OUT/test_delay" "$HERE/test_delay.c" $T -lm
     "$CC" $W -I"$HERE" -o "$OUT/test_locate" "$HERE/test_locate.c" $T -lm
+    "$CC" $W -I"$HERE" -o "$OUT/test_cut" "$HERE/test_cut.c" "$CORE/project_json.c" $T -lm
 }
 set +e
 fail=0
@@ -49,6 +50,7 @@ run "T8: the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIX"
 run "T5: step timing on the conductor's timeline, tempo tweened (int, float), paused" "$OUT/test_timing"
 run "T6: no clicks in the delay when the tempo moves it" "$OUT/test_delay"
 run "locate: an instance that joins = one that played since the origin" "$OUT/test_locate"
+run "cut: a reused copy carries no tail" "$OUT/test_cut" "$FIX"
 
 # the 2-copy link test: renames from a list that misses `panel` (a tentative definition), copies 0 and 1. The check
 # must name it in both; the linker refuses the pair (a duplicate) by default, and with -fcommon merges the two panels

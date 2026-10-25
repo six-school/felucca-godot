@@ -103,6 +103,22 @@ static void test_setup(int which)
         put_step(t, 2, 1, SNARE, ST_NOTE, 0); step_set_chance_v(&t->step[2], 100u + 2u);    /* 2:2 */
         put_step(t, 10, 1, SNARE, ST_NOTE, 0); step_set_chance_v(&t->step[10], 100u + 3u);  /* 1:3 */
         song.g[G_SWING] = 15;
+    } else if (which == FEL_TEST_TAILS) {       /* what rings on after its notes (the cut's test): no pattern, notes
+                                                 * from note() */
+        t = &trk[0];                            /* PHYS SYMP, the longest ringing body: its strings 0.8 .. 11 s */
+        set_engine_of(t, 9);
+        t->p[P_E0] = 3; t->p[P_E0 + 3] = 127; t->p[P_E0 + 4] = 127; t->p[P_E0 + 5] = 127;   /* SYMP, DAMP, SYMP, ACC */
+        t->p[P_SUS] = 127; t->p[P_REL] = 127;
+        t->p[P_ITYPE] = 7; t->p[P_IC] = 127; t->p[P_IMIX] = 127;   /* INSERT FLANG, full feedback */
+        t->p[P_SLCR] = 2; t->p[P_SLPAT] = 13; t->p[P_SLDEPTH] = 127;   /* SLICER STUT: its '.' steps replay */
+        t->p[P_DLY] = 127; t->p[P_REV] = 127; t->p[P_CHOR] = 127;
+        t = &trk[1];                            /* ANALOG, the longest release, into every bus */
+        set_engine_of(t, 0);
+        t->p[P_SUS] = 127; t->p[P_REL] = 127;
+        t->p[P_DLY] = 127; t->p[P_REV] = 127; t->p[P_CHOR] = 127;
+        song.g[G_DTIME] = 0; song.g[G_DFDBK] = 120; song.g[G_DMIX] = 127;   /* a delay fed back past 100 %: it never
+                                                                             * dies out on its own */
+        song.g[G_RTYPE] = 2; song.g[G_RSIZE] = 127; song.g[G_RDAMP] = 0;   /* HALL, its longest */
     }
     ui.force = 1;
 }

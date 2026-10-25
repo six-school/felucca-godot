@@ -10,8 +10,8 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 4                  /* bump on any change to this file (2: locate, the passes in the snapshot;
-                                         * 3: project_info, engine_name; 4: project_info's values) */
+#define FEL_CORE_ABI 5                  /* bump on any change to this file (2: locate, the passes in the snapshot;
+                                         * 3: project_info, engine_name; 4: project_info's values; 5: cut) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
@@ -77,6 +77,14 @@ typedef struct {
      * the conductor's timeline: as play(). -> 0, or 1 while a SONG chain plays (not yet) */
     int32_t (*locate)(double origin_beats);
     void (*stop)(void);
+    /* back to silence at once, for the copy's next source (DESIGN.md §7, §13.9): the transport stopped, every note
+     * forgotten and every voice stopped without its release, every line that rings zeroed (the delay, the chorus,
+     * the reverb's three models, each part's DIST, INSERT and SLICER, the FX layer's flanger), the master's filters
+     * and limiter at rest, and the frames already rendered ahead zeroed: render() gives exact zeros until a note or a
+     * play() sounds. What is not heard stays
+     * (noise seeds, phases, the engines' own memory, which a fresh note starts from rest): a cut copy is silent, not
+     * fresh. The parameters and the patterns stay too (an import replaces them) */
+    void (*cut)(void);
     /* a note on a track now (in the next block): vel 0 = off. Played as MIDI IN would (arps, chords, scales) */
     void (*note)(int track, int note, int vel);
     void (*snapshot)(fel_snapshot_t *s);

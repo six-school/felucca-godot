@@ -10,8 +10,9 @@ layer it replaces) and keep the seams of §4.1 intact.
 - `tools/setup_felucca.sh`: Felucca `63f88ec` + `patches/` + generated headers into `third_party/felucca` (gitignored).
 - `prototypes/run_all.sh`: rebuilds and reruns the C prototypes; expected results are DESIGN.md §10.
 - `core/build.sh [N]`: the pool (N renamed copies of `core/board.c`) → `build/core/libfelucca_core.a`;
-  `core/tests/run.sh` builds it and runs the checks: M1's (T1–T4, T8, T11, the JSON reader, the 2-copy link test) and
-  M2's (T5, T6, locate) on test copies (`core/tests/test_hooks.c`: white-box accessors, renamed as the pool).
+  `core/tests/run.sh` builds it and runs the checks: M1's (T1–T4, T8, T11, the JSON reader, the 2-copy link test),
+  M2's (T5, T6, locate) and M5's (the cut) on test copies (`core/tests/test_hooks.c`: white-box accessors, renamed as
+  the pool).
 - Felucca's own suite (`tests/run_tests.sh`) needs the device image (AC79 toolchain) for a few tests; its ASan builds
   crash at random in this environment (DESIGN.md §11): cap the output (`| head -c`) and use a timeout.
 - `tools/setup_godot.sh`: Godot 4.7.2 (release zip, SHA-512 pinned), godot-cpp `507ed9d` (10.0.0-stable), SCons
