@@ -217,6 +217,25 @@ func _ready() -> void:
 	check(gap > 1.0 and abs((p[2].beats - p[1].beats) - gap) < (0.005 if tol else 1.0 / 24000 + 1e-9),
 		"own pause, HOLD: on from where it stopped (%.3f beats behind: its origin %.3f beats later)" % [p[2].beats - p[1].beats, gap])
 
+	# ---- a pausable source whose play() comes in a pause: its music does not start until the unpause (then on its
+	# bar: these sources quantize BAR). (Its instance, just freed by the stop, may ring out the reverb its last use
+	# left: §13.9)
+	sources[5].stop()
+	await wait(0.3)
+	get_tree().paused = true
+	await wait(0.1)
+	sources[5].play()
+	await wait(0.8)
+	var in_pause := sources[5].get_snapshot()
+	get_tree().paused = false
+	t0 = Time.get_ticks_msec()
+	while not sources[5].get_snapshot().playing and Time.get_ticks_msec() - t0 < 6000:
+		await wait(0.02)
+	var after_pause := sources[5].get_snapshot()
+	check(in_pause.bound and not in_pause.playing and after_pause.playing and fmod(after_pause.origin, 4.0) == 0.0
+		and after_pause.origin > FeluccaConductor.beats - 4.5,
+		"play() in a pause: its music not started in it, started after the unpause on the next bar (origin %.1f)" % after_pause.origin)
+
 	# ---- stop: the instance goes back to the pool
 	var bound := FeluccaConductor.get_bound_count()
 	sources[3].stop()
