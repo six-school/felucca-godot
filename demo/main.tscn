@@ -5,20 +5,13 @@
 [ext_resource type="FeluccaProject" uid="uid://ba6n2ov2o2pco" path="res://music/test-3.felucca" id="2_h2yge"]
 [ext_resource type="Script" uid="uid://dfqkc0d33qa5d" path="res://simple_move.gd" id="3_h2yge"]
 
-[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_lquwl"]
-muted = 8
-
-[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_7mycd"]
-muted = 8
-
-[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_1bvp3"]
-muted = 7
+[sub_resource type="FeluccaOverrides" id="FeluccaOverrides_ivymr"]
 
 [node name="Main" type="Node2D" unique_id=541490935]
 script = ExtResource("1")
 
 [node name="Cellar" type="FeluccaSource2D" parent="." unique_id=1283450278]
-overrides = SubResource("FeluccaOverrides_lquwl")
+overrides = SubResource("FeluccaOverrides_ivymr")
 project = ExtResource("2_h2yge")
 position = Vector2(100, 300)
 max_distance = 1000.0
@@ -38,13 +31,14 @@ grow_vertical = 2
 color = Color(1, 0, 0, 1)
 metadata/_edit_use_anchors_ = true
 
-[node name="Cellar2" type="FeluccaSource2D" parent="." unique_id=1973825979]
-overrides = SubResource("FeluccaOverrides_7mycd")
+[node name="Upstairs" type="FeluccaSource2D" parent="." unique_id=1973825979]
+muted_parts = 7
 project = ExtResource("2")
 position = Vector2(515, -200)
-max_distance = 1000.0
+autoplay = true
+max_distance = 500.0
 
-[node name="ColorRect" type="ColorRect" parent="Cellar2" unique_id=988411388]
+[node name="ColorRect" type="ColorRect" parent="Upstairs" unique_id=988411388]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -60,9 +54,10 @@ color = Color(0, 1, 0, 1)
 metadata/_edit_use_anchors_ = true
 
 [node name="Hallway" type="FeluccaSource2D" parent="." unique_id=1553841019]
-overrides = SubResource("FeluccaOverrides_1bvp3")
+muted_parts = 8
 project = ExtResource("2_h2yge")
 position = Vector2(900, 300)
+volume_db = 3.683
 max_distance = 1000.0
 
 [node name="ColorRect" type="ColorRect" parent="Hallway" unique_id=125125626]
@@ -95,3 +90,6 @@ offset_right = 20.0
 offset_bottom = 20.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="AudioStreamPlayer2D" type="AudioStreamPlayer2D" parent="." unique_id=2033954437]
+position = Vector2(515, -200)

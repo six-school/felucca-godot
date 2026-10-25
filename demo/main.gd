@@ -4,7 +4,7 @@
 extends Node2D
 
 @onready var cellar: FeluccaSource2D = $Cellar
-@onready var cellar2: FeluccaSource2D = $Cellar2
+#@onready var upstairs: FeluccaSource2D = $Upstairs
 @onready var hallway: FeluccaSource2D = $Hallway
 
 func _ready() -> void:
@@ -15,8 +15,7 @@ func _ready() -> void:
 	FeluccaConductor.boot_pool()
 	FeluccaConductor.play()
 	cellar.play()
-	cellar2.play()
-	hallway.play()
+	#hallway.play()
 	var t := create_tween().set_loops()
 	t.tween_method(func(bpm: float) -> void: FeluccaConductor.tempo = bpm, float(project.bpm), 80.0, 8.0).set_delay(4.0)
 	t.tween_method(func(bpm: float) -> void: FeluccaConductor.tempo = bpm, 80.0, float(project.bpm), 8.0).set_delay(4.0)
