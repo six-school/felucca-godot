@@ -1,0 +1,15 @@
+[remap]
+
+importer="felucca.project"
+importer_version=2
+type="Resource"
+uid="uid://kbf7b42vyd28"
+path="res://.godot/imported/test-4.felucca-153f22821bb313c240cca08b8880300f.res"
+
+[deps]
+
+source_file="res://music/test-4.felucca"
+dest_files=["res://.godot/imported/test-4.felucca-153f22821bb313c240cca08b8880300f.res"]
+
+[params]
+
