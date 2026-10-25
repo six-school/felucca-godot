@@ -1,4 +1,5 @@
-// Audio out (D5): a FeluccaSource's stream and its playback, one pool instance each (D3). The playback is an
+// Audio out (D5): a FeluccaSource's stream and its playback; the playback plays a pool instance while it is bound to one
+// (D3, D14: the conductor binds and unbinds them, DESIGN.md §7), and keeps its place in the music without one. It is an
 // AudioStreamPlayback of its own rather than an AudioStreamPlaybackResampled: Godot calls _mix once a mix step with
 // that step's frames, so they map exactly onto the step's plan (the conductor's timeline from b0 to b1); the resampled
 // base would ask for 128-frame chunks at a phase of each player's own, putting instances up to 2.9 ms apart. At a mix
@@ -65,13 +66,12 @@ class FeluccaPlayback : public AudioStreamPlayback {
 	GDCLASS(FeluccaPlayback, AudioStreamPlayback);
 
 	// main thread
-	bool active = false;
-	int slot = -1;
+	bool active = false, registered = false;
 	uint64_t mixed = 0;
 
 	// audio thread
 	double last_b1 = 0.0, tempo_applied = 0.0;
-	bool started = false;
+	bool started = false; // its music has started (step 1 at origin), whether a copy plays it or not
 	double rs_pos = 1.0; // the resampler: read position in rs_l / rs_r (frames at FEL_RATE), rs_have of them
 	int32_t rs_have = 1;
 	std::vector<float> rs_l, rs_r, out_l, out_r;
@@ -88,8 +88,13 @@ public:
 	std::weak_ptr<FelValues> values; // (weak: a playback Godot never frees at quit must not keep the resources)
 	ObjectID source;
 	int quantize = 0, join = 0;
+	// main thread: the pool's (FeluccaConductor)
+	int slot = -1; // the copy it is bound to, -1 none
+	uint64_t seq = 0; // the order of the play()s (the first come binds first while copies are free)
+	bool refused = false; // its project did not import: it never binds
 	// published under the lock (main thread), read by _mix (audio thread)
 	const fel_core_t *core = nullptr;
+	bool fresh = false; // bound since the last mix: the copy joins the music (locate) and fades in, in the next one
 	bool armed = false; // play() resolved: step 1 at origin
 	double origin = 0.0; // the conductor's timeline at its step 1
 	bool tree_held = false; // the tree pause holds it (the conductor paused it, or noted its own pause)
@@ -108,6 +113,12 @@ public:
 	int32_t _mix(AudioFrame *p_buffer, float p_rate_scale, int32_t p_frames) override;
 
 	bool is_bound() const { return core != nullptr; }
+	bool wants_copy() const { return active && slot < 0 && !refused && !data.is_empty(); }
+	// main thread: the copy in p_slot (free, booted) plays it from the next mix step: the project, the overrides and
+	// what scripts set into it, then published under the lock. false: its project did not import (the copy is freed)
+	bool bind(int p_slot);
+	// main thread: back to playing nothing, under the lock; the copy is cut and freed
+	void unbind();
 	Ref<FeluccaSnapshot> snapshot() const; // the instance's (main thread: takes the lock)
 };
 

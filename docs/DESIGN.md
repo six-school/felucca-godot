@@ -145,13 +145,25 @@ L0  Felucca firmware (63f88ec + patches), one translation unit
 As built (M3, `extension/src/`): `felucca_engine` (L2's state: the conductor's timeline, the plan, the pool),
 `felucca_clock` (the effect), `felucca_conductor` (the singleton and its node), `felucca_stream` (stream, playback,
 resampler), `felucca_source` (the three source nodes), `felucca_project` + `felucca_importer`; one shared library with
-the core's copies linked in (`SConstruct`), exporting only `felucca_library_init`. Binding is on the main thread for
-now: a playback's `_start` (Godot calls it before adding the playback to the mix) takes a free instance, booting it if
-needed (`FeluccaConductor.boot_pool()` boots all ahead), and loads the project; the instance is released in the
-playback's destructor, which Godot runs on the main thread after removing it from the mix. Every `play()` of a frame is
+the core's copies linked in (`SConstruct`), exporting only `felucca_library_init`. Every `play()` of a frame is
 resolved at the end of that frame's process to one origin (the conductor's timeline where the next mix step starts,
 rounded up to a beat or bar on request), so sources started together share it whatever mix steps fall between their
 calls.
+
+As built (M5, the pool's groundwork; §7): the Felucca autoload boots every copy when it enters the tree (never in the
+editor). A playback's `_start` (Godot calls it before adding the playback to the mix) only registers it with the
+conductor: a playing source keeps its place in the music (its origin, its own pause's FOLLOW / HOLD) with or without a
+copy, silent without one. Right after resolving the frame's `play()`s, the conductor gives free copies to the playbacks
+waiting for one, the first started first for now (the scoring replaces that order): `FeluccaPlayback::bind` imports
+the project, applies the overrides and what scripts set (the copy is not mixed: no lock), then publishes the copy under
+the lock; its next mix applies the tempo, then `play(origin)` or, for music already under way, `locate(origin)`, and
+fades the step in. A copy is freed (and cut, §13.9) in the playback's destructor, which Godot runs on the main thread
+after it has taken the playback out of the mix; `unbind` (for eviction) does it under the lock. *Measured*
+(`m5_test`, 44.1 and 48 kHz): the first frame's pass binds a source started in `_ready`; with 9 sources and 8 copies the
+9th waits, and gets a copy 60–120 ms after a source is stopped or deleted (Godot's fade-out of the stopped player and
+its deletion; the Dummy driver mixes in bursts), landing on the same step and position as the copies that played on
+(exactly at 44.1 kHz); a source paused by its own `stream_paused` while waiting keeps its origin (FOLLOW) or has it
+moved by the pause (HOLD).
 
 ## 5. Interfaces (drafts)
 

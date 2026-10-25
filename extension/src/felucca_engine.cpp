@@ -46,7 +46,7 @@ int Engine::acquire() {
 			continue;
 		}
 		if (!s.booted) {
-			s.core->boot(); // (~1.5 s of device time, 5-6 ms here: M5 moves it to a worker)
+			s.core->boot(); // (~1.5 s of device time, 5-6 ms here; boot_all has done it at the game's start)
 			s.booted = true;
 		}
 		s.used = true;
@@ -68,12 +68,20 @@ void Engine::release(int p_slot) {
 	if (p_slot < 0 || p_slot >= size()) {
 		return;
 	}
-	slots[std::size_t(p_slot)].core->stop();
+	slots[std::size_t(p_slot)].core->cut();
 	slots[std::size_t(p_slot)].used = false;
 }
 
 const fel_core_t *Engine::core(int p_slot) const {
 	return p_slot >= 0 && p_slot < size() ? slots[std::size_t(p_slot)].core : nullptr;
+}
+
+int Engine::booted() const {
+	int n = 0;
+	for (const Slot &s : slots) {
+		n += s.booted;
+	}
+	return n;
 }
 
 int Engine::bound() const {

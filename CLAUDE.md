@@ -17,8 +17,9 @@ layer it replaces) and keep the seams of §4.1 intact.
   crash at random in this environment (DESIGN.md §11): cap the output (`| head -c`) and use a timeout.
 - `tools/setup_godot.sh`: Godot 4.7.2 (release zip, SHA-512 pinned), godot-cpp `507ed9d` (10.0.0-stable), SCons
   4.9.1 in the venv. Build: `third_party/.felucca-venv/bin/python -m SCons` (the venv's own scripts may name another
-  path) → `demo/bin/libfelucca.*.so`; `extension/run_tests.sh`: build, import, `demo/tests/m3_test.tscn` headless at
-  44.1 and 48 kHz.
+  path) → `demo/bin/libfelucca.*.so`; `extension/run_tests.sh`: build, import, then headless `demo/tests/m3_test` and
+  `m5_test` (the pool) at 44.1 and 48 kHz, `m4_test` (the typed API), `project_test` (the project file), the typo
+  scripts.
 - `spikes/godot_clock_pause/run.sh <godot-4.7.2-binary>`: the GDScript spike of T12, T13.
 - Toolchain used so far: clang (the core), g++ (the extension: godot-cpp's default), Python 3 (Pillow + fontTools +
   SCons in the venv), Godot 4.7.2.

@@ -21,7 +21,8 @@ class FeluccaConductor : public Object {
 	GDCLASS(FeluccaConductor, Object);
 	static FeluccaConductor *singleton;
 	ObjectID node;
-	std::vector<FeluccaPlayback *> live, pending; // main thread
+	std::vector<FeluccaPlayback *> live, pending; // main thread (live: in the order of their play()s)
+	uint64_t seq = 0;
 
 protected:
 	static void _bind_methods();
@@ -38,8 +39,9 @@ public:
 	bool is_running() const;
 	double get_beats() const; // the conductor's timeline where the next mix step starts
 	int get_pool_size() const;
-	void boot_pool(); // boot every pool instance now (else each boots at its first play(), 5-6 ms)
+	void boot_pool(); // boot every pool instance now (the Felucca autoload does it when the game starts)
 	int get_bound_count() const;
+	int get_booted_count() const;
 	int64_t get_mix_steps() const;
 	int64_t get_paused_mix_steps() const;
 
@@ -48,7 +50,8 @@ public:
 	void adopt_node(Node *p_node); // the autoload's node, entering the tree
 	void add_playback(FeluccaPlayback *p_playback);
 	void remove_playback(FeluccaPlayback *p_playback);
-	void resolve_pending(); // the node, last in each frame's process
+	void resolve_pending(); // the node, last in each frame's process: this frame's play()s to their origin,
+	void bind_waiting(); // .. then free copies to the playbacks waiting for one, the first come first
 	void tree_paused(bool p_paused); // the node, first to hear the tree pause
 };
 

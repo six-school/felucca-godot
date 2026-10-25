@@ -33,7 +33,8 @@ FeluccaPlayback::FeluccaPlayback() {
 	out_r.assign(size_t(2 * CHUNK + 8), 0.0f);
 }
 
-// main thread, after Godot has taken it out of the mix (AudioServer::update frees deleted playbacks there)
+// main thread, after Godot has taken it out of the mix (AudioServer::update frees deleted playbacks there): its copy,
+// if it has one, is cut and free for the next source (no lock: nothing mixes this playback any more)
 FeluccaPlayback::~FeluccaPlayback() {
 	if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
 		c->remove_playback(this);
@@ -46,38 +47,65 @@ FeluccaPlayback::~FeluccaPlayback() {
 	}
 }
 
-// main thread, before Godot adds it to the mix (AudioServer::start_playback_stream): bind a pool instance, load the
-// project into it; it starts when the conductor resolves this frame's play()s (FeluccaConductor::resolve_pending)
+// main thread, before Godot adds it to the mix (AudioServer::start_playback_stream): the conductor resolves this
+// frame's play()s to one origin (resolve_pending) and gives free copies to the playbacks waiting for one (bind_waiting),
+// both last in the frame's process; until it has a copy, it keeps its place in the music silently
 void FeluccaPlayback::_start(double p_from_pos) {
 	active = true;
-	if (slot >= 0) {
+	if (registered) {
 		return;
 	}
 	if (data.is_empty()) {
 		UtilityFunctions::push_warning("FeluccaSource: no project to play");
 		return;
 	}
-	felucca::Engine &e = felucca::Engine::get();
-	slot = e.acquire();
-	if (slot < 0) {
-		UtilityFunctions::push_warning("FeluccaSource: all ", e.size(), " pool instances are playing: this one stays silent");
-		return;
-	}
-	const fel_core_t *c = e.core(slot);
-	if (c->project_import(data.ptr(), uint32_t(data.size())) != 0) {
-		UtilityFunctions::push_error("FeluccaSource: the instance refused the project");
-		e.release(slot);
-		slot = -1;
-		return;
-	}
-	if (std::shared_ptr<FelValues> v = values.lock()) { // the source's overrides and what its scripts set; from now
-		v->apply(c);                                     // its parts write through to c
-		v->core = c;
-	}
-	core = c;
+	registered = true;
 	if (FeluccaConductor *fc = FeluccaConductor::get_singleton()) {
 		fc->add_playback(this);
 	}
+}
+
+bool FeluccaPlayback::bind(int p_slot) {
+	felucca::Engine &e = felucca::Engine::get();
+	const fel_core_t *c = e.core(p_slot);
+	if (!c || c->project_import(data.ptr(), uint32_t(data.size())) != 0) {
+		UtilityFunctions::push_error("FeluccaSource: the instance refused the project");
+		e.release(p_slot);
+		refused = true;
+		return false;
+	}
+	std::shared_ptr<FelValues> v = values.lock();
+	if (v) {
+		v->apply(c); // the source's overrides and what its scripts set (the copy is not mixed: no lock needed)
+	}
+	slot = p_slot;
+	AudioServer::get_singleton()->lock();
+	core = c;
+	fresh = true;
+	tempo_applied = 0.0;
+	rs_pos = 1.0; // (the resampler from silence: nothing of what it held before)
+	rs_have = 1;
+	rs_l[0] = rs_r[0] = 0.0f;
+	if (v) {
+		v->core = c; // (from now its parts write through to c)
+	}
+	AudioServer::get_singleton()->unlock();
+	return true;
+}
+
+void FeluccaPlayback::unbind() {
+	if (slot < 0) {
+		return;
+	}
+	AudioServer::get_singleton()->lock();
+	if (std::shared_ptr<FelValues> v = values.lock(); v && v->core == core) {
+		v->core = nullptr;
+	}
+	core = nullptr;
+	fresh = false;
+	felucca::Engine::get().release(slot); // (cut: under the lock, as the audio thread is not mixing)
+	AudioServer::get_singleton()->unlock();
+	slot = -1;
 }
 
 void FeluccaPlayback::_stop() {
@@ -90,8 +118,9 @@ double FeluccaPlayback::_get_playback_position() const {
 
 int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t p_frames) {
 	const felucca::Plan &p = felucca::Engine::get().plan;
+	bool start = false, relocate = false;
 	mixed += uint64_t(p_frames);
-	if (!core || hold_silent || hold_fade) {
+	if (hold_silent || hold_fade) {
 		if (hold_fade && !hold_silent) {
 			hold_fade--;
 		}
@@ -100,24 +129,42 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 		}
 		return p_frames;
 	}
+	// its place in the music, with a copy or without
 	if (armed) {
 		armed = false;
-		started = true;
-		core->play(origin);
+		started = start = true;
 	} else if (started && std::fabs(p.b0 - last_b1) > 1e-9) {
 		// the conductor's timeline moved while this playback was not mixed: its source was paused on its own. FOLLOW:
 		// back where the music is now; HOLD: on from where it stopped (its origin later by the pause)
 		if (join == 1) {
 			origin += p.b0 - last_b1;
 		}
-		core->locate(origin);
+		relocate = true;
 	}
-	if (p.tempo != tempo_applied) {
+	last_b1 = p.b1;
+	if (!core) {
+		for (int32_t i = 0; i < p_frames; i++) {
+			p_buffer[i] = AudioFrame{ 0.0f, 0.0f };
+		}
+		return p_frames;
+	}
+	if (p.tempo != tempo_applied) { // (before a locate: it places the tracks at the tempo it finds)
 		core->tempo(p.tempo);
 		tempo_applied = p.tempo;
 	}
+	if (start) {
+		core->play(origin);
+	} else if (started && (fresh || relocate)) {
+		core->locate(origin); // (a copy given to music in progress joins it where it is)
+	}
 	render(p_buffer, p_frames, p.b0, p.b1);
-	last_b1 = p.b1;
+	if (fresh) { // a short fade-in (the copy is silent until a step starts in it: this softens only one that starts here)
+		fresh = false;
+		for (int32_t i = 0; i < p_frames; i++) {
+			const float g = float(i + 1) / float(p_frames);
+			p_buffer[i] = AudioFrame{ p_buffer[i].left * g, p_buffer[i].right * g };
+		}
+	}
 	return p_frames;
 }
 

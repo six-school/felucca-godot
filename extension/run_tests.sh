@@ -1,7 +1,7 @@
 #!/bin/sh
 # The extension's Godot-side checks: built (SCons), the demo imported, demo/tests/m3_test.tscn run headless on the Dummy
-# audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples), then m4_test (the typed API),
-# project_test (the project file) and the typo scripts.
+# audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples), m5_test (the pool) at both, then
+# m4_test (the typed API), project_test (the project file) and the typo scripts.
 #   extension/run_tests.sh [GODOT]     (default: third_party/godot/Godot_v4.7.2-stable_linux.x86_64)
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -18,6 +18,14 @@ for rate in 44100 48000; do
     timeout 180 "$G" --headless --audio-driver Dummy --path demo res://tests/m3_test.tscn > build/m3_test_$rate.log 2>&1 || fail=1
     grep -E "^(ok|FAIL|mix rate|m3_test)" build/m3_test_$rate.log || true
     grep -E "^(ERROR|SCRIPT ERROR)" build/m3_test_$rate.log | grep -v "FeluccaProject: \"format\"\|not a Felucca project" || true
+done
+rm -f demo/override.cfg
+for rate in 44100 48000; do
+    echo "== demo/tests/m5_test.tscn at $rate Hz: the pool"
+    if [ $rate = 44100 ]; then rm -f demo/override.cfg; else printf '[audio]\ndriver/mix_rate=%s\n' $rate > demo/override.cfg; fi
+    timeout 180 "$G" --headless --audio-driver Dummy --path demo res://tests/m5_test.tscn > build/m5_test_$rate.log 2>&1 || fail=1
+    grep -E "^(ok|FAIL|mix rate|m5_test)" build/m5_test_$rate.log || true
+    grep -E "^(ERROR|SCRIPT ERROR)" build/m5_test_$rate.log || true
 done
 rm -f demo/override.cfg
 echo "== demo/tests/m4_test.tscn"

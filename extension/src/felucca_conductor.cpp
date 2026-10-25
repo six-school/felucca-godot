@@ -40,6 +40,7 @@ void FeluccaConductor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_beats"), &FeluccaConductor::get_beats);
 	ClassDB::bind_method(D_METHOD("get_pool_size"), &FeluccaConductor::get_pool_size);
 	ClassDB::bind_method(D_METHOD("get_bound_count"), &FeluccaConductor::get_bound_count);
+	ClassDB::bind_method(D_METHOD("get_booted_count"), &FeluccaConductor::get_booted_count);
 	ClassDB::bind_method(D_METHOD("boot_pool"), &FeluccaConductor::boot_pool);
 	ClassDB::bind_method(D_METHOD("get_mix_steps"), &FeluccaConductor::get_mix_steps);
 	ClassDB::bind_method(D_METHOD("get_paused_mix_steps"), &FeluccaConductor::get_paused_mix_steps);
@@ -101,6 +102,10 @@ int FeluccaConductor::get_bound_count() const {
 	return felucca::Engine::get().bound();
 }
 
+int FeluccaConductor::get_booted_count() const {
+	return felucca::Engine::get().booted();
+}
+
 int64_t FeluccaConductor::get_mix_steps() const {
 	return int64_t(felucca::Engine::get().steps.load());
 }
@@ -134,6 +139,7 @@ void FeluccaConductor::adopt_node(Node *p_node) {
 
 void FeluccaConductor::add_playback(FeluccaPlayback *p_playback) {
 	ensure_node();
+	p_playback->seq = ++seq;
 	live.push_back(p_playback);
 	pending.push_back(p_playback);
 }
@@ -158,6 +164,22 @@ void FeluccaConductor::resolve_pending() {
 	}
 	AudioServer::get_singleton()->unlock();
 	pending.clear();
+}
+
+// a playback waiting for a copy gets a free one (lazy: nothing is taken from a bound source here; the next part of M5
+// scores them, DESIGN.md §7). A copy is free when its source stopped or was deleted
+void FeluccaConductor::bind_waiting() {
+	felucca::Engine &e = felucca::Engine::get();
+	for (FeluccaPlayback *p : live) {
+		if (!p->wants_copy()) {
+			continue;
+		}
+		const int slot = e.acquire();
+		if (slot < 0) {
+			return;
+		}
+		p->bind(slot);
+	}
 }
 
 // D7: one lock for the conductor's timeline and every bound source, whatever its process mode (a source left playing
@@ -201,6 +223,9 @@ void FeluccaConductorNode::_notification(int p_what) {
 			if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
 				c->adopt_node(this);
 			}
+			if (!Engine::get_singleton()->is_editor_hint()) {
+				felucca::Engine::get().boot_all(); // (the game's start: no copy boots later, mid-game)
+			}
 			AudioServer *as = AudioServer::get_singleton();
 			felucca::Engine &e = felucca::Engine::get();
 			as->lock();
@@ -221,6 +246,7 @@ void FeluccaConductorNode::_notification(int p_what) {
 		case NOTIFICATION_PROCESS:
 			if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
 				c->resolve_pending();
+				c->bind_waiting();
 			}
 			break;
 		case NOTIFICATION_PAUSED:

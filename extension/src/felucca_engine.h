@@ -38,13 +38,15 @@ public:
 	// main thread, under the lock: the pending step's plan after tempo, running or paused changed
 	void republish();
 
-	// the pool (main thread): a free copy, booted on its first use; -1 when every one is taken
+	// the pool (main thread): every copy boots once, when the game starts (boot_all: 8 x 5-6 ms, the Felucca
+	// autoload's); a free one for a source (booted now if it had not been: no autoload); -1 when every one is taken
 	int acquire();
-	void release(int p_slot);
-	void boot_all(); // every copy now (a loading screen's job: each takes 5-6 ms)
+	void release(int p_slot); // cut (silent for its next source: fel_core.h) and free
+	void boot_all();
 	const fel_core_t *core(int p_slot) const;
 	int size() const { return int(slots.size()); }
 	int bound() const;
+	int booted() const;
 
 private:
 	struct Slot {
