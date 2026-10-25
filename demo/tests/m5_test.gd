@@ -65,6 +65,10 @@ func _ready() -> void:
 	print("mix rate %d Hz, pool of %d" % [AudioServer.get_mix_rate(), n])
 	check(FeluccaConductor.get_booted_count() == n, "every copy booted when the game started (%d of %d), before any play()"
 		% [FeluccaConductor.get_booted_count(), n])
+	var plain := FeluccaSource2D.new()
+	check(plain.quantize == FeluccaSource.QUANTIZE_BEAT and plain.join == FeluccaSource.JOIN_FOLLOW,
+		"a new source quantizes to the beat and follows, by default")
+	plain.free()
 	FeluccaConductor.tempo = project.bpm
 	FeluccaConductor.play()
 

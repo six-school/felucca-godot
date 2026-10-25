@@ -19,7 +19,7 @@ class FeluccaSnapshot;
 // what the three share
 struct FelSource {
 	Ref<FeluccaProject> project;
-	int quantize = 0, join = 0;
+	int quantize = 1, join = 0; // QUANTIZE_BEAT (step 1 on a beat: a music engine's default), JOIN_FOLLOW
 	Ref<FeluccaStream> stream;
 	std::shared_ptr<FelValues> values = std::make_shared<FelValues>(); // (its parts', its song's, its playbacks')
 	Ref<FeluccaPart> parts[FEL_TRACKS];

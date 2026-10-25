@@ -54,7 +54,7 @@ public:
 	Ref<FeluccaProject> project;
 	std::shared_ptr<FelValues> values; // its source's typed values (applied at binding)
 	ObjectID source; // the FeluccaSource it is the stream of (its pause, its settings)
-	int quantize = 0, join = 0; // FeluccaSource's enums
+	int quantize = 1, join = 0; // FeluccaSource's enums (its defaults: BEAT, FOLLOW)
 
 	Ref<AudioStreamPlayback> _instantiate_playback() const override;
 	String _get_stream_name() const override { return "Felucca"; }
@@ -87,7 +87,7 @@ public:
 	PackedByteArray data;
 	std::weak_ptr<FelValues> values; // (weak: a playback Godot never frees at quit must not keep the resources)
 	ObjectID source;
-	int quantize = 0, join = 0;
+	int quantize = 1, join = 0;
 	// main thread: the pool's (FeluccaConductor)
 	int slot = -1; // the copy it is bound to, -1 none
 	uint64_t seq = 0; // the order of the play()s (the first come binds first while copies are free)

@@ -252,7 +252,7 @@ cellar.bound.connect(…); cellar.unbound.connect(…)
 
 As built (M3, before M4's typed API): `FeluccaConductor` (engine singleton) `tempo`, `beats` (read-only: the conductor's
 timeline where the next mix step starts), `running`, `play()`, `stop()`, `boot_pool()`, `pool_size`,
-`get_bound_count()`; `FeluccaSource` / `2D` / `3D`: `project`, `quantize` (`QUANTIZE_NOW` / `_BEAT` / `_BAR`), `join`
+`get_bound_count()`; `FeluccaSource` / `2D` / `3D`: `project`, `quantize` (`QUANTIZE_NOW` / `_BEAT` / `_BAR`; `_BEAT` the default since M5, the user's decision: a source started without one is on the beat grid; `_NOW` for one that must sound at once), `join`
 (`JOIN_FOLLOW` / `_HOLD`), `is_bound()`, `get_snapshot()` (a `FeluccaSnapshot`: `bound`, `playing`, `beats`, `origin`,
 `frames`, `steps`, `positions`, `loops`; M3 named it `get_position()`, which shadowed `Node2D` / `Node3D`'s own, the
 getter of their `position`: `m4_test` now checks no name of ours shadows an engine ancestor's), and the player's own
