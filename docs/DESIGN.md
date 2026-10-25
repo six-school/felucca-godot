@@ -93,7 +93,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D11 | Scheduling on the audio thread in the board file, keyed to (track, loop, step) or timeline positions, applied before the half in which the step starts; relative targets resolved on the audio thread. | Knock prototype exact (T9). | — |
 | D12 | Events: audio thread → lock-free queue (sample + timeline stamps) → signals **when heard**; plus a polled, heard-time snapshot for continuous visuals. | Polling alone misses steps, can't tag, reports rendered time. | A8 |
 | D13 | Projects: import plugin turns the web app's `.json` into a `FeluccaProject` resource (validated: format, version, size, CRC-32); loaded with `proj_import` + `project_restore_runtime`. As built (M3): the importer takes **`.felucca`** files (the export renamed: an importer of `.json` would take every JSON file of the game); `FeluccaProject.load_json(path)` reads the `.json` itself at run time; name, BPM and engines from the core's `project_info`. | R2; *measured* with the user's export (T11; M3: imported and played in Godot). | backup → flash image (user samples, later) |
-| D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the N most audible to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come), M5 the scoring. | §7. | restart-on-bar join |
+| D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the N most audible to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come); M5: the scoring, lazy eviction (§7). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
 | D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M8) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
 | D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0004 (`patches/`). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
@@ -107,8 +107,8 @@ GDScript ───────────────────────�
   FeluccaWhen / FeluccaAction   signals
         │ property sets, schedule(), play() ── published under AudioServer.lock() ──┐
         ▼                                                                          │      ▲ signals when heard
-L2  C++ engine: the conductor's timeline, pool + binding, per-instance SPSC command/   │      │ snapshots
-    event queues, shadows, heard-time map, worker for boot/import/locate           │
+L2  C++ engine: the conductor's timeline, pool + binding, SPSC command /           │      │ snapshots
+    event queues per instance, shadows, heard-time map, the copies' cut            │
         │ ClockEffect::_process (once per mix step) ◄──────────────────────────────┘      audio thread
         │ FeluccaPlayback::_mix (per bound source, own resampler) → fel_core_t.render
         ▼
@@ -133,8 +133,9 @@ L0  Felucca firmware (63f88ec + patches), one translation unit
 - **Audio thread** (Godot's mix): `ClockEffect::_process` advances the conductor's timeline and applies published
   commands at each step's end; `FeluccaPlayback::_mix` renders its instance (host clock fed from the conductor's
   timeline for that step), runs the scheduler, pushes events. All `fel_core_t` calls for a bound instance happen here.
-- **Worker thread** (desktop; synchronous fallback on the web without threads): boot, project import, overrides and
-  `locate` for an instance about to be bound; then hand-off to the audio thread under the lock.
+- **No worker thread** (decided 2026-10-25, M5): the pool boots synchronously at game start (8 × 5–6 ms, in the
+  Felucca autoload's `_ready`, never in the editor), and binding a booted copy (import, overrides, shadows, `locate`)
+  takes well under a millisecond on the main thread, handed to the audio thread under the lock (§7, §13.7).
 - **Main thread:** property sets push commands; getters return a **shadow** (last value set, refreshed from snapshots
   each frame; values moved by recorded automation show up a frame late). Publication of anything that must take
   effect for several instances on the same step (tempo, transport, pause, binding) happens inside
@@ -317,20 +318,42 @@ instance is silent until its next step (or nudged play), then plays.
 
 ## 7. Sources and the pool (D14)
 
-- **Sources** are scene nodes; **instances** (pool slots, N fixed at build time, default 8) are cores. A source holds:
-  project, overrides, priority, join mode (`FOLLOW` = locate to the timeline; `RESTART_ON_BAR`), its musical origin (the
-  timeline's value at its `play()`, optionally quantized to a bar), script-set values (shadows, replayed on binding),
-  schedules.
-- **Binding loop** (main thread, ~10 Hz): score every playing source by estimated level at the listener: 3D from
-  `volume_db`, `unit_size`, `attenuation_model`, `max_distance` and distance to the current listener/camera; 2D from its
-  attenuation exponent and `max_distance`; non-positional from `volume_db`. Pluggable `score_func` (Callable) for
-  occlusion etc. Pinned sources first (`pinned = true`, or pending schedules), then by score + priority. Bind the top N
-  with hysteresis (a challenger must beat the weakest bound source by ≥ 3 dB for ≥ 250 ms), prefetching sources that
-  are approaching audibility (≥ −60 dB) because binding takes time.
-- **Bind:** worker: boot (or take a pre-booted spare) → import project → overrides → replay shadows → `locate(origin)` →
-  hand-off under the lock with a short fade-in. **Unbind:** ~30 ms fade-out on the audio thread, release, re-boot as a
-  spare in the background. (A copy boots once — its statics cannot be reset in place — so "re-boot" means reuse by
-  import, or a reset of the copy's data: §13.9.)
+Decided with the user before M5 (2026-10-25); §13.7 and §13.9 have the measurements behind it.
+
+- **Sources** are scene nodes; **instances** (pool slots, N fixed at build time, 8) are cores. A source holds: project,
+  overrides, priority, join mode (for a resume after its own `stream_paused`: `FOLLOW`, back where the music is;
+  `HOLD`, on from where it stopped; D7), its musical origin (the timeline's value at its `play()`, optionally quantized
+  to a beat or bar), script-set values (shadows, replayed on binding), schedules. An unbound source keeps its place in
+  the music: binding it again always locates it to where it would be (no restart-on-bar join).
+- **Assumption:** at most N sources are audible at once (a level-design rule); the pool is built for that, and
+  degrades gracefully when it does not hold.
+- **Slots** are free or bound (plus one mix step of handing over, below). All N copies boot synchronously at game start
+  (8 × 5–6 ms, the Felucca autoload's `_ready`; never in the editor): no copy is unbooted at run time and there is no
+  worker thread.
+- **Binding pass** (main thread, every frame: a few multiplications a playing source): score every playing source by
+  its estimated level at the listener: 3D from `volume_db`, `unit_size`, `attenuation_model`, `max_distance` and the
+  distance to the current listener/camera; 2D from its attenuation exponent and `max_distance`; non-positional from
+  `volume_db`. A pluggable `score_func` (Callable) replaces the estimate (occlusion etc.). Pinned sources first
+  (`pinned = true`, or pending schedules; they count towards N), then by score + priority. `priority` is in dB, added
+  to the estimate (a source with priority 6 competes as if 6 dB louder; default 0), so it trades against loudness
+  instead of overriding it (pinning does that).
+  - **Lazy eviction:** free copies go to unbound sources, loudest first. A bound source keeps its copy until another
+    source needs one, however quiet it gets: nothing flaps around an audibility threshold, and no hysteresis timer is
+    needed. When an audible source has no copy and none is free, it takes the quietest bound source's.
+  - **Overflow** (more than N audible: the assumption broken): a newcomer takes an *audible* source's copy only if it
+    is ≥ 3 dB louder (a margin, no timer), and a warning is pushed once.
+  - **Teleport:** needs no rule of its own: the newly audible sources take the copies of the now inaudible ones on the
+    next frame, effective from the next mix step.
+- **Bind** (main thread, well under a millisecond: no prefetch): import the project → overrides → replay shadows →
+  `locate(origin)` → hand-off under the lock with a short fade-in. A located copy sounds nothing of the step it lands
+  in, so a long note that started before it joins at its next step.
+- **Unbind:** an inaudible source's copy is detached under the lock at once, cut (§13.9: every voice stopped, the
+  reverb, delay, chorus and flanger lines zeroed; microseconds) and handed to the newcomer. An audible one (overflow)
+  fades out over one mix step first, as Godot's own stop does, and the newcomer binds on the step after. A copy
+  becomes free only when its source stops (`stop()`, or its stream ends) or is deleted.
+- **Deleting a source:** freeing the node stops its player (Godot fades the playback out over one step and takes it
+  out of the mix), then destroys the playback on the main thread a frame or so later; its destructor cuts and frees
+  the copy, which the next pass gives to the loudest waiting source.
 - Unbound sources keep their state; their scripts keep working (shadows); they emit no events. More pinned sources than
   N: the lowest-priority pinned ones lose, with a warning.
 
@@ -368,7 +391,7 @@ What Godot 4.7.2's source shows (`platform/web/audio_driver_web.cpp`, `scene/aud
 - GDExtension on the web needs the export option *Extension Support* (dlink templates) and an extension built with
   Emscripten as a side module (godot-cpp has `platform=web`); toolchain/version pairing has broken before (godot
   #105717, 4.4). Not verified for 4.7.
-- Our parts: renames (D3) instead of objcopy; worker → synchronous fallback; the browser's mix rate (often 48 kHz)
+- Our parts: renames (D3) instead of objcopy; no worker thread (§4.2); the browser's mix rate (often 48 kHz)
   goes through the resampler; download size grows ≈ 1 MB per pool copy (fold read-only data); wasm speed: Felucca's
   own wasm ran ~60× real time in V8 on a light patch (T10), the heavy song is unmeasured there.
 
@@ -472,8 +495,8 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 7. **Decided (2026-10-25, user): N = 8, no spare copies, no prefetch.** Measured on one copy (the pool's flags):
    first boot 5–6 ms, import 0.06 ms (fresh or reused), locate and its first render 0.2 ms; 1.6 MB of mutable state
    (`.bss`) and ~1 MB of code and constants a copy (the 8-copy library: 10 MB); ~1 % of a core an instance (T4). Only
-   the first boot is costly: every copy boots once at startup on a worker; binding a booted copy then takes well under
-   a millisecond, so nothing needs preparing ahead.
+   the first boot is costly: every copy boots once, synchronously at game start (no worker thread); binding a booted
+   copy then takes well under a millisecond, so nothing needs preparing ahead.
 8. User samples (SAMPLE engine user slots): unsupported; a backup's sample objects could go into the flash image later.
 9. **Decided (2026-10-25, user): a released copy is cut, then reused by import.** A copy cannot boot twice, and an
    import only releases the notes (`panic_req`): the voices' releases (PHYS's sympathetic strings ring 0.8–11 s), the
@@ -510,7 +533,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M2 | `locate()` + host clock from the conductor's timeline + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents. **Done** (2026-10-24): `core/tests/run.sh` |
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources. **Done** (2026-10-24): `extension/run_tests.sh` |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
-| M5 | Pool: scoring, hysteresis, prefetch, worker binding, spares, fades | the cellar/hallway/bedroom scenario with N = 8 |
+| M5 | Pool (§7): synchronous boot at game start, a scoring pass every frame, lazy eviction (3 dB margin and a warning on overflow), the cut (patch 0005), fades | the cellar/hallway/bedroom scenario with N = 8; a teleport; 9 audible sources; a reused copy carries no tail |
 | M6 | Scheduler + events + heard-time signals; `FeluccaWhen`/`FeluccaAction`; `FeluccaPattern` | the knock-and-door scene |
 | M7 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M8 | Web (if the spike after M2/M3 says yes) | demo scene in a browser, threads on |
