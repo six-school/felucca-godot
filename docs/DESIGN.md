@@ -92,7 +92,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D10 | Scripting API: **generated typed classes** from the firmware's descriptor tables (§8). As built (M4): every parameter a real ClassDB property (GDScript's analyzer knows its name, type and enum); a game raises `debug/gdscript/warnings/unsafe_property_access` and `unsafe_method_access` to Error (the demo does) for a misspelled property or method to be a parse error — Godot 4.7 only warns of an unknown one, even on `Node` (enum values and types it checks always); everything the extension returns is typed so its own use passes them (a source's position: `FeluccaSnapshot`, not a Dictionary). | R5. *Measured* (M4): `demo/tests/typo/`: a typo in a property, an enum value, an engine view's property, a song property, a method: five parse errors; spelled right, it parses. | A7 |
 | D11 | Scheduling on the audio thread in the board file, keyed to (track, loop, step) or timeline positions, applied before the half in which the step starts; relative targets resolved on the audio thread. | Knock prototype exact (T9). | — |
 | D12 | Events: audio thread → lock-free queue (sample + timeline stamps) → signals **when heard**; plus a polled, heard-time snapshot for continuous visuals. | Polling alone misses steps, can't tag, reports rendered time. | A8 |
-| D13 | Projects: import plugin turns the web app's `.json` into a `FeluccaProject` resource (validated: format, version, size, CRC-32); loaded with `proj_import` + `project_restore_runtime`. As built (M3): the importer takes **`.felucca`** files (the export renamed: an importer of `.json` would take every JSON file of the game); `FeluccaProject.load_json(path)` reads the `.json` itself at run time; name, BPM and engines from the core's `project_info`. | R2; *measured* with the user's export (T11; M3: imported and played in Godot). | backup → flash image (user samples, later) |
+| D13 | Projects: import plugin turns the web app's `.json` into a `FeluccaProject` resource (validated: format, version, size, CRC-32); loaded with `proj_import` + `project_restore_runtime`. As built (M3): the importer takes **`.felucca`** files (the export renamed: an importer of `.json` would take every JSON file of the game); `FeluccaProject.load_json(path)` reads the `.json` itself at run time; name, BPM and engines from the core's `project_info`. Since M5 the JSON is read with Godot's own `JSON` and `Marshalls` (`FeluccaProject::parse_json` and its helpers, ~110 lines with the strict base64 check, the same messages; `check_json(text)` says why a file does not read), no longer by a JSON reader of ~400 lines in the core; the importer declares `FeluccaProject` (it declared `Resource`: Quick Load and typed fields did not offer the files). | R2; *measured* with the user's export (T11; M3: imported and played in Godot; `project_test`: the export, 5 rewritings of it that read and 21 damaged copies, each named by its first problem, as the core's reader's test did). | backup → flash image (user samples, later) |
 | D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the N most audible to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come); M5: the scoring, lazy eviction (§7). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
 | D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M8) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
@@ -198,8 +198,8 @@ and ROUT are the core's (forced to USB clock and CH1-4 after boot and after ever
 UI's; `tempo()` clamps to 40..240 (the beat length only: steps follow the conductor's timeline at any tempo); `boot()`
 is once per copy; `render()` takes null buffers (rendered, dropped); `snapshot` has playing, beats since `play()`,
 frames, each track's step and position (as rendered: up to one half ahead). MASTER is at its top (unity); output is the
-device's 24-bit scale (−6 dBFS ceiling). The project JSON check is `core/project_json.c`, firmware-independent (one copy
-for the importer and the tests). The pool: `core/build.sh` → `build/core/libfelucca_core.a`, `fel_pool_core(n)`.
+device's 24-bit scale (−6 dBFS ceiling). The core takes a project's bytes, not the file: reading the web app's JSON is
+the extension's (D13). The pool: `core/build.sh` → `build/core/libfelucca_core.a`, `fel_pool_core(n)`.
 
 **M2 (ABI 2):** `locate(origin_beats)` — by the origin on the conductor's timeline (where step 1 was or will be), not
 "beats since start": an instance renders up to a half ahead of what it has returned, so a position "now" is ambiguous,
@@ -465,6 +465,9 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
   import twice (`extension/run_tests.sh` does).
 - Raising `unsafe_method_access` makes untyped code fail (a method called on a Variant, e.g. a Dictionary value's
   `.map`): a game types such values (the demo and the tests do); the extension's API returns typed objects for it.
+- An import plugin's `_get_resource_type()` is the type the editor files its results under: M3's said `Resource`, so a
+  `FeluccaProject` field's Quick Load listed none of the projects (fixed: `FeluccaProject`; the `.import` files carry
+  the type, and were updated by hand).
 - Changing the importer's format version did not make the 4.7.2 editor re-import (`--import` kept version 1): the
   resource computes what an older import lacks from its bytes (`FeluccaProject.fill_values`).
 

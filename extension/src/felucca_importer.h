@@ -18,7 +18,7 @@ public:
 	String _get_visible_name() const override { return "Felucca Project"; }
 	PackedStringArray _get_recognized_extensions() const override;
 	String _get_save_extension() const override { return "res"; }
-	String _get_resource_type() const override { return "Resource"; }
+	String _get_resource_type() const override { return "FeluccaProject"; } // (Quick Load and typed fields find it)
 	int32_t _get_preset_count() const override { return 0; }
 	String _get_preset_name(int32_t p_preset_index) const override { return String(); }
 	TypedArray<Dictionary> _get_import_options(const String &p_path, int32_t p_preset_index) const override { return TypedArray<Dictionary>(); }

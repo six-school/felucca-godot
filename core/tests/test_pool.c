@@ -3,12 +3,12 @@
  * numbers (prototypes/params.json, Felucca 1.6.1).
  *   isolation  copies 0 and 1, different values and notes: each hears only its own
  *   T11        the user's project in copies 2 and 3 on the same timeline: the same audio, sample for sample
- *   T8         the heavy song in copies 4 and 5 on the same timeline for 10
- *              minutes: the same positions and audio throughout
+ *   T8         the heavy song in copies 4 and 5 on the same timeline for 10 minutes: the same positions and audio
+ *              throughout
  * (each pair fresh and treated alike: an import does not reset an instance's FX tails or noise, as on the device)
- *   test_pool tests/fixtures/Felucca-project-D-2026-10-24.json */
+ *   test_pool build/core/fixture.bin */
 #include "fel_pool.h"
-#include "project_json.h"
+#include "fixture.h"
 #include "drive.h"
 #include "check.h"
 #include <stdlib.h>
@@ -17,16 +17,13 @@ enum { ANALOG = 0, ANALOG_CUT = 107 };                 /* engine 0; its E4 (P_E0
 void fel4_web_test_heavy(void), fel5_web_test_heavy(void);   /* (renamed: copy 4's and copy 5's) */
 
 static float la[44100 * 16], lb[44100 * 16];
-static char json[1 << 16];
-static fel_project_file_t file_;
+static fel_fixture_t file_;
 
 int main(int argc, char **argv)
 {
     const fel_core_t *cs[2];
     float *ls[2] = {la, lb};
-    FILE *f;
     int i, distinct = 1;
-    uint32_t n;
     CHECK(fel_pool_size() == 8 && !fel_pool_core(8) && !fel_pool_core(-1), "the pool: 8 copies");
     for (i = 0; i < fel_pool_size(); i++) {
         int j;
@@ -59,17 +56,15 @@ int main(int argc, char **argv)
     cs[1]->note(0, 48, 0);
 
     /* ---- T11 twice: the user's project in both, on the same timeline ---- */
-    if (argc < 2 || !(f = fopen(argv[1], "rb"))) {
-        printf("test_pool FILE.json\n");
+    if (argc < 2 || fixture_read(argv[1], &file_)) {
+        printf("test_pool FIXTURE.bin\n");
         return 2;
     }
-    n = (uint32_t)fread(json, 1, sizeof json, f);
-    fclose(f);
     cs[0] = fel_pool_core(2);
     cs[1] = fel_pool_core(3);
     cs[0]->boot();
     cs[1]->boot();
-    CHECK(fel_project_json(json, n, &file_) == FEL_PJ_OK && !cs[0]->project_import(file_.data, file_.size) &&
+    CHECK(!cs[0]->project_import(file_.data, file_.size) &&
           !cs[1]->project_import(file_.data, file_.size), "T11: the user's project into both");
     drive_bpm = 68;
     cs[0]->tempo(drive_bpm);

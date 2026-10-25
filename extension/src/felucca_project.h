@@ -1,6 +1,6 @@
-// A project made on the FM-1, as the Felucca web app exports it (D13): its store object, checked (core/project_json.c:
-// format, version, size, CRC-32; then the firmware's own proj_import), and what it holds. The importer makes one of a
-// .felucca file (the web app's .json, renamed); load_json reads one at run time.
+// A project made on the FM-1, as the Felucca web app exports it (D13): its store object, checked (parse_json, with
+// Godot's JSON: format, version, size, base64, CRC-32; then the firmware's own reading, project_info), and what it
+// holds. The importer makes one of a .felucca file (the web app's .json, renamed); load_json reads one at run time.
 #pragma once
 
 #include <godot_cpp/classes/resource.hpp>
@@ -29,6 +29,7 @@ public:
 	Error parse_json(const PackedByteArray &p_json, String &r_error);
 	static Ref<FeluccaProject> from_json(const String &p_text);
 	static Ref<FeluccaProject> load_json(const String &p_path);
+	static String check_json(const String &p_text); // "" when the text reads as a project, else why not
 
 	void set_data(const PackedByteArray &p_data) { data = p_data; }
 	PackedByteArray get_data() const { return data; }

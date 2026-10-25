@@ -1,17 +1,73 @@
 #include "felucca_project.h"
 
 #include "fel_pool.h"
-#include "project_json.h"
 
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/json.hpp>
+#include <godot_cpp/classes/marshalls.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <iterator>
+
 namespace godot {
+
+// the object sizes the firmware's backup path reads (FUN10 FUN9 FUN8 FUN7: editor_backup.c)
+static const int64_t SIZES[] = { 3840, 3648, 3584, 3388 };
+
+// CRC-32 (zlib), as the web app's backup code computes it
+static uint32_t crc32_of(const uint8_t *p_b, int64_t p_n) {
+	uint32_t c = 0xFFFFFFFFu;
+	for (int64_t i = 0; i < p_n; i++) {
+		c ^= p_b[i];
+		for (int k = 0; k < 8; k++) {
+			c = c >> 1 ^ (c & 1u ? 0xEDB88320u : 0u);
+		}
+	}
+	return ~c;
+}
+
+// a JSON number that is a whole number in lo .. hi (Godot's JSON reads every number as a float)
+static bool whole(const Variant &p_v, int64_t p_lo, int64_t p_hi, int64_t &r_v) {
+	if (p_v.get_type() != Variant::INT && p_v.get_type() != Variant::FLOAT) {
+		return false;
+	}
+	const double d = p_v;
+	if (!(d >= double(p_lo) && d <= double(p_hi)) || d != std::floor(d)) {
+		return false;
+	}
+	r_v = int64_t(d);
+	return true;
+}
+
+// strict base64: a multiple of 4 of its alphabet's characters, '=' only as the last one or two (Marshalls would print
+// an engine error of its own for anything else)
+static bool base64_ok(const String &p_s) {
+	const int64_t n = p_s.length();
+	int64_t pad = 0;
+	if (n % 4) {
+		return false;
+	}
+	for (int64_t i = 0; i < n; i++) {
+		const char32_t c = p_s[i];
+		if (c == '=') {
+			if (i < n - 2) {
+				return false;
+			}
+			pad++;
+		} else if (pad || !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/')) {
+			return false;
+		}
+	}
+	return true;
+}
 
 void FeluccaProject::_bind_methods() {
 	ClassDB::bind_static_method("FeluccaProject", D_METHOD("from_json", "text"), &FeluccaProject::from_json);
 	ClassDB::bind_static_method("FeluccaProject", D_METHOD("load_json", "path"), &FeluccaProject::load_json);
+	ClassDB::bind_static_method("FeluccaProject", D_METHOD("check_json", "text"), &FeluccaProject::check_json);
 	ClassDB::bind_method(D_METHOD("set_data", "data"), &FeluccaProject::set_data);
 	ClassDB::bind_method(D_METHOD("get_data"), &FeluccaProject::get_data);
 	ClassDB::bind_method(D_METHOD("set_firmware", "firmware"), &FeluccaProject::set_firmware);
@@ -45,24 +101,65 @@ void FeluccaProject::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "song_values", PROPERTY_HINT_NONE, "", st), "set_song_values", "get_song_values");
 }
 
+// the web app's export (D13), Godot's JSON reading it:
+//   {"format": "felucca-project", "version": 1, "firmware": "FELUCCA v1.6.1", "slot": 3,
+//    "object": {"size": 3840, "crc": <CRC-32 (zlib) of the bytes>, "data": "<base64 of the bytes>"}}
+// checked as the web app writes it; whether the bytes are a project is the firmware's to say (project_info)
 Error FeluccaProject::parse_json(const PackedByteArray &p_json, String &r_error) {
-	fel_project_file_t f;
-	fel_project_info_t info;
-	int e = fel_project_json(reinterpret_cast<const char *>(p_json.ptr()), size_t(p_json.size()), &f);
-	if (e != FEL_PJ_OK) {
-		r_error = fel_project_json_error(e);
+	Ref<JSON> json;
+	json.instantiate();
+	if (json->parse(p_json.get_string_from_utf8()) != OK) {
+		r_error = vformat("not JSON (line %d: %s)", json->get_error_line(), json->get_error_message());
+		return ERR_INVALID_DATA;
+	}
+	const Variant root = json->get_data();
+	const Dictionary f = root.get_type() == Variant::DICTIONARY ? Dictionary(root) : Dictionary();
+	const Variant fmt = f.get("format", Variant());
+	int64_t version = 0, size = 0, crc = 0, s = -1;
+	if (fmt.get_type() != Variant::STRING || String(fmt) != "felucca-project") {
+		r_error = "not a Felucca project (\"format\")";
+		return ERR_INVALID_DATA;
+	}
+	if (!whole(f.get("version", Variant()), 1, 1, version)) {
+		r_error = "a project file version other than 1";
+		return ERR_INVALID_DATA;
+	}
+	const Variant ov = f.get("object", Variant());
+	const Dictionary o = ov.get_type() == Variant::DICTIONARY ? Dictionary(ov) : Dictionary();
+	const Variant b64 = o.get("data", Variant());
+	if (!o.has("size") || !whole(o.get("crc", Variant()), 0, 0xFFFFFFFFll, crc) || b64.get_type() != Variant::STRING) {
+		r_error = "\"object\" missing or not {size, crc, data}";
+		return ERR_INVALID_DATA;
+	}
+	if (!whole(o["size"], 1, FEL_PROJECT_SIZE, size) ||
+			std::find(std::begin(SIZES), std::end(SIZES), size) == std::end(SIZES)) {
+		r_error = "an object size the firmware does not read";
+		return ERR_INVALID_DATA;
+	}
+	if (!base64_ok(b64)) {
+		r_error = "\"data\" is not base64";
+		return ERR_INVALID_DATA;
+	}
+	const PackedByteArray bytes = Marshalls::get_singleton()->base64_to_raw(b64);
+	if (bytes.size() != size) {
+		r_error = "\"data\" does not hold \"size\" bytes";
+		return ERR_INVALID_DATA;
+	}
+	if (crc32_of(bytes.ptr(), bytes.size()) != uint32_t(crc)) {
+		r_error = "CRC-32 mismatch: the file is damaged";
 		return ERR_INVALID_DATA;
 	}
 	// the firmware's own reading (any copy: project_info leaves its instance alone)
+	fel_project_info_t info;
 	const fel_core_t *c = fel_pool_core(0);
-	if (c->project_info(f.data, f.size, &info) != 0) {
+	if (c->project_info(bytes.ptr(), uint32_t(bytes.size()), &info) != 0) {
 		r_error = "the firmware does not read it as a project (magic, hash or an engine it does not have)";
 		return ERR_INVALID_DATA;
 	}
-	data.resize(int64_t(f.size));
-	memcpy(data.ptrw(), f.data, f.size);
-	firmware = String(f.firmware);
-	slot = f.slot;
+	data = bytes;
+	const Variant fw = f.get("firmware", Variant());
+	firmware = fw.get_type() == Variant::STRING ? String(fw) : String();
+	slot = whole(f.get("slot", Variant()), 0, 1 << 20, s) ? s : -1;
 	project_name = String(info.name);
 	bpm = info.bpm;
 	engines.clear();
@@ -105,6 +202,13 @@ Ref<FeluccaProject> FeluccaProject::from_json(const String &p_text) {
 		return Ref<FeluccaProject>();
 	}
 	return p;
+}
+
+String FeluccaProject::check_json(const String &p_text) {
+	Ref<FeluccaProject> p;
+	String err;
+	p.instantiate();
+	return p->parse_json(p_text.to_utf8_buffer(), err) == OK ? String() : err;
 }
 
 Ref<FeluccaProject> FeluccaProject::load_json(const String &p_path) {

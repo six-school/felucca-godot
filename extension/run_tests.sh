@@ -1,6 +1,7 @@
 #!/bin/sh
-# The extension's Godot-side checks (demo/tests/m3_test.tscn): built (SCons), the demo imported, the test scene run
-# headless on the Dummy audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples).
+# The extension's Godot-side checks: built (SCons), the demo imported, demo/tests/m3_test.tscn run headless on the Dummy
+# audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples), then m4_test (the typed API),
+# project_test (the project file) and the typo scripts.
 #   extension/run_tests.sh [GODOT]     (default: third_party/godot/Godot_v4.7.2-stable_linux.x86_64)
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -23,6 +24,10 @@ echo "== demo/tests/m4_test.tscn"
 timeout 180 "$G" --headless --audio-driver Dummy --path demo res://tests/m4_test.tscn > build/m4_test.log 2>&1 || fail=1
 grep -E "^(ok|FAIL|m4_test)" build/m4_test.log || true
 grep -E "^(ERROR|SCRIPT ERROR)" build/m4_test.log || true
+echo "== demo/tests/project_test.tscn: the project file, read with Godot's JSON"
+timeout 60 "$G" --headless --path demo res://tests/project_test.tscn > build/project_test.log 2>&1 || fail=1
+grep -E "^(ok|FAIL|project_test)" build/project_test.log || true
+grep -E "^(ERROR|SCRIPT ERROR)" build/project_test.log || true
 # M4 done when a typo is a parse error: the typed API spelled right parses, each script with one typo does not
 echo "== demo/tests/typo: the typed API checked by GDScript's analyzer"
 for f in demo/tests/typo/*.gd; do

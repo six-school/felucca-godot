@@ -7,9 +7,9 @@
  *   C2  then copy 1 and a fresh copy 2, both playing the project from one origin: the same positions every chunk, the
  *       first sound in the same frame, the level close (not the same samples: noise seeds and phases carry over)
  *   C3  copy 1 reused 100 times (import, play, 1 s, cut): silent after every cut, sounding and on time in every use
- *   test_cut tests/fixtures/Felucca-project-D-2026-10-24.json */
+ *   test_cut build/core/fixture.bin */
 #include "test_hooks.h"
-#include "project_json.h"
+#include "fixture.h"
 #include "check.h"
 #include <math.h>
 #include <stdlib.h>
@@ -68,25 +68,19 @@ static int snap_same_all(const fel_snapshot_t *a, const fel_snapshot_t *b)
 static double rms(int i) { return st[i].n ? sqrt(st[i].e / st[i].n) : 0.0; }
 static uint32_t ms(uint32_t t) { return t * (FEL_RATE / 1000u); }
 
-static char json[1 << 16];
-static fel_project_file_t file_;
+static fel_fixture_t file_;
 
 int main(int argc, char **argv)
 {
     const fel_test_t *x[NC] = {fel_test_0(), fel_test_1(), fel_test_2()};
     const fel_core_t *cs[NC], *c1;
-    FILE *f;
-    size_t n;
     int i, k, same = 1, cycles_quiet = 0, cycles_sound = 0, cycles_on_time = 0;
     double origin, worst_db = 0, lo = 1e9;
     fel_snapshot_t sa, sb;
-    if (argc < 2 || !(f = fopen(argv[1], "rb"))) {
-        printf("usage: test_cut <a web app export .json>\n");
+    if (argc < 2 || fixture_read(argv[1], &file_)) {
+        printf("test_cut FIXTURE.bin\n");
         return 2;
     }
-    n = fread(json, 1, sizeof json, f);
-    fclose(f);
-    CHECK(fel_project_json(json, n, &file_) == FEL_PJ_OK, "the fixture reads");
     for (i = 0; i < NC; i++) {
         cs[i] = x[i]->core;
         cs[i]->boot();

@@ -1,7 +1,7 @@
 #!/bin/sh
-# The core's checks (docs/DESIGN.md §14): the core built as the pool (core/build.sh); M1: T1 T2 T3 T4 T8 T11 and the
-# project JSON reader as C tests, and the 2-copy link test (a global left out of the renames must be caught); M2: T5, T6
-# and locate on test copies (core/tests/test_hooks.c: the board file with white-box accessors, renamed as the pool).
+# The core's checks (docs/DESIGN.md §14): the core built as the pool (core/build.sh); M1: T1 T2 T3 T4 T8 T11 as C
+# tests, and the 2-copy link test (a global left out of the renames must be caught); M2: T5, T6 and locate, M5: the cut,
+# on test copies (core/tests/test_hooks.c: the board file with white-box accessors, renamed as the pool).
 #   core/tests/run.sh          (env FELUCCA: the Felucca tree, OUT: the build directory, CC: the compiler)
 HERE=$(cd "$(dirname "$0")" && pwd)
 CORE=$(cd "$HERE/.." && pwd)
@@ -13,14 +13,24 @@ FIX=$ROOT/tests/fixtures/Felucca-project-D-2026-10-24.json
 export FELUCCA="$F" OUT CC
 set -e
 "$CORE/build.sh"
+# the user's export as the core takes it: its store object's bytes (the .json is the extension's to read, with Godot's
+# JSON: FeluccaProject::parse_json; here only what the tests need, and that the file is whole)
+python3 - "$FIX" "$OUT/fixture.bin" <<'PY'
+import base64, json, sys, zlib
+f = json.load(open(sys.argv[1]))
+o = f["object"]
+b = base64.b64decode(o["data"], validate=True)
+assert f["format"] == "felucca-project" and len(b) == o["size"] and zlib.crc32(b) == o["crc"], sys.argv[1] + ": damaged"
+open(sys.argv[2], "wb").write(b)
+PY
+FIXB=$OUT/fixture.bin
 V=$(sed -n 's/^#define FELUCCA_VERSION "\([^"]*\)".*/\1/p' "$F/firmware/src/felucca.c" | head -n 1)
 CF="-O2 -ffp-contract=off -std=gnu99 -w -I$F -I$F/build/gen -I$F/firmware/src -I$CORE"
 W="-O2 -std=gnu99 -Wall -Wextra -Werror -I$CORE"
 # shellcheck disable=SC2086
 {
-    "$CC" $W -o "$OUT/test_json" "$HERE/test_json.c" "$CORE/project_json.c"
     "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" -o "$OUT/test_params" "$HERE/test_params.c" -lm &
-    "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" -o "$OUT/test_project" "$HERE/test_project.c" "$CORE/project_json.c" -lm &
+    "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" -o "$OUT/test_project" "$HERE/test_project.c" -lm &
     "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" -o "$OUT/test_cpu" "$HERE/test_cpu.c" -lm &
     "$CC" $W -o "$OUT/test_pool" "$HERE/test_pool.c" "$OUT/libfelucca_core.a" -lm &
     n=0
@@ -37,20 +47,19 @@ W="-O2 -std=gnu99 -Wall -Wextra -Werror -I$CORE"
     "$CC" $W -I"$HERE" -o "$OUT/test_timing" "$HERE/test_timing.c" "$OUT/test_copy_0.o" -lm
     "$CC" $W -I"$HERE" -o "$OUT/test_delay" "$HERE/test_delay.c" $T -lm
     "$CC" $W -I"$HERE" -o "$OUT/test_locate" "$HERE/test_locate.c" $T -lm
-    "$CC" $W -I"$HERE" -o "$OUT/test_cut" "$HERE/test_cut.c" "$CORE/project_json.c" $T -lm
+    "$CC" $W -I"$HERE" -o "$OUT/test_cut" "$HERE/test_cut.c" $T -lm
 }
 set +e
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
-run "project JSON: the user's export, damaged copies" "$OUT/test_json" "$FIX"
 run "T1 T2: CUT and ARP RATE from code" "$OUT/test_params"
-run "T3 T11: projects, the user's export" "$OUT/test_project" "$FIX"
+run "T3 T11: projects, the user's export" "$OUT/test_project" "$FIXB"
 run "T4: CPU of the heavy song" "$OUT/test_cpu"
-run "T8: the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIX"
+run "T8: the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIXB"
 run "T5: step timing on the conductor's timeline, tempo tweened (int, float), paused" "$OUT/test_timing"
 run "T6: no clicks in the delay when the tempo moves it" "$OUT/test_delay"
 run "locate: an instance that joins = one that played since the origin" "$OUT/test_locate"
-run "cut: a reused copy carries no tail" "$OUT/test_cut" "$FIX"
+run "cut: a reused copy carries no tail" "$OUT/test_cut" "$FIXB"
 
 # the 2-copy link test: renames from a list that misses `panel` (a tentative definition), copies 0 and 1. The check
 # must name it in both; the linker refuses the pair (a duplicate) by default, and with -fcommon merges the two panels

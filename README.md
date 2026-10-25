@@ -9,7 +9,7 @@ play a project made on the device, in sync on one timeline, pause-safe, every pa
 tables (`FeluccaPart`, its engine views, `FeluccaSong`, `FeluccaOverrides`). Next: the pool (M5).
 
 - `docs/DESIGN.md`: requirements, decisions with their evidence, architecture, the alternatives and how to switch to each
-- `core/`: the board file and the `fel_core_t` table (L1), the project JSON reader, the pool build of N renamed copies
+- `core/`: the board file and the `fel_core_t` table (L1), the pool build of N renamed copies
   (`core/build.sh`) and its tests (`core/tests/run.sh`)
 - `extension/`, `SConstruct`: the GDExtension (godot-cpp 10.0.0, API 4.7): conductor, sources, project importer; its
   Godot-side tests (`extension/run_tests.sh`)

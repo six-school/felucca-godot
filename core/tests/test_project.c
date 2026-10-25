@@ -2,25 +2,23 @@
  *   T3   a project's bytes out and back in: 3840 bytes, magic ANUF, values restored; damaged bytes refused; the clock
  *        and MIDI routing the project carries do not take the core's over (the transport plays on the conductor's
  *        timeline after)
- *   T11  the user's own export (tests/fixtures): JSON checked (core/project_json.c), imported, what it holds, played
- *        16 s on the conductor's timeline at its own tempo
- *   test_project tests/fixtures/Felucca-project-D-2026-10-24.json */
+ *   T11  the user's own export (tests/fixtures: its bytes, core/tests/fixture.h), imported, what it holds, played 16 s
+ *        on the conductor's timeline at its own tempo
+ *   test_project build/core/fixture.bin */
 #include "board.c"
-#include "project_json.h"
+#include "fixture.h"
 #include "drive.h"
 #include "check.h"
 
 static float audio[44100 * 16];
 static uint8_t proj[FEL_PROJECT_SIZE], bad[FEL_PROJECT_SIZE + 4];
-static char json[1 << 16];
-static fel_project_file_t file_;
+static fel_fixture_t file_;
 
 int main(int argc, char **argv)
 {
     const fel_core_t *c = fel_core_0();
     const int CUT = P_E0 + 4;                           /* ANALOG's E4 */
-    FILE *f;
-    uint32_t n, k;
+    uint32_t k;
     c->boot();
     c->engine_set(0, 0);
     drive1(c, frames_ms(200), 0);
@@ -62,16 +60,12 @@ int main(int argc, char **argv)
     CHECK(c->param_get(0, CUT) == 77, "T3: a refused import changes nothing");
 
     /* ---- T11: the user's export ---- */
-    if (argc < 2 || !(f = fopen(argv[1], "rb"))) {
-        printf("test_project FILE.json\n");
+    if (argc < 2 || fixture_read(argv[1], &file_)) {
+        printf("test_project FIXTURE.bin\n");
         return 2;
     }
-    n = (uint32_t)fread(json, 1, sizeof json, f);
-    fclose(f);
-    k = (uint32_t)fel_project_json(json, n, &file_);
-    CHECK(k == FEL_PJ_OK && file_.size == FEL_PROJECT_SIZE && file_.crc == 0x642C0757u && !strcmp(file_.firmware, "FELUCCA v1.6.1"),
-          "T11: the file checks out (%s): %u bytes, CRC %08X, %s", fel_project_json_error((int)k), file_.size, file_.crc,
-          file_.firmware);
+    CHECK(file_.size == FEL_PROJECT_SIZE && !memcmp(file_.data, "ANUF", 4), "T11: the export's %u bytes, magic ANUF",
+          file_.size);
     {   /* what the importer reads, without loading: the instance (CUT 77, the project before) stays as it is */
         fel_project_info_t info;
         int t, eng = 1;

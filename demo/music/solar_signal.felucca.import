@@ -1,8 +1,8 @@
 [remap]
 
 importer="felucca.project"
-importer_version=1
-type="Resource"
+importer_version=2
+type="FeluccaProject"
 uid="uid://2e7qbmax0y8y"
 path="res://.godot/imported/solar_signal.felucca-d13efebefedf95df7c16b74b3f2e0ea0.res"
 

@@ -58,7 +58,7 @@ typedef struct {
                                                          * are the core's or the caller's */
     int32_t (*engine_get)(int track);                   /* the engine asked for (it sounds after a short fade) */
     int32_t (*engine_set)(int track, int engine);       /* its preset 0, as the device's ENGINE page does */
-    /* projects: the store object of a web app export (core/project_json.h decodes and checks the file). import ->
+    /* projects: the store object of a web app export (the extension decodes and checks the file: FeluccaProject). import ->
      * 0 loaded (the transport stopped; global G_BPM is the project's until tempo() is called), else not a project */
     int32_t (*project_import)(const uint8_t *b, uint32_t n);
     uint32_t (*project_export)(uint8_t out[FEL_PROJECT_SIZE]);   /* -> bytes written, 0 on failure */

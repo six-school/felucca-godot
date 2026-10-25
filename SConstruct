@@ -12,8 +12,7 @@ env = SConscript("third_party/godot-cpp/SConstruct", {"api_version": GODOT_API})
 core_dir = "build/core/pool%d" % POOL
 core_lib = env.Command(
     os.path.join(core_dir, "libfelucca_core.a"),
-    ["core/board.c", "core/fel_core.h", "core/fel_pool.h", "core/project_json.c", "core/project_json.h",
-     "core/renames.py", "core/build.sh"] + Glob("third_party/felucca/firmware/src/*.c") +
+    ["core/board.c", "core/fel_core.h", "core/fel_pool.h", "core/renames.py", "core/build.sh"] + Glob("third_party/felucca/firmware/src/*.c") +
     Glob("third_party/felucca/firmware/src/*.h") + Glob("third_party/felucca/web/emu/*.c"),
     "OUT=%s core/build.sh %d" % (core_dir, POOL),
 )
