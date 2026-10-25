@@ -46,7 +46,7 @@ int Engine::acquire() {
 			continue;
 		}
 		if (!s.booted) {
-			s.core->boot(); // (~1.5 s of device time, ~25 ms here: M5 moves it to a worker and keeps spares)
+			s.core->boot(); // (~1.5 s of device time, 5-6 ms here: M5 moves it to a worker)
 			s.booted = true;
 		}
 		s.used = true;

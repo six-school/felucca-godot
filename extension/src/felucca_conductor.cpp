@@ -161,9 +161,9 @@ void FeluccaConductor::resolve_pending() {
 }
 
 // D7: one lock for the conductor's timeline and every bound source, whatever its process mode (a source left playing
-// would only ring on, its music standing with the timeline; DESIGN.md §13.17: its own time while the timeline stands is
-// for M5 / M6). A source its own stream_paused had paused already is noted and left paused; one Godot will unpause (it
-// is told the pause: it cannot process while the tree is paused) is kept so through that (godot #65743) by its own
+// would only ring on, its music standing with the timeline; DESIGN.md §13.13: its own time while the timeline stands is
+// for later). A source its own stream_paused had paused already is noted and left paused; one Godot will unpause (it is
+// told the pause: it cannot process while the tree is paused) is kept so through that (godot #65743) by its own
 // UNPAUSED (FeluccaSource)
 void FeluccaConductor::tree_paused(bool p_paused) {
 	AudioServer::get_singleton()->lock();

@@ -38,7 +38,7 @@ public:
 	bool is_running() const;
 	double get_beats() const; // the conductor's timeline where the next mix step starts
 	int get_pool_size() const;
-	void boot_pool(); // boot every pool instance now (else each boots at its first play(), ~25 ms)
+	void boot_pool(); // boot every pool instance now (else each boots at its first play(), 5-6 ms)
 	int get_bound_count() const;
 	int64_t get_mix_steps() const;
 	int64_t get_paused_mix_steps() const;

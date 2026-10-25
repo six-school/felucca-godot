@@ -13,7 +13,7 @@ layer it replaces) and keep the seams of §4.1 intact.
   `core/tests/run.sh` builds it and runs the checks: M1's (T1–T4, T8, T11, the JSON reader, the 2-copy link test) and
   M2's (T5, T6, locate) on test copies (`core/tests/test_hooks.c`: white-box accessors, renamed as the pool).
 - Felucca's own suite (`tests/run_tests.sh`) needs the device image (AC79 toolchain) for a few tests; its ASan builds
-  crash at random in this environment (DESIGN.md §13.11): cap the output (`| head -c`) and use a timeout.
+  crash at random in this environment (DESIGN.md §11): cap the output (`| head -c`) and use a timeout.
 - `tools/setup_godot.sh`: Godot 4.7.2 (release zip, SHA-512 pinned), godot-cpp `507ed9d` (10.0.0-stable), SCons
   4.9.1 in the venv. Build: `third_party/.felucca-venv/bin/python -m SCons` (the venv's own scripts may name another
   path) → `demo/bin/libfelucca.*.so`; `extension/run_tests.sh`: build, import, `demo/tests/m3_test.tscn` headless at

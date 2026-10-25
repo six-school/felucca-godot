@@ -19,7 +19,7 @@
 namespace godot {
 
 // where a source's instance is (FeluccaSource.get_snapshot), typed. As rendered: up to a half (128 frames) ahead of what
-// has been heard (DESIGN.md §13.15)
+// has been heard (DESIGN.md §13.12)
 class FeluccaSnapshot : public RefCounted {
 	GDCLASS(FeluccaSnapshot, RefCounted);
 

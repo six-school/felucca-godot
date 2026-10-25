@@ -41,7 +41,7 @@ public:
 	// the pool (main thread): a free copy, booted on its first use; -1 when every one is taken
 	int acquire();
 	void release(int p_slot);
-	void boot_all(); // every copy now (a loading screen's job: each takes ~25 ms)
+	void boot_all(); // every copy now (a loading screen's job: each takes 5-6 ms)
 	const fel_core_t *core(int p_slot) const;
 	int size() const { return int(slots.size()); }
 	int bound() const;
