@@ -1,7 +1,8 @@
 #!/bin/sh
 # The extension's Godot-side checks: built (SCons), the demo imported, demo/tests/m3_test.tscn run headless on the Dummy
-# audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples), m5_test (the pool) at both, then
-# m4_test (the typed API), project_test (the project file) and the typo scripts.
+# audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples), m5_test and m5_scene_test (the
+# pool, the second in a 2D scene) at both, then m4_test (the typed API), project_test (the project file) and the typo
+# scripts.
 #   extension/run_tests.sh [GODOT]     (default: third_party/godot/Godot_v4.7.2-stable_linux.x86_64)
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -30,6 +31,12 @@ for rate in 44100 48000; do
     [ "$n" = 1 ] && echo "ok   play() with pitch_scale 2: one warning" || { echo "FAIL play() with pitch_scale 2: $n warnings"; fail=1; }
     n=$(grep -c "WARNING: FeluccaConductor: more Felucca sources in range than engines available" build/m5_test_$rate.log || true)
     [ "$n" = 1 ] && echo "ok   more sources in range than copies: one warning" || { echo "FAIL more sources in range than copies: $n warnings"; fail=1; }
+    echo "== demo/tests/m5_scene_test.tscn at $rate Hz: the pool in a 2D scene"
+    timeout 180 "$G" --headless --audio-driver Dummy --path demo res://tests/m5_scene_test.tscn > build/m5_scene_test_$rate.log 2>&1 || fail=1
+    grep -E "^(ok|FAIL|mix rate|m5_scene_test)" build/m5_scene_test_$rate.log || true
+    grep -E "^(ERROR|SCRIPT ERROR)" build/m5_scene_test_$rate.log || true
+    n=$(grep -c "WARNING: FeluccaConductor: more Felucca sources in range than engines available" build/m5_scene_test_$rate.log || true)
+    [ "$n" = 1 ] && echo "ok   9 in range: one warning" || { echo "FAIL 9 in range: $n warnings"; fail=1; }
 done
 rm -f demo/override.cfg
 echo "== demo/tests/m4_test.tscn"

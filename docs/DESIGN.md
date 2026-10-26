@@ -176,7 +176,11 @@ waiting in range, so neither evicts a second copy nor is taken for an overflow. 
 one 101 px away none; with every copy held out of range, a source in range has the farthest one's 69–104 ms after its
 `play()` (a 2D player starts on Godot's next physics tick, then one faded step; the Dummy driver mixes in bursts) and
 plays where its origin puts it; a paused source's copy is taken at once; with 9 in range the nearer newcomer takes the
-farthest's, a tie waits, and one warning is pushed (`extension/run_tests.sh` counts it).
+farthest's, a tie waits, and one warning is pushed (`extension/run_tests.sh` counts it). *Measured* in a 2D scene
+(`m5_scene_test`: 17 sources of range 600 px, a Camera2D as the listener, moved by the script): after each walk or
+teleport, the sources in range are the bound ones (the nearest 8 of 9), the spare copies stay with sources out of
+range, every bound source is where its origin puts it; a teleport hands 4 or 5 copies over at once in 55–104 ms (the
+camera moves the canvas a frame later; one faded step); standing still, no copy changes hands.
 
 ## 5. Interfaces (drafts)
 
@@ -603,7 +607,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M2 | `locate()` + host clock from the conductor's timeline + delay glide wired in the core | located instance's steps = continuous instance's; T5/T6 equivalents. **Done** (2026-10-24): `core/tests/run.sh` |
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources. **Done** (2026-10-24): `extension/run_tests.sh` |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
-| M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | the cellar/hallway/bedroom scenario with N = 8; a teleport; 9 audible sources; a reused copy carries no tail. Tested headless in a **2D scene like `demo/main.tscn`** (a scripted listener; `m5_test`); a 3D scene comes after, for listening only, never automated (the user's decision, 2026-10-25: 3D is too involved to drive in a test; the demo's projects do not use all four parts, so its sources differ by project, `demo/music`'s four) |
+| M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | with N = 8: a walk, a teleport, 9 sources in range; a reused copy carries no tail (`core/tests/test_cut.c`). Tested headless in a **simple 2D scene like `demo/main.tscn`** (a scripted listener; `m5_scene_test`, its sources differ by project, `demo/music`'s four: the demo's projects do not use all four parts), not a replay of §1's cellar/hallway/bedroom scenario (the user's decision, 2026-10-26: the pass's behaviour matters, overflow first); a 3D scene comes after, for listening only, never automated (the user's decision, 2026-10-25: 3D is too involved to drive in a test). **2D scene done** (2026-10-26): `extension/run_tests.sh` |
 | M6 | Scheduler + events + heard-time signals; `FeluccaWhen`/`FeluccaAction`; `FeluccaPattern` | the knock-and-door scene |
 | M7 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M8 | Web (if the spike after M2/M3 says yes) | demo scene in a browser, threads on |

@@ -1,0 +1,109 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://tests/m5_scene_test.gd" id="1"]
+[ext_resource type="FeluccaProject" path="res://music/solar_signal.felucca" id="p0"]
+[ext_resource type="FeluccaProject" path="res://music/test-2.felucca" id="p1"]
+[ext_resource type="FeluccaProject" path="res://music/test-3.felucca" id="p2"]
+[ext_resource type="FeluccaProject" path="res://music/test-4.felucca" id="p3"]
+
+[node name="M5SceneTest" type="Node2D"]
+script = ExtResource("1")
+
+[node name="West1" type="FeluccaSource2D" parent="."]
+project = ExtResource("p0")
+position = Vector2(-200, -100)
+autoplay = true
+max_distance = 600.0
+
+[node name="West2" type="FeluccaSource2D" parent="."]
+project = ExtResource("p1")
+position = Vector2(-150, 150)
+autoplay = true
+max_distance = 600.0
+
+[node name="West3" type="FeluccaSource2D" parent="."]
+project = ExtResource("p2")
+position = Vector2(0, -250)
+autoplay = true
+max_distance = 600.0
+
+[node name="West4" type="FeluccaSource2D" parent="."]
+project = ExtResource("p3")
+position = Vector2(180, 80)
+autoplay = true
+max_distance = 600.0
+
+[node name="West5" type="FeluccaSource2D" parent="."]
+project = ExtResource("p0")
+position = Vector2(60, 220)
+autoplay = true
+max_distance = 600.0
+
+[node name="Middle1" type="FeluccaSource2D" parent="."]
+project = ExtResource("p1")
+position = Vector2(1100, -150)
+autoplay = true
+max_distance = 600.0
+
+[node name="Middle2" type="FeluccaSource2D" parent="."]
+project = ExtResource("p2")
+position = Vector2(1250, 120)
+autoplay = true
+max_distance = 600.0
+
+[node name="Middle3" type="FeluccaSource2D" parent="."]
+project = ExtResource("p3")
+position = Vector2(1350, -60)
+autoplay = true
+max_distance = 600.0
+
+[node name="East1" type="FeluccaSource2D" parent="."]
+project = ExtResource("p0")
+position = Vector2(2250, -120)
+autoplay = true
+max_distance = 600.0
+
+[node name="East2" type="FeluccaSource2D" parent="."]
+project = ExtResource("p1")
+position = Vector2(2380, 180)
+autoplay = true
+max_distance = 600.0
+
+[node name="East3" type="FeluccaSource2D" parent="."]
+project = ExtResource("p2")
+position = Vector2(2500, -200)
+autoplay = true
+max_distance = 600.0
+
+[node name="East4" type="FeluccaSource2D" parent="."]
+project = ExtResource("p3")
+position = Vector2(2600, 60)
+autoplay = true
+max_distance = 600.0
+
+[node name="Crowd1" type="FeluccaSource2D" parent="."]
+project = ExtResource("p0")
+position = Vector2(2300, 40)
+max_distance = 600.0
+
+[node name="Crowd2" type="FeluccaSource2D" parent="."]
+project = ExtResource("p1")
+position = Vector2(2420, -60)
+max_distance = 600.0
+
+[node name="Crowd3" type="FeluccaSource2D" parent="."]
+project = ExtResource("p2")
+position = Vector2(2480, 120)
+max_distance = 600.0
+
+[node name="Crowd4" type="FeluccaSource2D" parent="."]
+project = ExtResource("p3")
+position = Vector2(2550, -40)
+max_distance = 600.0
+
+[node name="Crowd5" type="FeluccaSource2D" parent="."]
+project = ExtResource("p0")
+position = Vector2(2350, -250)
+max_distance = 600.0
+
+[node name="Listener" type="Camera2D" parent="."]
