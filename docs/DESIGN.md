@@ -245,6 +245,23 @@ max)` drains what happened, each stamped with the frame it sounds on (`render()`
 timeline there: an action applied (its id) or dropped, and (part 3) each track's steps and passes and the beat.
 Fixed tables (64 actions, 256 events an instance): nothing allocates.
 
+As built (M6 part 1, `core/board.c`, ABI 6): `fel_when_t` (`FEL_AT_STEP` track, step, `loops`; `FEL_AT_BEATS`
+beats, `every`; `late`), `fel_action_t` (`FEL_DO_MARK`, `_HIT` lane and velocity, `_NOTE` note, velocity and steps,
+`_SET`, `_GLOBAL`), `fel_event_t` (`FEL_EV_ACTION`, `_DROPPED`, `_STEP`: track, step, pass, id, frame, beats). Every
+way out of `host_clock_units` goes through `fel_sched_block`, before the block's `seq_tick`s: notes due to end first,
+then the targets given since the last block are resolved (step targets once the transport plays), beat targets the
+block reaches apply, and for each track `seq_tick`'s own step arithmetic runs ahead on a copy of its grid
+(`midi_seq_preview`, the firmware's look-ahead for chains): each step it will enter in the block emits `FEL_EV_STEP`
+and applies what is due there, or what it finds passed by its late policy. A hit or a note goes through
+`midi_event` at once (as MIDI IN, in this block, before the step's own notes) and ends a step (a note: its steps) of
+the track later, counted in samples. *Measured* (`core/tests/test_sched.c`): every step worked out ahead is the step
+the sequencer enters, in its block: 511 of 511 in 24 s on `FEL_TEST_LOCATE`'s pattern (odd LENs, swing, 1/8T with
+nudges, conditions) with int and float tempo tweens, a pause and a locate (whose landing is no step entered); the
+knock: four KICK hits applied in their steps' blocks, heard 18–21 samples after their events (the kick's attack), no
+other kick; the door's mark and CUT on the next pass's step 1; next_step this pass or the next, before step 1, beat
+targets in the block the timeline reaches them; targets a locate jumps past (NEXT, DROP, NOW), beat targets passed,
+a step past LEN dropped at its pass's end; cancel, stop, cut; the limits. T4 unchanged (0.8 % of a core).
+
 **M2 (ABI 2):** `locate(origin_beats)` — by the origin on the conductor's timeline (where step 1 was or will be), not
 "beats since start": an instance renders up to a half ahead of what it has returned, so a position "now" is ambiguous,
 while an origin is exact at whichever block it lands in (§6.4); 1 while a SONG chain plays. The snapshot's tracks add

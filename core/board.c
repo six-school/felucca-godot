@@ -39,6 +39,7 @@ static uint16_t fel_last_idx[NTRK];     /* its step and position when last looke
 static uint32_t fel_last_pos[NTRK];
 
 static void fel_locate(uint64_t units);
+static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1);
 
 /* the passes: looked at before every block (a step lasts more than one) and when a snapshot is taken */
 static void fel_loops_count(void)
@@ -66,11 +67,13 @@ static void fel_loops_reset(void)
 
 /* events_block, every block of n samples (patch 0002): the conductor's timeline at the block's end -> the units the
  * music moved in it. Playing or not: stopped, the arps and the beat still run on the conductor's timeline, as they run
- * on the internal clock. */
+ * on the internal clock. Each way out goes through the scheduler (fel_sched_block): this runs before the block's
+ * sequencer ticks */
 static uint32_t host_clock_units(uint32_t n)
 {
     double b = hclk_b0 + (double)(int32_t)(hclk_half + (hclk_in += n) - hclk_f0) * hclk_rate, due;
     double start = b - n * hclk_rate;           /* the conductor's timeline at the block's start */
+    uint32_t blk = n;
     uint64_t total;
     fel_loops_count();
     if (hclk_locate) {
@@ -89,20 +92,21 @@ static uint32_t host_clock_units(uint32_t n)
         hclk_fed = 0;
         midi_clock_transport(0xFAu, fm1_ms);
         fel_loops_reset();
-        return 0;                               /* no time in it: the firmware drops a start block's own (seq_tick's
-                                                 * PLAY entry), so the next block's units, from hclk_origin, put the
-                                                 * sequencer's zero exactly at it, not a block late */
+        return fel_sched_block(0, blk, start, b);   /* no time in it: the firmware drops a start block's own
+                                                     * (seq_tick's PLAY entry), so the next block's units, from
+                                                     * hclk_origin, put the sequencer's zero exactly at it, not a
+                                                     * block late */
     }
     due = (b - hclk_origin) * MIDI_CLOCK_GRID;
     if (!(due > (double)hclk_fed && due < 9e15))   /* behind (the conductor's timeline stood still or went back): hold
                                                     * until it is reached again. (NaN, infinite: hold) */
-        return 0;
+        return fel_sched_block(0, blk, start, b);
     total = (uint64_t)floor(due + 1e-9) - hclk_fed;
     n = total > MIDI_CLOCK_GRID / 2u ? MIDI_CLOCK_GRID / 2u : (uint32_t)total;   /* (midi_grid_advance's bound; a
                                                                                   * jump in the conductor's timeline:
                                                                                   * M2's locate) */
     hclk_fed += n;
-    return n;
+    return fel_sched_block(n, blk, start, b);
 }
 
 /* one device millisecond: web_ms(), with the half it renders (if one is due) placed in the ring for the clock */
@@ -424,6 +428,223 @@ static int32_t core_project_info(const uint8_t *b, uint32_t n, fel_project_info_
 
 static const char *core_engine_name(int engine) { return engine >= 0 && engine < NENGINES ? ENGINES[engine]->name : 0; }
 
+/* ------------------------------------------------------------ scheduling (DESIGN.md §5.1) --- */
+/* Actions held until their target, and what happened, out. host_clock_units runs before the block's sequencer ticks:
+ * from the units it gives the block, fel_sched_block works out which steps start in it (seq_tick's own arithmetic, on
+ * a copy of each track's grid: midi_seq_preview) and applies what is due there first, so a hit sounds from the block
+ * its step starts in, as the step's own notes do, and a parameter set is in place for the step's note-ons (an engine
+ * reads some of them there only) */
+#define FEL_OFFS 32u                    /* the notes of hits and notes, still to end */
+typedef struct {
+    fel_when_t w;
+    fel_action_t a;
+    uint32_t id;
+    uint32_t loop;                      /* AT_STEP, resolved: the pass its step plays in */
+    uint8_t used, resolved;             /* (AT_BEATS: resolved once the late policy has looked at it) */
+} fel_sched_t;
+static fel_sched_t fel_sched[FEL_SCHEDULES];
+static fel_event_t fel_ev[FEL_EVENTS];
+static uint32_t fel_ev_w, fel_ev_r;     /* a ring: the block writes, events() reads (one thread at a time: fel_core.h) */
+static struct { uint8_t used, track, note; uint32_t left; } fel_offs[FEL_OFFS];   /* left: samples */
+static uint64_t fel_blk_frame;          /* the block being ticked: its first frame (render()'s count), */
+static double fel_blk_beats;            /* .. the conductor's timeline there */
+
+static void fel_event(uint32_t kind, uint32_t track, uint32_t step, uint32_t loop, uint32_t id)
+{
+    if (fel_ev_w - fel_ev_r < FEL_EVENTS)
+        fel_ev[fel_ev_w++ % FEL_EVENTS] = (fel_event_t){(uint8_t)kind, (uint8_t)track, (uint16_t)step, loop, id,
+                                                        fel_blk_frame, fel_blk_beats};
+}
+
+/* a note now (this block), as MIDI IN plays it on the track's channel, and its end len samples on. The same note again
+ * before it ended moves its end; with every slot taken, the one nearest its end ends now */
+static void fel_note_for(uint32_t track, uint32_t note, uint32_t vel, uint32_t len)
+{
+    uint32_t i, at = FEL_OFFS, first = 0;
+    for (i = 0; i < FEL_OFFS; i++) {
+        if (fel_offs[i].used && fel_offs[i].track == track && fel_offs[i].note == note) {
+            at = i;
+            break;
+        }
+        if (!fel_offs[i].used && at == FEL_OFFS)
+            at = i;
+        if (fel_offs[i].used && fel_offs[i].left < fel_offs[first].left)
+            first = i;
+    }
+    if (at == FEL_OFFS) {
+        at = first;
+        midi_event(0x80u, fel_offs[at].track, fel_offs[at].note, 0);
+    }
+    midi_event(0x90u, track, note, vel);
+    fel_offs[at].used = 1;
+    fel_offs[at].track = (uint8_t)track;
+    fel_offs[at].note = (uint8_t)note;
+    fel_offs[at].left = len ? len : 1u;
+}
+
+static void fel_do(const fel_sched_t *s)
+{
+    const fel_action_t *a = &s->a;
+    uint32_t step = div_samples((uint32_t)trk[a->track].p[P_SDIV]);   /* (the track's step, unswung) */
+    switch (a->kind) {
+    case FEL_DO_HIT: fel_note_for(a->track, DRUM_LANE_NOTE[a->a], (uint32_t)a->b, step); break;
+    case FEL_DO_NOTE: fel_note_for(a->track, (uint32_t)a->a, (uint32_t)a->b, step * (uint32_t)a->c); break;
+    case FEL_DO_SET: (void)core_param_set(a->track, a->a, a->b); break;
+    case FEL_DO_GLOBAL: (void)core_global_set(a->a, a->b); break;
+    default: break;                                     /* (MARK: the event only) */
+    }
+}
+
+/* track k enters step idx of pass loop in this block: what is due there, and what it finds passed (a locate jumped
+ * it: a resumed FOLLOW source, an instance bound late) by its late policy */
+static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len)
+{
+    uint32_t i;
+    fel_event(FEL_EV_STEP, k, idx, loop, 0);
+    for (i = 0; i < FEL_SCHEDULES; i++) {
+        fel_sched_t *s = &fel_sched[i];
+        if (!s->used || !s->resolved || s->w.kind != FEL_AT_STEP || s->w.track != k ||
+            s->loop > loop || (s->loop == loop && s->w.step > idx))
+            continue;                                   /* (still to come) */
+        if (s->loop != loop || s->w.step != idx) {
+            if (s->w.late == FEL_LATE_DROP || s->w.step >= len) {
+                fel_event(FEL_EV_DROPPED, k, idx, loop, s->id);
+                s->used = 0;
+                continue;
+            }
+            if (s->w.late == FEL_LATE_NEXT) {           /* the step's next start: later in this pass, or the next */
+                s->loop = s->w.step > idx ? loop : loop + 1u;
+                continue;
+            }
+        }                                               /* (FEL_LATE_NOW: here) */
+        fel_do(s);
+        fel_event(FEL_EV_ACTION, k, idx, loop, s->id);
+        s->used = 0;
+    }
+}
+
+/* the block about to be ticked (host_clock_units' ways out): n samples, units of MIDI_CLOCK_GRID for the sequencer,
+ * the conductor's timeline from b0 to b1 over it -> units, unchanged */
+static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1)
+{
+    uint32_t i, k;
+    fel_blk_frame = fel_frames + (uint32_t)(hclk_half + hclk_in - n - hclk_f0);
+    fel_blk_beats = b0;
+    for (i = 0; i < FEL_OFFS; i++)                      /* notes that end in this block, first: one struck again
+                                                         * here sounds */
+        if (fel_offs[i].used) {
+            if (fel_offs[i].left > n) {
+                fel_offs[i].left -= n;
+                continue;
+            }
+            midi_event(0x80u, fel_offs[i].track, fel_offs[i].note, 0);
+            fel_offs[i].used = 0;
+        }
+    for (i = 0; i < FEL_SCHEDULES; i++) {
+        fel_sched_t *s = &fel_sched[i];
+        if (!s->used)
+            continue;
+        if (s->w.kind == FEL_AT_BEATS) {
+            if (!s->resolved) {                         /* first look: passed already? */
+                s->resolved = 1;
+                if (s->w.beats <= b0 && s->w.late == FEL_LATE_NEXT && s->w.every > 0.0)
+                    s->w.beats += ceil((b0 - s->w.beats) / s->w.every + 1e-12) * s->w.every;
+                else if (s->w.beats <= b0 && s->w.late != FEL_LATE_NOW) {
+                    fel_event(FEL_EV_DROPPED, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id);
+                    s->used = 0;
+                    continue;
+                }
+            }
+            if (s->w.beats <= b1 && b1 > b0) {          /* (FEL_LATE_NOW passed: the first block that moves) */
+                fel_do(s);
+                fel_event(FEL_EV_ACTION, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id);
+                s->used = 0;
+            }
+        } else if (!s->resolved && song.playing) {      /* a step target: its pass, from where the track is */
+            const track_t *t = &trk[s->w.track];
+            if (t->seq_pos >= 0x7FFFFFFFu)              /* (PLAY: step 1 is next, no pass playing) */
+                s->loop = s->w.loops ? s->w.loops - 1u : 0u;
+            else
+                s->loop = fel_loops[s->w.track] + (s->w.loops ? s->w.loops : s->w.step > t->seq_idx ? 0u : 1u);
+            s->resolved = 1;
+        }
+    }
+    if (!song.playing)
+        return units;
+    for (k = 0; k < NTRK; k++) {                        /* seq_tick's step entries, ahead of it */
+        const track_t *t = &trk[k];
+        uint32_t period = div_samples((uint32_t)t->p[P_SDIV]), len = t->p[P_SLEN] ? (uint32_t)t->p[P_SLEN] : 1u;
+        uint32_t adv = midi_seq_preview(t, units), pos = t->seq_pos + adv, idx = t->seq_idx, loop = fel_loops[k];
+        for (;;) {
+            uint32_t cur = step_samples(t, period, idx);
+            int top;
+            if (pos < cur && pos != 0x7FFFFFFFu + adv)
+                break;
+            top = pos >= 0x7FFFFFFFu;
+            pos = top ? (chain.running ? chain.carry : 0u) : pos - cur;
+            idx = (idx + 1u) % len;
+            loop = top ? 0u : loop + (idx == 0u);
+            fel_sched_step(k, idx, loop, len);
+        }
+    }
+    return units;
+}
+
+/* the actions, their notes still to end: gone (stop, cut) */
+static void fel_sched_forget(void)
+{
+    uint32_t i;
+    for (i = 0; i < FEL_OFFS; i++)
+        if (fel_offs[i].used)
+            midi_event(0x80u, fel_offs[i].track, fel_offs[i].note, 0);
+    memset(fel_offs, 0, sizeof fel_offs);
+    memset(fel_sched, 0, sizeof fel_sched);
+}
+
+static int32_t core_schedule(const fel_when_t *w, const fel_action_t *a, uint32_t id)
+{
+    uint32_t i;
+    int ok;
+    if (!w || !a || !id || w->late > FEL_LATE_NOW || a->track >= NTRK)
+        return 1;
+    if (w->kind == FEL_AT_STEP)
+        ok = w->track < NTRK && w->step < 64u;
+    else
+        ok = w->kind == FEL_AT_BEATS && w->beats > -1e15 && w->beats < 1e15 && w->every >= 0.0 && w->every < 1e15;
+    switch (a->kind) {
+    case FEL_DO_MARK: break;
+    case FEL_DO_HIT: ok &= a->a >= 0 && a->a < NLANE && a->b >= 1 && a->b <= 127; break;
+    case FEL_DO_NOTE: ok &= a->a >= 0 && a->a <= 127 && a->b >= 1 && a->b <= 127 && a->c >= 1 && a->c <= 64; break;
+    case FEL_DO_SET: ok &= core_param_get(a->track, a->a) != FEL_INVALID; break;
+    case FEL_DO_GLOBAL: ok &= a->a >= 0 && a->a < G_COUNT && fel_global_writable(a->a); break;
+    default: ok = 0;
+    }
+    if (!ok)
+        return 1;
+    for (i = 0; i < FEL_SCHEDULES && fel_sched[i].used; i++)
+        ;
+    if (i == FEL_SCHEDULES)
+        return 2;
+    fel_sched[i] = (fel_sched_t){*w, *a, id, 0, 1, 0};
+    return 0;
+}
+
+static void core_cancel(uint32_t id)
+{
+    uint32_t i;
+    for (i = 0; i < FEL_SCHEDULES; i++)
+        if (!id || fel_sched[i].id == id)
+            fel_sched[i].used = 0;
+}
+
+static uint32_t core_events(fel_event_t *out, uint32_t max)
+{
+    uint32_t n = 0;
+    while (out && n < max && fel_ev_r != fel_ev_w)
+        out[n++] = fel_ev[fel_ev_r++ % FEL_EVENTS];
+    return n;
+}
+
 static void core_play(double at_beats)
 {
     if (!(at_beats > -1e15 && at_beats < 1e15))        /* (NaN, infinite: ignored) */
@@ -446,6 +667,7 @@ static int32_t core_locate(double origin_beats)
 static void core_stop(void)
 {
     hclk_armed = hclk_locate = 0;
+    fel_sched_forget();
     if (song.playing)
         midi_clock_transport(0xFCu, fm1_ms);
 }
@@ -497,6 +719,7 @@ static void core_cut(void)
     lim_env = LIM_T;                                    /* .. and its limiter, at rest */
     for (i = ring_r; i != ring_w; i++)                  /* rendered ahead (up to 127 frames): the old sound */
         ring[(i % RING) * 2u] = ring[(i % RING) * 2u + 1u] = 0.0f;
+    fel_ev_r = fel_ev_w;                                /* (what the old source's music did) */
 }
 
 static void core_note(int track, int note, int vel)
@@ -526,7 +749,8 @@ static void core_snapshot(fel_snapshot_t *s)
 static const fel_core_t FEL_CORE = {
     FEL_CORE_ABI, core_boot, core_render, core_tempo, core_param_get, core_param_set, core_global_get,
     core_global_set, core_engine_get, core_engine_set, core_project_import, core_project_export, core_project_info,
-    core_engine_name, core_play, core_locate, core_stop, core_cut, core_note, core_snapshot,
+    core_engine_name, core_play, core_locate, core_stop, core_cut, core_note, core_snapshot, core_schedule,
+    core_cancel, core_events,
 };
 #define FEL_CAT2(a, b) a##b
 #define FEL_CAT(a, b) FEL_CAT2(a, b)

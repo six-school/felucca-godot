@@ -87,7 +87,7 @@ int main(int argc, char **argv)
         cs[i]->tempo(bpm);
     }
     c1 = cs[1];
-    CHECK(c1->abi == 5, "ABI 5 (cut)");
+    CHECK(c1->abi >= 5, "ABI 5 or later (cut)");
     x[0]->setup(FEL_TEST_TAILS);
     x[1]->setup(FEL_TEST_TAILS);
     render(cs, NC, ms(300));

@@ -119,9 +119,24 @@ static void test_setup(int which)
         song.g[G_DTIME] = 0; song.g[G_DFDBK] = 120; song.g[G_DMIX] = 127;   /* a delay fed back past 100 %: it never
                                                                              * dies out on its own */
         song.g[G_RTYPE] = 2; song.g[G_RSIZE] = 127; song.g[G_RDAMP] = 0;   /* HALL, its longest */
+    } else if (which == FEL_TEST_KNOCK) {       /* the knock (prototypes/sched.c): DRUM 1/16 x 16 on track 4, closed
+                                                 * hats on the off-beats only (every kick heard is a scheduled hit's);
+                                                 * ANALOG on track 1, no notes, its CUT half way */
+        set_engine_of(&trk[0], 0);
+        trk[0].p[P_E0 + 4] = 60;
+        for (i = 0; i < 3; i++) {
+            trk[i].p[P_SDIV] = 2; trk[i].p[P_SLEN] = 16;
+        }
+        t = &trk[3];
+        host_drums(t);
+        t->p[P_SDIV] = 2; t->p[P_SLEN] = 16;
+        for (i = 1; i < 16; i += 2)
+            put_step(t, i, 1, HAT, ST_NOTE, 0);
     }
     ui.force = 1;
 }
+
+_Static_assert(P_E0 + 4 == FEL_TEST_CUT, "test_hooks.h's CUT");
 
 static uint32_t test_frame(void) { return ring_r; }
 static uint32_t test_beat_len(void) { return beat_samples(); }

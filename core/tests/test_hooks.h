@@ -4,7 +4,9 @@
 
 typedef struct { uint32_t step, pos, cond_loop, nd_late, nd_early, nd_fired; int32_t pan; } fel_test_track_t;
 typedef struct { uint32_t frame, track, step; } fel_test_entry_t;   /* a step entered: the first frame of its block */
-enum { FEL_TEST_TIMING = 1, FEL_TEST_DELAY, FEL_TEST_DELAY_DRY, FEL_TEST_LOCATE, FEL_TEST_TAILS };   /* setup()'s */
+enum { FEL_TEST_TIMING = 1, FEL_TEST_DELAY, FEL_TEST_DELAY_DRY, FEL_TEST_LOCATE, FEL_TEST_TAILS,
+       FEL_TEST_KNOCK };                        /* setup()'s */
+#define FEL_TEST_CUT 107                        /* ANALOG's CUT (E4): a parameter id for param_set */
 
 typedef struct {
     const fel_core_t *core;

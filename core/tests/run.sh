@@ -1,7 +1,8 @@
 #!/bin/sh
 # The core's checks (docs/DESIGN.md §14): the core built as the pool (core/build.sh); M1: T1 T2 T3 T4 T8 T11 as C
 # tests, and the 2-copy link test (a global left out of the renames must be caught); M2: T5, T6 and locate, M5: the cut,
-# on test copies (core/tests/test_hooks.c: the board file with white-box accessors, renamed as the pool).
+# M6: the scheduler, on test copies (core/tests/test_hooks.c: the board file with white-box accessors, renamed as the
+# pool).
 #   core/tests/run.sh          (env FELUCCA: the Felucca tree, OUT: the build directory, CC: the compiler)
 HERE=$(cd "$(dirname "$0")" && pwd)
 CORE=$(cd "$HERE/.." && pwd)
@@ -48,6 +49,7 @@ W="-O2 -std=gnu99 -Wall -Wextra -Werror -I$CORE"
     "$CC" $W -I"$HERE" -o "$OUT/test_delay" "$HERE/test_delay.c" $T -lm
     "$CC" $W -I"$HERE" -o "$OUT/test_locate" "$HERE/test_locate.c" $T -lm
     "$CC" $W -I"$HERE" -o "$OUT/test_cut" "$HERE/test_cut.c" $T -lm
+    "$CC" $W -I"$HERE" -o "$OUT/test_sched" "$HERE/test_sched.c" $T -lm
 }
 set +e
 fail=0
@@ -60,6 +62,7 @@ run "T5: step timing on the conductor's timeline, tempo tweened (int, float), pa
 run "T6: no clicks in the delay when the tempo moves it" "$OUT/test_delay"
 run "locate: an instance that joins = one that played since the origin" "$OUT/test_locate"
 run "cut: a reused copy carries no tail" "$OUT/test_cut" "$FIXB"
+run "the scheduler: steps worked out ahead, the knock, targets and late policies" "$OUT/test_sched"
 
 # the 2-copy link test: renames from a list that misses `panel` (a tentative definition), copies 0 and 1. The check
 # must name it in both; the linker refuses the pair (a duplicate) by default, and with -fcommon merges the two panels
