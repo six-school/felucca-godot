@@ -10,12 +10,15 @@
 
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/object.hpp>
+#include <godot_cpp/variant/vector2.hpp>
+#include <godot_cpp/variant/vector3.hpp>
 
 #include <vector>
 
 namespace godot {
 
 class FeluccaPlayback;
+class Viewport;
 
 class FeluccaConductor : public Object {
 	GDCLASS(FeluccaConductor, Object);
@@ -23,6 +26,23 @@ class FeluccaConductor : public Object {
 	ObjectID node;
 	std::vector<FeluccaPlayback *> live, pending; // main thread (live: in the order of their play()s)
 	uint64_t seq = 0;
+	// the binding pass's (main thread, kept from frame to frame: nothing allocated once they have grown)
+	struct Ear { // where a viewport hears from, this frame (Godot's own choice: reach())
+		Viewport *vp = nullptr;
+		bool hears_2d = false, hears_3d = false;
+		Vector2 at_2d;
+		Vector3 at_3d;
+	};
+	struct Rank {
+		FeluccaPlayback *p;
+		double reach;
+		bool paused; // (Godot does not mix it)
+	};
+	std::vector<Ear> ears;
+	std::vector<Rank> waiting, holders;
+	bool overflow_warned = false;
+	const Ear *ear(Viewport *p_viewport);
+	double reach(Node *p_node, bool &r_paused);
 
 protected:
 	static void _bind_methods();
@@ -51,7 +71,7 @@ public:
 	void add_playback(FeluccaPlayback *p_playback);
 	void remove_playback(FeluccaPlayback *p_playback);
 	void resolve_pending(); // the node, last in each frame's process: this frame's play()s to their origin,
-	void bind_waiting(); // .. then free copies to the playbacks waiting for one, the first come first
+	void binding_pass(); // .. then copies to the sources in range, and to the others while some are free (§7)
 	void tree_paused(bool p_paused); // the node, first to hear the tree pause
 };
 

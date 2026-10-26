@@ -49,7 +49,7 @@ FeluccaPlayback::~FeluccaPlayback() {
 }
 
 // main thread, before Godot adds it to the mix (AudioServer::start_playback_stream): the conductor resolves this
-// frame's play()s to one origin (resolve_pending) and gives free copies to the playbacks waiting for one (bind_waiting),
+// frame's play()s to one origin (resolve_pending) and gives copies to the playbacks waiting for one (binding_pass),
 // both last in the frame's process; until it has a copy, it keeps its place in the music silently
 void FeluccaPlayback::_start(double p_from_pos) {
 	active = true;
@@ -109,9 +109,20 @@ void FeluccaPlayback::unbind() {
 	}
 	core = nullptr;
 	fresh = false;
+	leaving = false;
+	left.store(false, std::memory_order_relaxed);
 	felucca::Engine::get().release(slot); // (cut: under the lock, as the audio thread is not mixing)
 	AudioServer::get_singleton()->unlock();
 	slot = -1;
+}
+
+void FeluccaPlayback::leave() {
+	if (!core || leaving) {
+		return;
+	}
+	AudioServer::get_singleton()->lock();
+	leaving = true;
+	AudioServer::get_singleton()->unlock();
 }
 
 void FeluccaPlayback::_stop() {
@@ -129,6 +140,9 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 	if (hold_silent || hold_fade) {
 		if (hold_fade && !hold_silent) {
 			hold_fade--;
+		}
+		if (leaving) {
+			left.store(true, std::memory_order_release); // (silent already)
 		}
 		for (int32_t i = 0; i < p_frames; i++) {
 			p_buffer[i] = AudioFrame{ 0.0f, 0.0f };
@@ -150,7 +164,7 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 		relocate = true;
 	}
 	last_b1 = p.b1;
-	if (!core) {
+	if (!core || left.load(std::memory_order_relaxed)) {
 		for (int32_t i = 0; i < p_frames; i++) {
 			p_buffer[i] = AudioFrame{ 0.0f, 0.0f };
 		}
@@ -172,6 +186,13 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 			const float g = float(i + 1) / float(p_frames);
 			p_buffer[i] = AudioFrame{ p_buffer[i].left * g, p_buffer[i].right * g };
 		}
+	}
+	if (leaving) { // evicted: faded out over this step, as Godot's own stop does (silent until the pass cuts it)
+		for (int32_t i = 0; i < p_frames; i++) {
+			const float g = 1.0f - float(i + 1) / float(p_frames);
+			p_buffer[i] = AudioFrame{ p_buffer[i].left * g, p_buffer[i].right * g };
+		}
+		left.store(true, std::memory_order_release);
 	}
 	return p_frames;
 }

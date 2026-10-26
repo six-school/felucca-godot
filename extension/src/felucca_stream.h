@@ -15,6 +15,7 @@
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 
+#include <atomic>
 #include <vector>
 
 namespace godot {
@@ -95,6 +96,8 @@ public:
 	// published under the lock (main thread), read by _mix (audio thread)
 	const fel_core_t *core = nullptr;
 	bool fresh = false; // bound since the last mix: the copy joins the music (locate) and fades in, in the next one
+	bool leaving = false; // evicted: its next mix fades the copy out, the ones after it are silent until it is unbound
+	std::atomic<bool> left{ false }; // (written by _mix: that fade is done, the pass may cut the copy)
 	bool armed = false; // play() resolved: step 1 at origin
 	double origin = 0.0; // the conductor's timeline at its step 1
 	bool tree_held = false; // the tree pause holds it (the conductor paused it, or noted its own pause)
@@ -113,12 +116,16 @@ public:
 	int32_t _mix(AudioFrame *p_buffer, float p_rate_scale, int32_t p_frames) override;
 
 	bool is_bound() const { return core != nullptr; }
+	bool is_active() const { return active; } // between Godot's start and stop
 	bool wants_copy() const { return active && slot < 0 && !refused && !data.is_empty(); }
 	// main thread: the copy in p_slot (free, booted) plays it from the next mix step: the project, the overrides and
 	// what scripts set into it, then published under the lock. false: its project did not import (the copy is freed)
 	bool bind(int p_slot);
 	// main thread: back to playing nothing, under the lock; the copy is cut and freed
 	void unbind();
+	// main thread: evicted (DESIGN.md §7): its copy fades out over the next mix step; the conductor's pass unbinds it
+	// once that is done
+	void leave();
 	Ref<FeluccaSnapshot> snapshot() const; // the instance's (main thread: takes the lock)
 };
 

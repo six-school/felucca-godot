@@ -1,7 +1,7 @@
 // Sources (D14): FeluccaSource, FeluccaSource2D, FeluccaSource3D are the AudioStreamPlayer* nodes that play a
 // project. Their own play() / stop() / stream_paused as for any player; the stream is theirs (made from project,
-// quantize, join at run time), each playback one pool instance. M3 binds an instance at play() while one is free;
-// M5 adds the pool's scoring.
+// quantize, join at run time), each playback one pool instance while it is in range of the listener (the conductor's
+// binding pass, DESIGN.md §7).
 #pragma once
 
 #include "felucca_api.h"
@@ -33,7 +33,8 @@ struct FelSource {
 	void set_overrides(Node *p_owner, const Ref<FeluccaOverrides> &p_overrides); // (live: their changes heard)
 	void notification(Node *p_owner, int p_what);
 	// the player's properties a Felucca source does not follow (its music is the conductor's: FeluccaConductor.tempo):
-	// a node warning in the editor, refreshed when one is set; a warning when it starts playing with them
+	// a node warning in the editor, refreshed when one is set; a warning when it starts playing with them. And in the
+	// editor only, a 3D source without a max_distance: always in range, it always takes a copy while it plays
 	void on_set(Node *p_owner, const StringName &p_name);
 	PackedStringArray warnings(const Node *p_owner) const;
 	static String ignored(const Node *p_owner); // "" none, else what it ignores

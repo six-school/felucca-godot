@@ -83,7 +83,7 @@ void FelSource::notification(Node *p_owner, int p_what) {
 }
 
 void FelSource::on_set(Node *p_owner, const StringName &p_name) {
-	if (p_name == StringName("pitch_scale") || p_name == StringName("doppler_tracking")) {
+	if (p_name == StringName("pitch_scale") || p_name == StringName("doppler_tracking") || p_name == StringName("max_distance")) {
 		p_owner->call_deferred("update_configuration_warnings"); // (after the setter: _set comes before it)
 	}
 }
@@ -105,6 +105,9 @@ PackedStringArray FelSource::warnings(const Node *p_owner) const {
 	const String w = ignored(p_owner);
 	if (!w.is_empty()) {
 		a.push_back(w);
+	}
+	if (const AudioStreamPlayer3D *p = Object::cast_to<AudioStreamPlayer3D>(p_owner); p && p->get_max_distance() <= 0.0f) {
+		a.push_back("max_distance is 0 (no limit): this source is always in range, so it always uses an engine while it plays.");
 	}
 	return a;
 }

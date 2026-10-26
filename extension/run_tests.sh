@@ -28,6 +28,8 @@ for rate in 44100 48000; do
     grep -E "^(ERROR|SCRIPT ERROR)" build/m5_test_$rate.log || true
     n=$(grep -c "WARNING: .*pitch_scale has no effect on a Felucca source" build/m5_test_$rate.log || true)
     [ "$n" = 1 ] && echo "ok   play() with pitch_scale 2: one warning" || { echo "FAIL play() with pitch_scale 2: $n warnings"; fail=1; }
+    n=$(grep -c "WARNING: FeluccaConductor: more Felucca sources in range than engines available" build/m5_test_$rate.log || true)
+    [ "$n" = 1 ] && echo "ok   more sources in range than copies: one warning" || { echo "FAIL more sources in range than copies: $n warnings"; fail=1; }
 done
 rm -f demo/override.cfg
 echo "== demo/tests/m4_test.tscn"

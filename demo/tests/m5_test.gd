@@ -1,7 +1,10 @@
-# M5's checks in Godot 4.7.2 (extension/run_tests.sh), the pool's groundwork (DESIGN.md §7): every copy boots when the
-# game starts; a playing source keeps its place in the music without a copy and gets one when one is free (the first
-# come first, for now: the scoring comes next), joining the music where it is; a source deleted frees its copy; a
-# source's own pause while it waits for one. (That a reused copy carries no tail: core/tests/test_cut.c.)
+# M5's checks in Godot 4.7.2 (extension/run_tests.sh), the pool (DESIGN.md §7): every copy boots when the game starts;
+# a playing source keeps its place in the music without a copy and gets one when one is free, joining the music where
+# it is; a source deleted frees its copy; a source's own pause while it waits for one. Then the binding pass: a source
+# is in range within its max_distance of the listener; copies go to sources out of range while some are free and are
+# taken from them, the farthest first, when one in range needs one; with more in range than copies the farthest in
+# range gives way to a nearer one (extension/run_tests.sh counts the one warning). (That a reused copy carries no tail:
+# core/tests/test_cut.c.)
 extends Node
 
 var fails := 0
@@ -21,6 +24,15 @@ func source(join := FeluccaSource.JOIN_FOLLOW) -> FeluccaSource:
 	s.project = project
 	s.quantize = FeluccaSource.QUANTIZE_NOW
 	s.join = join
+	add_child(s)
+	return s
+
+func source_2d(at: Vector2, max_px := 100.0) -> FeluccaSource2D:
+	var s := FeluccaSource2D.new()
+	s.project = project
+	s.quantize = FeluccaSource.QUANTIZE_NOW
+	s.max_distance = max_px
+	s.position = at
 	add_child(s)
 	return s
 
@@ -50,10 +62,10 @@ func describe(s: FeluccaSnapshot) -> String:
 
 # frames until the source has a copy (-1: none within limit); waited_ms: how long that was
 var waited_ms := 0
-func frames_until_bound(s: FeluccaSource, limit := 120) -> int:
+func frames_until_bound(s: Node, limit := 120) -> int:
 	var t0 := Time.get_ticks_msec()
 	for f in limit:
-		if s.is_bound():
+		if s.call("is_bound"):
 			waited_ms = Time.get_ticks_msec() - t0
 			return f
 		await get_tree().process_frame
@@ -197,10 +209,116 @@ func _ready() -> void:
 	pitched.play()
 	await wait(0.2)
 
+	await stop_all()
+	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every copy free (%d bound)" % FeluccaConductor.get_bound_count())
+
+	await range_pass(n)
+	await stop_all()
+	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every copy free (%d bound)" % FeluccaConductor.get_bound_count())
+	print("m5_test: %d failed" % fails)
+	get_tree().quit(1 if fails else 0)
+
+func stop_all() -> void:
 	for s in get_children():
 		if s is FeluccaSource or s is FeluccaSource2D:
 			s.call("stop")
 	await wait(0.3)
-	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every copy free (%d bound)" % FeluccaConductor.get_bound_count())
-	print("m5_test: %d failed" % fails)
-	get_tree().quit(1 if fails else 0)
+
+# where the source plays: where its origin puts it on the conductor's timeline (read in one mix step)
+func in_time(s: FeluccaSource2D) -> bool:
+	AudioServer.lock()
+	var p := s.get_snapshot()
+	var bt := FeluccaConductor.beats
+	AudioServer.unlock()
+	return p.bound and p.playing and abs(p.beats - (bt - p.origin)) < 0.02
+
+func bound(a: Array[FeluccaSource2D]) -> String:   # which of them have a copy: "1101.."
+	return "".join(PackedStringArray(a.map(func(s: FeluccaSource2D) -> String: return "1" if s.is_bound() else "0")))
+
+# the binding pass (DESIGN.md §7), with 2D sources of range 100 px (the listener an AudioListener2D at 0, 0, then the
+# screen's centre)
+func range_pass(n: int) -> void:
+	var ear := AudioListener2D.new()
+	add_child(ear)
+	ear.make_current()
+
+	# ---- copies free: sources out of range get them too (lazy), and keep them while no one in range needs one
+	var far: Array[FeluccaSource2D] = []
+	for i in n:
+		far.append(source_2d(Vector2(1000 + 100 * i, 0)))    # 10 .. 17 times their range away
+	for s in far:
+		s.play()
+	await wait(0.5)
+	check(bound(far) == "1".repeat(n), "%d sources out of range, every copy free: each has one, and keeps it (%s)" % [n, bound(far)])
+
+	# ---- every copy taken: one in range takes the copy of the farthest out of range; one out of range takes none
+	var inside := source_2d(Vector2(99, 0))
+	var outside := source_2d(Vector2(0, 101))
+	inside.play()
+	outside.play()
+	var f := await frames_until_bound(inside)
+	await wait(0.3)
+	check(f >= 0 and not outside.is_bound(), "every copy taken: a source 99 px from the listener (range 100) gets one (%d frames, %d ms), one 101 px away none"
+		% [f, waited_ms])
+	var timed := in_time(inside)
+	check(bound(far) == "1".repeat(n - 1) + "0" and timed, ".. the farthest out of range gave its copy (%s), and the new one plays where its origin puts it (%s)"
+		% [bound(far), timed])
+
+	# ---- no AudioListener2D: the screen's centre, as Godot's players reckon it
+	ear.clear_current()
+	var vp := get_viewport()
+	var centre := (vp.global_canvas_transform * vp.canvas_transform).affine_inverse() * (vp.get_visible_rect().size * 0.5)
+	var c_in := source_2d(centre + Vector2(-99, 0))
+	var c_out := source_2d(centre + Vector2(0, -101))
+	c_in.play()
+	c_out.play()
+	f = await frames_until_bound(c_in)
+	await wait(0.3)
+	check(f >= 0 and not c_out.is_bound() and FeluccaConductor.get_bound_count() == n,
+		"no AudioListener2D: within 99 px of the screen's centre %s gets a copy (%d frames), 101 px away none" % [centre, f])
+
+	# ---- paused by its own stream_paused: out of range, its copy taken at once; unpaused, in range again
+	ear.make_current()
+	inside.stream_paused = true
+	var p_new := source_2d(Vector2(50, 0))
+	p_new.play()
+	f = await frames_until_bound(p_new)
+	check(f >= 0 and not inside.is_bound(), "a source in range paused: out of range, its copy goes to one in range (%d frames)" % f)
+	inside.stream_paused = false
+	f = await frames_until_bound(inside)
+	await wait(0.3)
+	check(f >= 0 and in_time(inside), ".. unpaused: in range, it takes the copy of one out of range (%d frames), and plays where its origin puts it" % f)
+
+	# ---- more in range than copies: a source nearer than the farthest bound one takes its copy; a tie waits
+	await stop_all()
+	var ring: Array[FeluccaSource2D] = []
+	for i in n:
+		ring.append(source_2d(Vector2(10 * (i + 1), 0)))     # 10 .. 80 px: all in range
+	for s in ring:
+		s.play()
+	await wait(0.4)
+	var nearer := source_2d(Vector2(0, 5))
+	nearer.play()
+	f = await frames_until_bound(nearer)
+	await wait(0.3)
+	check(f >= 0 and bound(ring) == "1".repeat(n - 1) + "0", "%d in range: one 5 px away takes the copy of the farthest (80 px; %d frames, %d ms) (%s)"
+		% [n + 1, f, waited_ms, bound(ring)])
+	var tie := source_2d(Vector2(0, -70))                    # as far as the farthest one bound now
+	tie.play()
+	await wait(0.5)
+	check(not tie.is_bound() and bound(ring) == "1".repeat(n - 1) + "0", ".. one as far as the farthest bound one (70 px) waits: a tie never takes (%s)"
+		% bound(ring))
+
+	# ---- one walks out of range: the nearest waiting in range takes its copy
+	ring[0].position = Vector2(500, 0)
+	f = await frames_until_bound(tie)
+	await wait(0.3)
+	check(f >= 0 and not ring[0].is_bound() and not ring[n - 1].is_bound() and in_time(tie),
+		"one walks out of range: the nearest waiting in range (70 px, not 80) takes its copy (%d frames), in time" % f)
+
+	# ---- one stops: the copy freed goes to the one still waiting in range, which joins the music where it is
+	ring[1].stop()
+	f = await frames_until_bound(ring[n - 1])
+	await wait(0.3)
+	check(f >= 0 and in_time(ring[n - 1]), "one stops: the last waiting in range gets its copy (%d frames), in time" % f)
+	ear.queue_free()
