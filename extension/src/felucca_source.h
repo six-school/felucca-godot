@@ -15,6 +15,10 @@ namespace godot {
 
 class FeluccaStream;
 class FeluccaSnapshot;
+class FeluccaPlayback;
+class FeluccaWhen;
+class FeluccaAction;
+class FeluccaSchedule;
 
 // what the three share
 struct FelSource {
@@ -24,6 +28,8 @@ struct FelSource {
 	std::shared_ptr<FelValues> values = std::make_shared<FelValues>(); // (its parts', its song's, its playbacks')
 	Ref<FeluccaPart> parts[FEL_TRACKS];
 	Ref<FeluccaSong> song;
+	bool pinned = false; // it always has an instance while it plays (DESIGN.md §7), as with actions pending
+	bool reported = false; // bound, as its last bound / unbound signal said (the conductor's)
 
 	Ref<FeluccaPart> part(int p_index);
 	Ref<FeluccaSong> get_song();
@@ -40,6 +46,13 @@ struct FelSource {
 	static String ignored(const Node *p_owner); // "" none, else what it ignores
 	Ref<FeluccaSnapshot> snapshot(Node *p_owner) const;
 	bool bound(Node *p_owner) const;
+	// M6: an action held until its target, on the source while it plays (FeluccaConductor::schedule), -> its handle,
+	// or null (an error said why); cancel: the pending ones with that tag
+	Ref<FeluccaSchedule> schedule(Node *p_owner, const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action,
+			const StringName &p_tag);
+	void cancel(Node *p_owner, const StringName &p_tag);
+	static FelSource *of(Node *p_node); // a Felucca source's, else nullptr
+	static FeluccaPlayback *playing(Node *p_owner); // its playback while it plays, paused too (stopped: nullptr)
 	template <typename T>
 	static void bind();
 };
@@ -83,7 +96,13 @@ public:                                                                         
 	}                                                                                               \
 	int get_join() const { return src.join; }                                                       \
 	bool is_bound() { return src.bound(this); }                                                     \
-	Ref<FeluccaSnapshot> get_snapshot() { return src.snapshot(this); }
+	Ref<FeluccaSnapshot> get_snapshot() { return src.snapshot(this); }                              \
+	Ref<FeluccaSchedule> schedule(const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action, \
+			const StringName &p_tag) { return src.schedule(this, p_when, p_action, p_tag); }         \
+	void cancel(const StringName &p_tag) { src.cancel(this, p_tag); }                               \
+	void set_pinned(bool p_v) { src.pinned = p_v; }                                                 \
+	bool is_pinned() const { return src.pinned; }                                                   \
+	FelSource &fel() { return src; } /* (the extension's own) */
 
 class FeluccaSource : public AudioStreamPlayer {
 	GDCLASS(FeluccaSource, AudioStreamPlayer);

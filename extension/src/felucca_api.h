@@ -51,7 +51,7 @@ struct ApiClass {
 };
 extern const ApiClass API_PART, API_SONG, API_VIEWS[];
 extern const int API_VIEW_COUNT;
-extern const ApiEnum API_ENGINE_ENUM, API_PARAM_ENUM;
+extern const ApiEnum API_ENGINE_ENUM, API_PARAM_ENUM, API_LANE_ENUM;
 extern const char *const API_FELUCCA;
 
 const ApiProp *api_prop(const ApiClass &p_class, int p_id); // the property of id, nullptr none
@@ -78,6 +78,9 @@ struct FelValues {
 
 	int32_t get_track(int p_track, int p_id, int p_min, int p_max, int p_def) const;
 	void set_track(int p_track, int p_id, int32_t p_value, int p_min, int p_max);
+	// a scheduled set (FeluccaAction.set_param) has applied in the instance: kept as what scripts set (a binding
+	// after plays it), the source's muted_parts still over a mute
+	void applied_track(int p_track, int p_id, int32_t p_value);
 	int32_t get_song(int p_id, int p_def) const;
 	void set_song(int p_id, int32_t p_value, int p_min, int p_max);
 	int32_t get_engine(int p_track) const;
@@ -153,6 +156,9 @@ public:
 	Ref<m_class> get_##m_access() { return _get_view(m_view); }
 	FELUCCA_ENGINE_VIEWS(FELUCCA_VIEW_GETTER)
 	int get_index() const { return track + 1; } // 1 .. 4, as on the device
+	// the extension's own: whose part it is (FeluccaWhen, FeluccaAction), which
+	const std::shared_ptr<FelValues> &source_values() const { return values; }
+	int get_track() const { return track; }
 };
 
 class FeluccaSong : public RefCounted {

@@ -360,6 +360,25 @@ Planned (M6; the user's decisions, 2026-10-26):
   `loop`, `beat` signals when heard (emitted only when connected) and a heard-time snapshot.
 - `pinned` (bool): see §7.
 
+As built (M6 part 2, `extension/src/felucca_schedule.*`, `felucca_conductor.cpp`): as planned, with these names:
+`FeluccaWhen.next_step / next_loop / loops_ahead(part, loops, step) / next_bar(beat := 1)`, each with an optional
+`late` (`FeluccaWhen.Late`: `LATE_NEXT`, `LATE_DROP`, `LATE_NOW`; also a property); `FeluccaAction.hit(part, lane,
+velocity := 100)`, `note(part, note, velocity := 100, steps := 1)`, **`set_param(part, param, value)`** (not `set`:
+Object's own), `mark()`; `FeluccaPart.Lane` (`LANE_KICK` .. `LANE_BELL`) generated from the LANES pages' level labels.
+`set_param` takes `FeluccaPart.Param` (a part's parameters): an engine's own (ANALOG's CUT, on the engine views) is
+not schedulable yet. A source's `schedule()` works from its `play()` (a 2D / 3D player starts on the next physics
+tick: the actions wait for the instance) and through its own `stream_paused` (Godot's `is_playing()` says false then:
+not the test of "playing"); refusals push an error saying why and return null. The pending actions live on the
+conductor (main thread: the playback holds no reference, as a playback still mixing at quit is never freed); each has
+an id the core takes, sent under the lock when the source is bound and again by `bind` (before the instance is mixed)
+when not; a `set_param` applied becomes a value scripts set (`FelValues::applied_track`). *Measured* (`m6_test`, 44.1
+and 48 kHz): the refusals; a mark on the next loop: one event on the signal and the handle, part 4, step 1, the next
+pass, at the timeline's origin + 4 beats a pass, emitted 2–6 ms after its heard time; four hits heard 0.504–0.511 s
+apart (0.5 s due: the Dummy driver mixes ~2 % slow, T12); next_step this pass / the next; next_bar(1), (3) on the
+beat; cancel(tag), a handle's cancel(), stop(): nothing heard; a FOLLOW resume past three targets: DROP dropped at
+once, NOW on the first step after, NEXT on step 5 a pass later; set_param applied when heard and kept for the next
+binding.
+
 ## 6. Timing
 
 ### 6.1 Timeline
@@ -400,6 +419,17 @@ frame, last in the frame's process (the conductor's node), the conductor moves t
 mix time + the frame's offset in it + `get_output_latency()`) to their sources' signals, in heard order across
 sources; `late_by` is now minus that. A pause holds what is not heard yet (shifted by the pause). The estimate's
 accuracy is Godot's latency figure: measured on the Dummy driver here, judged by ear in the demo.
+
+As built (M6 part 2): `Engine::mixes` (256 mix steps, written by the clock effect at each step's end): the step's
+timeline from b0 to b1, its frames, and when it was mixed on a steady clock (`Engine::now_us`), spaced a step's
+length at least from the one before, so a driver that mixes several steps at once (the Dummy driver: 8 every ~95 ms)
+still maps them one after another, as they are played. A step's start counts as heard at its time plus
+`get_output_latency()` (asked once a second): nothing is heard before it is mixed. An event's heard time: its step's
+time plus its place on the step's stretch of the timeline (its block's beats). `FeluccaPlayback::keep_events` drains
+the instance after each render (and before a cut) into a ring of 512, without the step events (part 3's);
+`FeluccaConductor::deliver` takes every ring under one lock a frame, emits `bound` / `unbound` by each touched
+source's state (so a source played again says each once), cancels the actions of sources stopped or played again,
+then emits what has been heard, oldest first. A tree pause moves what is not heard yet by its length.
 
 ### 6.4 Locate (new, board file)
 
@@ -480,7 +510,12 @@ Decided with the user before M5 (2026-10-25); §13.7 and §13.9 have the measure
   instance, in range or not, so its actions apply and its events are emitted: the pass binds pinned sources first and
   never evicts them. More pinned sources than instances: the farthest pinned ones wait, and a warning is pushed once.
   The pin of pending actions ends when the last has been heard (or cancelled); the source keeps its instance then
-  until another needs it, as any.
+  until another needs it, as any. As built (M6 part 2): pinned waiting sources come first in the pass, the nearest
+  first; a pinned holder is never a victim; a pinned source with no copy free takes the farthest unpinned holder's
+  (one in range too: the overflow warning, a pinned source counting as one in range). *Measured* (`m6_test`): with
+  every engine held in range, a source 1000 ranges away takes one when it schedules, is heard, then gives it back
+  (bound / unbound once each, the source it took from unbound once and bound again); `pinned = true` likewise; 9
+  pinned with 8 engines: the farthest waits, a warning once.
 
 ## 8. Code generation (D10)
 

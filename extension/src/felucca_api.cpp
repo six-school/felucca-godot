@@ -86,6 +86,15 @@ void FelValues::set_track(int p_track, int p_id, int32_t p_value, int p_min, int
 	track_set[p_track][p_id] = 1;
 }
 
+void FelValues::applied_track(int p_track, int p_id, int32_t p_value) {
+	track[p_track][p_id] = int16_t(p_value);
+	track_set[p_track][p_id] = 1;
+	if (core && muted_value(p_track, p_id, p_value) != p_value) {
+		Locked l;
+		core->param_set(p_track, p_id, 1);
+	}
+}
+
 void FelValues::set_muted(int p_parts) {
 	const int was = muted;
 	muted = p_parts & ((1 << FEL_TRACKS) - 1);
@@ -316,9 +325,10 @@ void FeluccaPart::_bind_methods() {
 						 "FeluccaPart.Engine"),
 			"set_engine", "get_engine");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "index", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_index");
-	for (int k = 0; k < API_PARAM_ENUM.count; k++) {
-		ClassDB::bind_integer_constant(get_class_static(), API_PARAM_ENUM.name, API_PARAM_ENUM.values[k].name,
-				API_PARAM_ENUM.values[k].value);
+	for (const ApiEnum *e : { &API_PARAM_ENUM, &API_LANE_ENUM }) {
+		for (int k = 0; k < e->count; k++) {
+			ClassDB::bind_integer_constant(get_class_static(), e->name, e->values[k].name, e->values[k].value);
+		}
 	}
 	// (one getter a view, returning its own class: GDScript's analyzer types a property by its getter's return)
 #define FELUCCA_BIND_VIEW(m_class, m_view, m_engine, m_access)                                                  \

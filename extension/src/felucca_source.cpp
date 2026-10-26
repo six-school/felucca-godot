@@ -1,11 +1,13 @@
 #include "felucca_source.h"
 
 #include "felucca_conductor.h"
+#include "felucca_schedule.h"
 #include "felucca_stream.h"
 
 #include <godot_cpp/classes/audio_server.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 
 namespace godot {
 
@@ -127,6 +129,28 @@ bool FelSource::bound(Node *p_owner) const {
 	return p && p->is_bound();
 }
 
+// (not the player's is_playing(): false while its own stream_paused holds it; stop() drops the playback)
+FeluccaPlayback *FelSource::playing(Node *p_owner) {
+	return playback_of(p_owner);
+}
+
+Ref<FeluccaSchedule> FelSource::schedule(Node *p_owner, const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action,
+		const StringName &p_tag) {
+	FeluccaConductor *c = FeluccaConductor::get_singleton();
+	FeluccaPlayback *p = playing(p_owner);
+	if (!p || !c) {
+		UtilityFunctions::push_error(p_owner->get_name(), ": schedule() on a source that is not playing.");
+		return Ref<FeluccaSchedule>();
+	}
+	return c->schedule(p_owner, p, p_when, p_action, p_tag);
+}
+
+void FelSource::cancel(Node *p_owner, const StringName &p_tag) {
+	if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
+		c->cancel_tag(p_owner, p_tag);
+	}
+}
+
 Ref<FeluccaPart> FelSource::part(int p_index) {
 	if (p_index < 0 || p_index >= FEL_TRACKS) {
 		return Ref<FeluccaPart>();
@@ -167,6 +191,10 @@ void FelSource::bind() {
 	ClassDB::bind_method(D_METHOD("set_overrides", "overrides"), &T::set_overrides);
 	ClassDB::bind_method(D_METHOD("get_overrides"), &T::get_overrides);
 	ClassDB::bind_method(D_METHOD("_on_overrides_changed"), &T::_on_overrides_changed);
+	ClassDB::bind_method(D_METHOD("schedule", "when", "action", "tag"), &T::schedule, DEFVAL(StringName()));
+	ClassDB::bind_method(D_METHOD("cancel", "tag"), &T::cancel);
+	ClassDB::bind_method(D_METHOD("set_pinned", "pinned"), &T::set_pinned);
+	ClassDB::bind_method(D_METHOD("is_pinned"), &T::is_pinned);
 	ClassDB::bind_method(D_METHOD("set_muted_parts", "parts"), &T::set_muted_parts);
 	ClassDB::bind_method(D_METHOD("get_muted_parts"), &T::get_muted_parts);
 	ClassDB::bind_method(D_METHOD("_get_part", "index"), &T::_get_part);
@@ -192,6 +220,12 @@ void FelSource::bind() {
 	ClassDB::add_property(c, PropertyInfo(Variant::INT, "quantize", PROPERTY_HINT_ENUM, "Now,Beat,Bar"), "set_quantize",
 			"get_quantize");
 	ClassDB::add_property(c, PropertyInfo(Variant::INT, "join", PROPERTY_HINT_ENUM, "Follow,Hold"), "set_join", "get_join");
+	ClassDB::add_property(c, PropertyInfo(Variant::BOOL, "pinned"), "set_pinned", "is_pinned");
+	// (M6, DESIGN.md §5.2) an action, when heard; the source got / lost an instance
+	ClassDB::add_signal(c, MethodInfo("scheduled", PropertyInfo(Variant::STRING_NAME, "tag"),
+								   PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "FeluccaEvent")));
+	ClassDB::add_signal(c, MethodInfo("bound"));
+	ClassDB::add_signal(c, MethodInfo("unbound"));
 }
 
 void FeluccaSource::_bind_methods() {
@@ -209,6 +243,19 @@ void FeluccaSource2D::_bind_methods() {
 
 void FeluccaSource3D::_bind_methods() {
 	FelSource::bind<FeluccaSource3D>();
+}
+
+FelSource *FelSource::of(Node *p_node) {
+	if (FeluccaSource *s = Object::cast_to<FeluccaSource>(p_node)) {
+		return &s->fel();
+	}
+	if (FeluccaSource2D *s = Object::cast_to<FeluccaSource2D>(p_node)) {
+		return &s->fel();
+	}
+	if (FeluccaSource3D *s = Object::cast_to<FeluccaSource3D>(p_node)) {
+		return &s->fel();
+	}
+	return nullptr;
 }
 
 bool FeluccaSource::is_source(Object *p_object) {

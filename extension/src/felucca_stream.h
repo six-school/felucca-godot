@@ -63,6 +63,12 @@ public:
 	bool _is_monophonic() const override { return true; }
 };
 
+// an instance's event, with the mix step it was rendered in (DESIGN.md §6.3: when it is heard)
+struct FelHeard {
+	fel_event_t e;
+	uint64_t step;
+};
+
 class FeluccaPlayback : public AudioStreamPlayback {
 	GDCLASS(FeluccaPlayback, AudioStreamPlayback);
 
@@ -76,8 +82,13 @@ class FeluccaPlayback : public AudioStreamPlayback {
 	double rs_pos = 1.0; // the resampler: read position in rs_l / rs_r (frames at FEL_RATE), rs_have of them
 	int32_t rs_have = 1;
 	std::vector<float> rs_l, rs_r, out_l, out_r;
+	// its instance's events (actions applied, dropped): written by _mix (or unbind, under the lock), taken by the
+	// conductor under the lock. A fixed ring: past it the newest are lost
+	std::vector<FelHeard> heard;
+	uint32_t heard_w = 0, heard_r = 0;
 
 	void render(AudioFrame *p_out, int32_t p_frames, double p_b0, double p_b1);
+	void keep_events(); // (the instance's events into the ring, stamped with the mix step being mixed)
 
 protected:
 	static void _bind_methods() {}
@@ -93,6 +104,7 @@ public:
 	int slot = -1; // the copy it is bound to, -1 none
 	uint64_t seq = 0; // the order of the play()s (the first come binds first while copies are free)
 	bool refused = false; // its project did not import: it never binds
+	int pins = 0; // its actions pending (scheduled, not heard yet): it keeps an instance (DESIGN.md §7)
 	// published under the lock (main thread), read by _mix (audio thread)
 	const fel_core_t *core = nullptr;
 	bool fresh = false; // bound since the last mix: the copy joins the music (locate) and fades in, in the next one
@@ -127,6 +139,7 @@ public:
 	// once that is done
 	void leave();
 	Ref<FeluccaSnapshot> snapshot() const; // the instance's (main thread: takes the lock)
+	void take_events(std::vector<FelHeard> &r_out); // main thread, under the lock: the ring's, in order
 };
 
 } // namespace godot

@@ -33,6 +33,19 @@ public:
 	// audio thread counts, main thread reads
 	std::atomic<uint64_t> steps{ 0 }, paused_steps{ 0 };
 
+	// each mix step as mixed (audio_step, at its end; the main thread reads them under the lock): the conductor's
+	// timeline over it and when it was mixed, spaced a step's length at least as they are heard (a driver that mixes
+	// several steps at once plays them one after another). Events map onto them (M6, DESIGN.md §6.3)
+	struct Mix {
+		uint64_t step = UINT64_MAX;
+		int64_t at_us = 0; // (now_us's clock)
+		double b0 = 0.0, b1 = 0.0;
+		uint32_t frames = 0;
+	};
+	static constexpr uint32_t MIXES = 256;
+	Mix mixes[MIXES];
+	static int64_t now_us(); // a steady clock, the same on every thread
+
 	// the clock effect, at the end of each mix step: the conductor's timeline moved over it; the next step's plan
 	void audio_step(uint32_t p_frames);
 	// main thread, under the lock: the pending step's plan after tempo, running or paused changed
@@ -54,6 +67,7 @@ private:
 		bool booted = false, used = false;
 	};
 	std::vector<Slot> slots;
+	int64_t mixed_at_us = 0; // (audio thread: the last mix step's, as spaced)
 	void init();
 	double delta() const;
 };

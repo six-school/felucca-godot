@@ -4,6 +4,7 @@
 #include "felucca_conductor.h"
 #include "felucca_importer.h"
 #include "felucca_project.h"
+#include "felucca_schedule.h"
 #include "felucca_source.h"
 #include "felucca_stream.h"
 
@@ -34,6 +35,10 @@ static void initialize_felucca(ModuleInitializationLevel p_level) {
 		FELUCCA_ENGINE_VIEWS(FELUCCA_REGISTER_VIEW)
 		GDREGISTER_CLASS(FeluccaOverride);
 		GDREGISTER_CLASS(FeluccaOverrides);
+		GDREGISTER_ABSTRACT_CLASS(FeluccaWhen); // (made by their static methods)
+		GDREGISTER_ABSTRACT_CLASS(FeluccaAction);
+		GDREGISTER_ABSTRACT_CLASS(FeluccaEvent);
+		GDREGISTER_ABSTRACT_CLASS(FeluccaSchedule);
 		GDREGISTER_CLASS(FeluccaSource);
 		GDREGISTER_CLASS(FeluccaSource2D);
 		GDREGISTER_CLASS(FeluccaSource3D);

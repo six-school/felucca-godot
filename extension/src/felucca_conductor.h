@@ -8,6 +8,8 @@
 // at run time, after the scene: then the pause is not atomic (a warning says so).
 #pragma once
 
+#include "fel_core.h"
+
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/variant/vector2.hpp>
@@ -19,6 +21,10 @@ namespace godot {
 
 class FeluccaPlayback;
 class Viewport;
+class FeluccaWhen;
+class FeluccaAction;
+class FeluccaSchedule;
+struct FelHeard;
 
 class FeluccaConductor : public Object {
 	GDCLASS(FeluccaConductor, Object);
@@ -37,10 +43,41 @@ class FeluccaConductor : public Object {
 		FeluccaPlayback *p;
 		double reach;
 		bool paused; // (Godot does not mix it)
+		bool pinned; // (actions pending, or pinned: it always has an instance)
 	};
 	std::vector<Ear> ears;
 	std::vector<Rank> waiting, holders;
-	bool overflow_warned = false;
+	bool overflow_warned = false, pinned_warned = false;
+
+	// M6 (DESIGN.md §5.2, §6.3): the actions pending on the sources playing, until heard (or dropped, cancelled)
+	struct Pending {
+		uint32_t id;
+		FeluccaPlayback *p; // the playback it was scheduled on (it goes with it: stopped, freed)
+		ObjectID source;
+		StringName tag;
+		Ref<FeluccaAction> action;
+		Ref<FeluccaSchedule> handle;
+		fel_when_t when; // as the instance takes it (next_bar's beats resolved when scheduled)
+		int part; // the event's (1 .. 4, 0 none)
+		bool applied = false; // in the instance: its event is on its way to being heard
+		int64_t heard_us = 0; // .. heard then (Engine::now_us's clock)
+		int step = 0, loop = 0;
+		double beats = 0.0;
+	};
+	struct Inbound { // an event taken from a playback, its time to be heard worked out once its mix step is known
+		FeluccaPlayback *p;
+		fel_event_t e;
+		uint64_t step;
+		int64_t heard_us; // (-1: not yet)
+	};
+	std::vector<Pending> pend;
+	std::vector<Inbound> inbox;
+	std::vector<FelHeard> taken;
+	std::vector<ObjectID> touched; // sources whose instance came or went (bound / unbound)
+	uint32_t next_id = 0;
+	double latency = 0.0; // AudioServer's output latency, seconds (asked once a second: it can be slow)
+	int64_t latency_at = INT64_MIN, paused_at = 0;
+	void forget(size_t p_index); // a pending action gone (its playback's pin with it)
 	const Ear *ear(Viewport *p_viewport);
 	double reach(Node *p_node, bool &r_paused);
 
@@ -71,7 +108,18 @@ public:
 	void add_playback(FeluccaPlayback *p_playback);
 	void remove_playback(FeluccaPlayback *p_playback);
 	void resolve_pending(); // the node, last in each frame's process: this frame's play()s to their origin,
-	void binding_pass(); // .. then copies to the sources in range, and to the others while some are free (§7)
+	void binding_pass(); // .. then copies to the sources pinned, in range, and to the others while some are free (§7)
+	void deliver(); // .. then bound / unbound, the stopped sources' actions cancelled, and what has been heard
+
+	// M6: FelSource's schedule / cancel; a playback's, binding (its actions into the instance, before it is mixed),
+	// its instance coming or going; FeluccaSchedule.cancel
+	Ref<FeluccaSchedule> schedule(Node *p_source, FeluccaPlayback *p_playback, const Ref<FeluccaWhen> &p_when,
+			const Ref<FeluccaAction> &p_action, const StringName &p_tag);
+	void cancel_tag(Node *p_source, const StringName &p_tag);
+	void cancel_id(uint32_t p_id);
+	void send_pending(FeluccaPlayback *p_playback, const fel_core_t *p_core);
+	void touch(ObjectID p_source) { touched.push_back(p_source); }
+	void forget_all(); // (the game ends: what is pending, without a signal)
 	void tree_paused(bool p_paused); // the node, first to hear the tree pause
 };
 

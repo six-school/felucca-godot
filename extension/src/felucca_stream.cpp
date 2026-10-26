@@ -13,6 +13,7 @@
 namespace godot {
 
 static const int32_t CHUNK = 4096; // frames a render (the scratch buffers' size: none is allocated while mixing)
+static const uint32_t HEARD = 512; // events a playback holds until the conductor takes them (a frame's worth, many times)
 
 Ref<AudioStreamPlayback> FeluccaStream::_instantiate_playback() const {
 	Ref<FeluccaPlayback> p;
@@ -32,6 +33,7 @@ FeluccaPlayback::FeluccaPlayback() {
 	rs_r.assign(size_t(2 * CHUNK + 8), 0.0f);
 	out_l.assign(size_t(2 * CHUNK + 8), 0.0f);
 	out_r.assign(size_t(2 * CHUNK + 8), 0.0f);
+	heard.resize(HEARD);
 }
 
 // main thread, after Godot has taken it out of the mix (AudioServer::update frees deleted playbacks there): its copy,
@@ -45,6 +47,9 @@ FeluccaPlayback::~FeluccaPlayback() {
 	}
 	if (slot >= 0) {
 		felucca::Engine::get().release(slot);
+		if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
+			c->touch(source);
+		}
 	}
 }
 
@@ -84,6 +89,10 @@ bool FeluccaPlayback::bind(int p_slot) {
 	if (v) {
 		v->apply(c); // the source's overrides and what its scripts set (the copy is not mixed: no lock needed)
 	}
+	FeluccaConductor *fc = FeluccaConductor::get_singleton();
+	if (fc) {
+		fc->send_pending(this, c); // .. and its actions still to apply
+	}
 	slot = p_slot;
 	AudioServer::get_singleton()->lock();
 	core = c;
@@ -96,6 +105,9 @@ bool FeluccaPlayback::bind(int p_slot) {
 		v->core = c; // (from now its parts write through to c)
 	}
 	AudioServer::get_singleton()->unlock();
+	if (fc) {
+		fc->touch(source);
+	}
 	return true;
 }
 
@@ -107,6 +119,7 @@ void FeluccaPlayback::unbind() {
 	if (std::shared_ptr<FelValues> v = values.lock(); v && v->core == core) {
 		v->core = nullptr;
 	}
+	keep_events(); // (the cut empties the instance's)
 	core = nullptr;
 	fresh = false;
 	leaving = false;
@@ -114,6 +127,28 @@ void FeluccaPlayback::unbind() {
 	felucca::Engine::get().release(slot); // (cut: under the lock, as the audio thread is not mixing)
 	AudioServer::get_singleton()->unlock();
 	slot = -1;
+	if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
+		c->touch(source);
+	}
+}
+
+void FeluccaPlayback::keep_events() {
+	fel_event_t e[32];
+	const uint64_t step = felucca::Engine::get().steps.load(std::memory_order_relaxed);
+	for (uint32_t n = 32; n == 32 && core;) {
+		n = core->events(e, 32);
+		for (uint32_t i = 0; i < n; i++) {
+			if (e[i].kind != FEL_EV_STEP && heard_w - heard_r < HEARD) { // (steps: not yet listened to)
+				heard[heard_w++ % HEARD] = { e[i], step };
+			}
+		}
+	}
+}
+
+void FeluccaPlayback::take_events(std::vector<FelHeard> &r_out) {
+	while (heard_r != heard_w) {
+		r_out.push_back(heard[heard_r++ % HEARD]);
+	}
 }
 
 void FeluccaPlayback::leave() {
@@ -180,6 +215,7 @@ int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t 
 		core->locate(origin); // (a copy given to music in progress joins it where it is)
 	}
 	render(p_buffer, p_frames, p.b0, p.b1);
+	keep_events();
 	if (fresh) { // a short fade-in (the copy is silent until a step starts in it: this softens only one that starts here)
 		fresh = false;
 		for (int32_t i = 0; i < p_frames; i++) {

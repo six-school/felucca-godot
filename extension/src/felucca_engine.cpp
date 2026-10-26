@@ -2,6 +2,9 @@
 
 #include "fel_pool.h"
 
+#include <algorithm>
+#include <chrono>
+
 namespace felucca {
 
 Engine &Engine::get() {
@@ -23,7 +26,14 @@ double Engine::delta() const {
 	return running && !paused ? plan.frames * tempo / (60.0 * mix_rate) : 0.0;
 }
 
+int64_t Engine::now_us() {
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 void Engine::audio_step(uint32_t p_frames) {
+	const uint64_t k = steps.load(std::memory_order_relaxed);
+	mixed_at_us = std::max(now_us(), mixed_at_us + int64_t(p_frames * 1e6 / mix_rate));
+	mixes[k % MIXES] = { k, mixed_at_us, plan.b0, plan.b1, p_frames };
 	steps.fetch_add(1, std::memory_order_relaxed);
 	if (paused) {
 		paused_steps.fetch_add(1, std::memory_order_relaxed);

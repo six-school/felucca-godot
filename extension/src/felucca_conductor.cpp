@@ -2,6 +2,7 @@
 
 #include "felucca_clock.h"
 #include "felucca_engine.h"
+#include "felucca_schedule.h"
 #include "felucca_source.h"
 #include "felucca_stream.h"
 
@@ -154,6 +155,12 @@ void FeluccaConductor::add_playback(FeluccaPlayback *p_playback) {
 void FeluccaConductor::remove_playback(FeluccaPlayback *p_playback) {
 	live.erase(std::remove(live.begin(), live.end(), p_playback), live.end());
 	pending.erase(std::remove(pending.begin(), pending.end(), p_playback), pending.end());
+	for (size_t i = pend.size(); i-- > 0;) { // (its actions: cancelled with it, no signal)
+		if (pend[i].p == p_playback) {
+			forget(i);
+		}
+	}
+	inbox.erase(std::remove_if(inbox.begin(), inbox.end(), [&](const Inbound &in) { return in.p == p_playback; }), inbox.end());
 }
 
 // every play() of this frame starts at one origin: the conductor's timeline where the next mix step starts, rounded up
@@ -242,8 +249,9 @@ double FeluccaConductor::reach(Node *p_node, bool &r_paused) {
 	return INFINITY;
 }
 
-// the binding pass (DESIGN.md §7): copies to the sources in range of the listener, the nearest first, and to the
-// others while some are free (lazy: a source walking into range is bound already). A source in range with none free
+// the binding pass (DESIGN.md §7): copies to the sources pinned (actions pending, or pinned: whatever their range,
+// never evicted; more than copies: the farthest wait, a warning once), then to the sources in range of the listener,
+// the nearest first, and to the others while some are free (lazy: a source walking into range is bound already). A source in range with none free
 // takes the copy of the bound source farthest out of range; with every bound source in range (more sources in range
 // than copies: the level-design rule broken, a warning once) the farthest one's, if it is nearer. An evicted copy fades
 // out over one mix step (FeluccaPlayback::leave: after a teleport Godot may still mix a source left behind at its old
@@ -257,8 +265,11 @@ void FeluccaConductor::binding_pass() {
 	// once Godot has destroyed its playback, a frame or so later)
 	int coming = 0;
 	for (FeluccaPlayback *p : live) {
+		Node *n = Object::cast_to<Node>(ObjectDB::get_instance(p->source));
+		const FelSource *f = n ? FelSource::of(n) : nullptr;
+		const bool pinned = p->pins > 0 || (f && f->pinned);
 		bool paused = false;
-		const double r = reach(Object::cast_to<Node>(ObjectDB::get_instance(p->source)), paused);
+		const double r = reach(n, paused);
 		if (p->leaving) {
 			if (!p->left.load(std::memory_order_acquire) && !paused) {
 				coming++;
@@ -267,19 +278,21 @@ void FeluccaConductor::binding_pass() {
 			p->unbind(); // (faded out: cut and free)
 		}
 		if (p->is_bound()) {
-			if (p->is_active()) {
-				holders.push_back({ p, r, paused });
-			} else {
+			if (!p->is_active()) {
 				coming++;
+			} else if (!pinned) { // (a pinned one keeps its copy)
+				holders.push_back({ p, r, paused, false });
 			}
 		} else if (p->wants_copy()) {
-			waiting.push_back({ p, r, paused });
+			waiting.push_back({ p, r, paused, pinned });
 		}
 	}
 	const auto nearer = [](const Rank &a, const Rank &b) {
 		return a.reach < b.reach || (a.reach == b.reach && a.p->seq < b.p->seq);
 	};
-	std::sort(waiting.begin(), waiting.end(), nearer);
+	std::sort(waiting.begin(), waiting.end(), [&](const Rank &a, const Rank &b) {
+		return a.pinned != b.pinned ? a.pinned : nearer(a, b); // (the pinned first)
+	});
 	std::sort(holders.begin(), holders.end(), [&](const Rank &a, const Rank &b) { return nearer(b, a); });
 	size_t next = 0; // holders[next]: the farthest bound source not evicted by this pass
 	for (const Rank &w : waiting) {
@@ -288,20 +301,28 @@ void FeluccaConductor::binding_pass() {
 			w.p->bind(slot);
 			continue;
 		}
-		if (w.reach > 1.0) {
+		if (!w.pinned && w.reach > 1.0) {
 			break; // (out of range: it never takes a copy, nor do the ones after it)
 		}
 		if (coming > 0) {
 			coming--;
 			continue;
 		}
-		if (next == holders.size() || holders[next].reach <= 1.0) {
+		if (next == holders.size() && w.pinned) { // (every copy with a pinned source: the farthest pinned wait)
+			if (!pinned_warned) {
+				pinned_warned = true;
+				UtilityFunctions::push_warning("FeluccaConductor: more pinned Felucca sources than engines available (pool size: ",
+						e.size(), ").");
+			}
+			break;
+		}
+		if (next == holders.size() || holders[next].reach <= 1.0) { // (a pinned source counts as one in range)
 			if (!overflow_warned) {
 				overflow_warned = true;
 				UtilityFunctions::push_warning("FeluccaConductor: more Felucca sources in range than engines available (pool size: ",
 						e.size(), ").");
 			}
-			if (next == holders.size() || !(w.reach < holders[next].reach)) {
+			if (next == holders.size() || (!w.pinned && !(w.reach < holders[next].reach))) {
 				break; // (not nearer than the farthest: it waits, and so do the ones after it)
 			}
 		}
@@ -317,12 +338,257 @@ void FeluccaConductor::binding_pass() {
 	}
 }
 
+// ---------------------------------------------------------------- scheduling (M6, DESIGN.md §5.2, §6.3) ---
+
+Ref<FeluccaSchedule> FeluccaConductor::schedule(Node *p_source, FeluccaPlayback *p_playback, const Ref<FeluccaWhen> &p_when,
+		const Ref<FeluccaAction> &p_action, const StringName &p_tag) {
+	const FelSource *f = FelSource::of(p_source);
+	if (p_when.is_null() || p_action.is_null()) {
+		UtilityFunctions::push_error(p_source->get_name(), ": schedule() needs a FeluccaWhen and a FeluccaAction.");
+		return Ref<FeluccaSchedule>();
+	}
+	if ((p_when->values && p_when->values != f->values) || (p_action->values && p_action->values != f->values)) {
+		UtilityFunctions::push_error(p_source->get_name(), ": schedule() with a part of another source.");
+		return Ref<FeluccaSchedule>();
+	}
+	if (p_playback->pins >= FEL_SCHEDULES) {
+		UtilityFunctions::push_error(p_source->get_name(), ": schedule(): ", FEL_SCHEDULES, " actions pending already.");
+		return Ref<FeluccaSchedule>();
+	}
+	Pending x;
+	x.id = ++next_id ? next_id : ++next_id; // (0 is none)
+	x.p = p_playback;
+	x.source = ObjectID(p_source->get_instance_id());
+	x.tag = p_tag;
+	x.action = p_action;
+	x.handle.instantiate();
+	x.handle->id = x.id;
+	x.handle->tag = p_tag;
+	if (p_when->bar) { // the conductor's next bar (4 beats from its 0, as QUANTIZE_BAR's), on: the bar after
+		AudioServer::get_singleton()->lock();
+		const double b = felucca::Engine::get().plan.b0;
+		AudioServer::get_singleton()->unlock();
+		x.when = { FEL_AT_BEATS, 0, uint8_t(p_when->late), 0, 0, std::floor(b / 4.0) * 4.0 + 4.0 + p_when->beat, 4.0 };
+		x.part = p_action->action.kind == FEL_DO_MARK ? 0 : p_action->action.track + 1;
+	} else {
+		x.when = { FEL_AT_STEP, uint8_t(p_when->track), uint8_t(p_when->late), uint16_t(p_when->step),
+			uint32_t(p_when->loops), 0.0, 0.0 };
+		x.part = p_when->track + 1;
+	}
+	pend.push_back(x);
+	p_playback->pins++;
+	if (p_playback->is_bound()) {
+		AudioServer::get_singleton()->lock();
+		p_playback->core->schedule(&x.when, &p_action->action, x.id);
+		AudioServer::get_singleton()->unlock();
+	}
+	return x.handle;
+}
+
+// a playback binding: its actions into the instance, before it is mixed (no lock), resolved there once it plays
+void FeluccaConductor::send_pending(FeluccaPlayback *p_playback, const fel_core_t *p_core) {
+	for (const Pending &x : pend) {
+		if (x.p == p_playback && !x.applied) {
+			p_core->schedule(&x.when, &x.action->action, x.id);
+		}
+	}
+}
+
+void FeluccaConductor::forget(size_t p_index) {
+	Pending &x = pend[p_index];
+	x.p->pins--;
+	x.handle->pending = false;
+	pend.erase(pend.begin() + std::ptrdiff_t(p_index));
+}
+
+void FeluccaConductor::cancel_tag(Node *p_source, const StringName &p_tag) {
+	const ObjectID id(p_source->get_instance_id());
+	AudioServer::get_singleton()->lock();
+	for (size_t i = pend.size(); i-- > 0;) {
+		if (pend[i].source == id && pend[i].tag == p_tag) {
+			if (pend[i].p->is_bound()) {
+				pend[i].p->core->cancel(pend[i].id);
+			}
+			forget(i);
+		}
+	}
+	AudioServer::get_singleton()->unlock();
+}
+
+void FeluccaConductor::cancel_id(uint32_t p_id) {
+	for (size_t i = 0; i < pend.size(); i++) {
+		if (pend[i].id == p_id) {
+			if (pend[i].p->is_bound()) {
+				AudioServer::get_singleton()->lock();
+				pend[i].p->core->cancel(p_id);
+				AudioServer::get_singleton()->unlock();
+			}
+			forget(i);
+			return;
+		}
+	}
+}
+
+void FeluccaConductor::forget_all() {
+	while (!pend.empty()) {
+		forget(pend.size() - 1);
+	}
+	inbox.clear();
+}
+
+// once a frame, after the binding pass: bound / unbound; the actions of sources stopped (or played again) cancelled;
+// the playbacks' events taken (under the lock, once) and mapped to when they are heard: a mix step's start is heard
+// at its time (Engine::mixes) plus the output latency, an event in it by its place on the step's stretch of the
+// conductor's timeline; then the scheduled / heard signals of what has been heard, in that order (a dropped action:
+// at once)
+void FeluccaConductor::deliver() {
+	felucca::Engine &e = felucca::Engine::get();
+	const int64_t now = felucca::Engine::now_us();
+	if (!touched.empty()) {
+		std::vector<ObjectID> t;
+		t.swap(touched); // (a handler may touch more: the next frame's)
+		std::sort(t.begin(), t.end(), [](ObjectID a, ObjectID b) { return uint64_t(a) < uint64_t(b); });
+		t.erase(std::unique(t.begin(), t.end()), t.end());
+		for (ObjectID id : t) {
+			Node *n = Object::cast_to<Node>(ObjectDB::get_instance(id));
+			FelSource *f = n ? FelSource::of(n) : nullptr;
+			if (f && f->bound(n) != f->reported) {
+				f->reported = !f->reported;
+				n->emit_signal(f->reported ? "bound" : "unbound");
+			}
+		}
+	}
+	{
+		std::vector<std::pair<ObjectID, FeluccaPlayback *>> playing; // (a source's playback while it plays, once)
+		bool locked = false;
+		for (size_t i = pend.size(); i-- > 0;) {
+			Pending &x = pend[i];
+			auto it = std::find_if(playing.begin(), playing.end(), [&](const auto &q) { return q.first == x.source; });
+			if (it == playing.end()) {
+				Node *n = Object::cast_to<Node>(ObjectDB::get_instance(x.source));
+				playing.push_back({ x.source, n ? FelSource::playing(n) : nullptr });
+				it = playing.end() - 1;
+			}
+			if (it->second == x.p) {
+				continue;
+			}
+			if (x.p->is_bound()) {
+				if (!locked) {
+					AudioServer::get_singleton()->lock();
+					locked = true;
+				}
+				x.p->core->cancel(x.id);
+			}
+			forget(i);
+		}
+		if (locked) {
+			AudioServer::get_singleton()->unlock();
+		}
+	}
+	if (now - latency_at > 1000000) {
+		latency = AudioServer::get_singleton()->get_output_latency();
+		latency_at = now;
+	}
+	AudioServer::get_singleton()->lock();
+	for (FeluccaPlayback *p : live) {
+		taken.clear();
+		p->take_events(taken);
+		for (const FelHeard &h : taken) {
+			inbox.push_back({ p, h.e, h.step, -1 });
+		}
+	}
+	for (Inbound &in : inbox) {
+		if (in.heard_us >= 0) {
+			continue;
+		}
+		const felucca::Engine::Mix &m = e.mixes[in.step % felucca::Engine::MIXES];
+		if (m.step == UINT64_MAX || m.step < in.step) {
+			continue; // (its mix step not over yet: the next frame)
+		}
+		if (m.step > in.step) { // (long gone: the record was written over)
+			in.heard_us = now;
+			continue;
+		}
+		const double at = m.b1 > m.b0 ? (in.e.beats - m.b0) / (m.b1 - m.b0) : 0.0;
+		in.heard_us = m.at_us + int64_t((latency + at * m.frames / e.mix_rate) * 1e6);
+	}
+	AudioServer::get_singleton()->unlock();
+
+	struct Emit {
+		Pending x;
+		bool dropped;
+	};
+	std::vector<Emit> out;
+	for (size_t i = 0; i < inbox.size();) {
+		const Inbound in = inbox[i];
+		if (in.heard_us < 0) {
+			i++;
+			continue;
+		}
+		inbox.erase(inbox.begin() + std::ptrdiff_t(i));
+		auto it = std::find_if(pend.begin(), pend.end(), [&](const Pending &x) { return x.id == in.e.id; });
+		if (it == pend.end()) {
+			continue; // (cancelled meanwhile)
+		}
+		it->step = in.e.step + 1;
+		it->loop = int(in.e.loop);
+		it->beats = in.e.beats;
+		if (in.e.kind == FEL_EV_DROPPED) {
+			out.push_back({ *it, true });
+			forget(size_t(it - pend.begin()));
+			continue;
+		}
+		it->applied = true;
+		it->heard_us = in.heard_us;
+		const fel_action_t &a = it->action->action;
+		if (a.kind == FEL_DO_SET && it->action->values) { // (kept: a binding after plays it)
+			it->action->values->applied_track(a.track, a.a, a.b);
+		}
+	}
+	for (size_t i = pend.size(); i-- > 0;) {
+		if (pend[i].applied && pend[i].heard_us <= now) {
+			out.push_back({ pend[i], false });
+			forget(i);
+		}
+	}
+	std::stable_sort(out.begin(), out.end(), [](const Emit &a, const Emit &b) {
+		return (a.dropped ? 0 : a.x.heard_us) < (b.dropped ? 0 : b.x.heard_us);
+	});
+	for (const Emit &x : out) {
+		Ref<FeluccaEvent> ev;
+		ev.instantiate();
+		ev->tag = x.x.tag;
+		ev->action = x.x.action;
+		ev->part = x.x.part;
+		ev->step = x.x.step;
+		ev->loop = x.x.loop;
+		ev->beats = x.x.beats;
+		ev->dropped = x.dropped;
+		ev->late_by = x.dropped ? 0.0 : double(now - x.x.heard_us) / 1e6;
+		if (Node *n = Object::cast_to<Node>(ObjectDB::get_instance(x.x.source))) {
+			n->emit_signal("scheduled", x.x.tag, ev);
+		}
+		x.x.handle->emit_signal("heard", ev);
+	}
+}
+
 // D7: one lock for the conductor's timeline and every bound source, whatever its process mode (a source left playing
 // would only ring on, its music standing with the timeline; DESIGN.md §13.13: its own time while the timeline stands is
 // for later). A source its own stream_paused had paused already is noted and left paused; one Godot will unpause (it is
 // told the pause: it cannot process while the tree is paused) is kept so through that (godot #65743) by its own
 // UNPAUSED (FeluccaSource)
 void FeluccaConductor::tree_paused(bool p_paused) {
+	const int64_t now = felucca::Engine::now_us();
+	if (p_paused) {
+		paused_at = now;
+	} else { // (what was not heard yet when the pause began is heard as much later)
+		for (Pending &x : pend) {
+			x.heard_us += x.applied && x.heard_us > paused_at ? now - paused_at : 0;
+		}
+		for (Inbound &in : inbox) {
+			in.heard_us += in.heard_us > paused_at ? now - paused_at : 0;
+		}
+	}
 	AudioServer::get_singleton()->lock();
 	felucca::Engine::get().paused = p_paused;
 	felucca::Engine::get().republish();
@@ -382,6 +648,7 @@ void FeluccaConductorNode::_notification(int p_what) {
 			if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
 				c->resolve_pending();
 				c->binding_pass();
+				c->deliver();
 			}
 			break;
 		case NOTIFICATION_PAUSED:
@@ -391,6 +658,9 @@ void FeluccaConductorNode::_notification(int p_what) {
 			}
 			break;
 		case NOTIFICATION_EXIT_TREE: {
+			if (FeluccaConductor *c = FeluccaConductor::get_singleton()) {
+				c->forget_all();
+			}
 			AudioServer *as = AudioServer::get_singleton();
 			int b = as->get_bus_index(CLOCK_BUS);
 			if (b >= 0) {

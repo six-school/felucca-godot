@@ -1,8 +1,8 @@
 #!/bin/sh
 # The extension's Godot-side checks: built (SCons), the demo imported, demo/tests/m3_test.tscn run headless on the Dummy
 # audio driver at 44.1 kHz (frame for frame) and at 48 kHz (the playback resamples), m5_test and m5_scene_test (the
-# pool, the second in a 2D scene) at both, then m4_test (the typed API), project_test (the project file) and the typo
-# scripts.
+# pool, the second in a 2D scene) at both, m6_test (scheduling) at both, then m4_test (the typed API), project_test (the
+# project file) and the typo scripts.
 #   extension/run_tests.sh [GODOT]     (default: third_party/godot/Godot_v4.7.2-stable_linux.x86_64)
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -37,6 +37,22 @@ for rate in 44100 48000; do
     grep -E "^(ERROR|SCRIPT ERROR)" build/m5_scene_test_$rate.log || true
     n=$(grep -c "WARNING: FeluccaConductor: more Felucca sources in range than engines available" build/m5_scene_test_$rate.log || true)
     [ "$n" = 1 ] && echo "ok   9 in range: one warning" || { echo "FAIL 9 in range: $n warnings"; fail=1; }
+done
+rm -f demo/override.cfg
+REFUSED="^ERROR: (FeluccaWhen: |FeluccaAction\.|Refused: schedule\(\))"
+for rate in 44100 48000; do
+    echo "== demo/tests/m6_test.tscn at $rate Hz: scheduling"
+    if [ $rate = 44100 ]; then rm -f demo/override.cfg; else printf '[audio]\ndriver/mix_rate=%s\n' $rate > demo/override.cfg; fi
+    timeout 240 "$G" --headless --audio-driver Dummy --path demo res://tests/m6_test.tscn > build/m6_test_$rate.log 2>&1 || fail=1
+    grep -E "^(ok|FAIL|mix rate|m6_test)" build/m6_test_$rate.log || true
+    # what it refuses on purpose, each with an error saying why; any other error printed
+    n=$(grep -c -E "$REFUSED" build/m6_test_$rate.log || true)
+    [ "$n" = 11 ] && echo "ok   11 refusals, each an error" || { echo "FAIL $n refusals said (11 made)"; fail=1; }
+    grep -E "^(ERROR|SCRIPT ERROR)" build/m6_test_$rate.log | grep -v -E "$REFUSED" || true
+    for w in "more Felucca sources in range than engines available" "more pinned Felucca sources than engines available"; do
+        n=$(grep -c "WARNING: FeluccaConductor: $w" build/m6_test_$rate.log || true)
+        [ "$n" = 1 ] && echo "ok   one warning: $w" || { echo "FAIL $n warnings: $w"; fail=1; }
+    done
 done
 rm -f demo/override.cfg
 echo "== demo/tests/m4_test.tscn"
