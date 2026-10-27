@@ -1,97 +1,66 @@
 # felucca-godot
 
-[Felucca](https://github.com/hugelton/Felucca), the multi-engine synth firmware for the M-VAVE FM-1, running inside
-Godot 4.7 as a GDExtension. Projects made on the device play in your scenes, all on one tempo and paused with the game,
-their parameters and notes driven from GDScript.
+The is [Felucca](https://github.com/hugelton/Felucca) (the wonderful multi-engine synth firmware for the M-VAVE FM-1) running inside
+Godot 4.7+ as a native extension. You can load projects you made on your real hardware FM-1 into Godot and control them from GDScript! You can sync game events to the music, or sequence notes and effect changes for any instrument.  You can even run multiple Felucca engines in parallel with everything's synced to a global beat so it all lines up. All of this can run in the browser, too. Pretty cool.
 
-- **The device's own sound**: a project made on an FM-1 running Felucca 1.6.1 plays as it does on the device: every
-  engine, the sequencer and the effects, from the same firmware.
-- **Many sources**: any number of sources share a pool of 8 synth instances. The ones nearest the listener get one;
-  the others keep time silently and come in in step when they get one.
-- **One timeline**: one tempo for the whole game (tween it). Every source stays on the same beat through tempo
-  changes, and pausing the game pauses all of its music at once.
-- **Typed parameters**: every parameter of the device is a typed property, its choices enums. With two project
-  settings (below), a misspelled one is an error in the editor.
-- **Scheduling on the music**: hits, notes, parameter changes and mutes on a part's next step, loop or bar, with
-  signals when they are heard.
-
-Platforms: Linux (x86_64) and the web (a threaded export; tested in Chromium). Windows and macOS are planned.
+> [!NOTE]
+> Note that the desktop version only runs on Linux right now, so if you're on Mac or Windows you'll have to stick to web builds.
 
 ## Install
 
-1. Download the addon zip from the Releases page and unzip it into your project's folder: it adds `addons/felucca/`.
-2. Add the autoload: Project > Project Settings > Globals > Autoload, path `res://addons/felucca/felucca.tscn`, name
-   `Felucca`. A pause stops every source at once only with it.
-3. Recommended: in Project Settings > Debug > GDScript (with Advanced Settings on), set Unsafe Property Access and
-   Unsafe Method Access to Error. A misspelled parameter or method is then an error as you type, not when the line
-   runs.
-4. Restart the editor.
-
-The settings, as they end up in `project.godot`:
-
-```ini
-[autoload]
-
-Felucca="*res://addons/felucca/felucca.tscn"
-
-[debug]
-
-gdscript/warnings/unsafe_property_access=2
-gdscript/warnings/unsafe_method_access=2
-```
+1. Download the addon zip from the Releases page and unzip it into your project's folder. You should end up with an `addons` folder with `felucca` inside it.
+2. Go to `Project > Project Settings > Globals > Autoload > Select Script/Scene` and choose `addons/felucca/felucca.tscn`.
+3. You might need to restart the editor.
 
 ### Exporting for the web
 
-- In the Web preset, turn on Variant > Extensions Support and Thread Support.
-- With the export mode "Export selected scenes", add `*.gdextension` to the Resources tab's filter for non-resource
-  files, or the extension is left out.
-- Serve the exported folder with the headers threads need: `Cross-Origin-Opener-Policy: same-origin` and
-  `Cross-Origin-Embedder-Policy: require-corp`. The editor's Run in Browser sends them.
+- In `Project > Export...`, add the Web preset if it's not already there, then check Extensions Support and Thread Support. You might see a warning that the export template isn't found or whatever. If there is, it should have a link to "Manage Export Templates" that lets you download the template for the web build.
+- Threads support for web exports causes builds not to work [unless the server provides specific headers](https://docs.godotengine.org/en/stable/tutorials/export/exporting_for_web.html#thread-and-extension-support). For testing locally, Godot can handle that for you. Make sure "Runnable" is enabled for the Web preset in the Export dialog and a new little button should appear next to the play buttons in the top-right of the main Godot screen.
 
 ## Projects
 
-Make a project on the FM-1, export it with Felucca's web editor (a `.json` file), rename it to `.felucca` and add it to
-your project: Godot imports it as a `FeluccaProject` (`project_name`, `bpm`, `engines`).
-`FeluccaProject.load_json(path)` reads an export at run time instead.
+Make a project on the FM-1, then export it using the [Felucca web editor](https://hugelton.github.io/Felucca/webapp/editor/) over USB. It should give you a `.json` file, and you'll have to change that to `.felucca` to bring it into your project (annoying, I know).
 
 ## Quick start
 
-Add a `FeluccaSource2D` (or `FeluccaSource`, `FeluccaSource3D`) to a scene and set its `project`. The sources are
-Godot's audio players, so `max_distance`, attenuation and the bus work as usual.
+Add a `FeluccaSource2D`, `FeluccaSource3D`, or non-spatial `FeluccaSource` to a scene and point it at your Felucca project.
+
+Then you can start scripting!
 
 ```gdscript
 extends Node2D
 
-@onready var cellar: FeluccaSource2D = $Cellar
+@onready var song: FeluccaSource2D = $CoolSong
 
 func _ready() -> void:
-	FeluccaConductor.tempo = cellar.project.bpm
+	FeluccaConductor.tempo = song.project.bpm
 	FeluccaConductor.play()
-	cellar.play()    # on the next beat
+	song.play()
 ```
-
-`get_tree().paused = true` stops all of the music at once; unpaused, it carries on in step.
 
 ## API overview
 
-Each parameter's range, default and place on the device are in the editor's help: `FeluccaPart`, `FeluccaSong` and
-each engine's class (`FeluccaAnalog`, ..).
+### `FeluccaConductor`
 
-### `FeluccaConductor`: the timeline
+This controls the global beat for all the synth instances. You probably won't need to touch this much after setting it off, other than to change tempo.
 
-- `tempo` (BPM; tween it), `play()`, `stop()`, `running`
-- `playhead` (beats since `play()`), `bar`, `beat`; the signal `on_beat(bar, beat)`, as heard
+- Get or set `FeluccaConductor.tempo` (you can use Godot's [tweens](https://docs.godotengine.org/en/stable/classes/class_tween.html) to change it over time too!)
+- Subscribe to global beats with the `on_beat` signal.
+- Some other stuff: `play()`, `stop()`, `running`, `playhead` (beats since playback started), `bar`, `beat`
 
 ### `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D`
 
-- `project`; Godot's own `play()`, `stop()` and `stream_paused`
-- `quantize`: where `play()` starts: `QUANTIZE_BEAT` (the default), `QUANTIZE_BAR` or `QUANTIZE_NOW`
-- `join`: after the source's own pause, `JOIN_FOLLOW` (back in step with the conductor, the default) or `JOIN_HOLD`
-  (on from where it stopped, still on the beat)
-- `pinned`: it always has a synth instance while it plays
-- `muted_parts`; `overrides` (parameter values that replace the project's for this source)
-- `is_bound()` and the signals `bound` and `unbound`: whether it has a synth instance (and sounds) now
-- `get_snapshot()`: each part's step, loop and position, as heard
+- `project`, `play()`, `stop()` do what you'd expect. `stream_paused` is kind of a weird name, but that's how you already pause/resume audio streams in Godot so that's how you do it for these ones too.
+- `quantize`: `QUANTIZE_BEAT` (start on the next beat) `QUANTIZE_BAR` (start on the next 4-note bar), or `QUANTIZE_NOW` (free jazz).
+- `join`: if this source gets paused and then unpaused later, should it `JOIN_FOLLOW` (jump back in step with the current time) or `JOIN_HOLD` (continue from where it stopped)? It'll stay on beat either way.
+- `muted_parts`: you can mute one of the four instruments with this.
+- `overrides`: you can override an engine or global synth parameter with this (for example, crank up the delay send on the drums).
+- `get_snapshot()`: the state of Felucca instance at that point in time
+- `pinned`: there's a limit to how many instances can be running at once, and if there's too many normally the quietest/furthest get the boot. You shouldn't need to touch this, but if you need to keep a source audible you can set this and it'll never give up its spot. Incidentally, `is_bound()` and the signals `bound` and `unbound` are for whether a source has a spot and to listen for when a source gets or loses a spot, respectively.
+
+---
+
+Beyond here be slop docs
 
 ### Parameters
 
