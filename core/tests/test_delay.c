@@ -5,7 +5,7 @@
  *   constant  128 BPM
  *   int       128, then 120 -> 140 in whole BPM over 2 s (clicks.c's tween), then 140
  *   float     128 +- 12, a sine of 5 s, set every mix step
- * Without the glide (prototypes/run_all.sh: clicks.c) the host clock gives 62 jumps in the int tween. */
+ * Without the glide (T6's clicks.c) the host clock gives 62 jumps in the int tween. */
 #include "test_hooks.h"
 #include "drive.h"
 #include "check.h"

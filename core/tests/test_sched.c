@@ -3,7 +3,7 @@
  *      patch 0004's hook (the block each track entered a step in), on FEL_TEST_LOCATE's pattern (odd LENs, swing,
  *      1/8T with nudges, conditions), 24 s with the tempo tweened (int, then float), a pause and a locate. Exact. And
  *      each step's length in beats (ABI 7): swung, a long step and the short one after it make two of its DIV's.
- *   B  the knock (T9 on the core, prototypes/sched.c): KICK hits on steps 1 5 9 13 of the DRUM track's next pass, a
+ *   B  the knock (T9 on the core, after sched.c): KICK hits on steps 1 5 9 13 of the DRUM track's next pass, a
  *      mark and ANALOG's CUT one pass later: each applied in the block its step starts in (that step's own event), the
  *      kicks heard there (the low band's onsets) and nowhere else, the CUT set from there.
  *   C  targets and late policies: the next start of a step (this pass, the next), before step 1, the conductor's

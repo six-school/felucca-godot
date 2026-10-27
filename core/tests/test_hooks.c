@@ -136,7 +136,7 @@ static void test_setup(int which)
         song.g[G_DTIME] = 0; song.g[G_DFDBK] = 120; song.g[G_DMIX] = 127;   /* a delay fed back past 100 %: it never
                                                                              * dies out on its own */
         song.g[G_RTYPE] = 2; song.g[G_RSIZE] = 127; song.g[G_RDAMP] = 0;   /* HALL, its longest */
-    } else if (which == FEL_TEST_KNOCK) {       /* the knock (prototypes/sched.c): DRUM 1/16 x 16 on track 4, closed
+    } else if (which == FEL_TEST_KNOCK) {       /* the knock (T9's sched.c): DRUM 1/16 x 16 on track 4, closed
                                                  * hats on the off-beats only (every kick heard is a scheduled hit's);
                                                  * ANALOG on track 1, no notes, its CUT half way */
         set_engine_of(&trk[0], 0);

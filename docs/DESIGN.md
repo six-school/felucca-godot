@@ -1,8 +1,8 @@
 # Felucca in Godot: design
 
 Working notes for implementing (and possibly re-implementing differently) a GDExtension that runs Felucca headless in
-a Godot game. Written from the research conversation of 2026-10-24. Claims marked *measured* have a test in
-`prototypes/` (C, against the firmware: `tools/setup_felucca.sh && prototypes/run_all.sh`) or `spikes/` (Godot).
+a Godot game. Written from the research conversation of 2026-10-24. Claims marked *measured* have a test: the core's
+and the extension's, or (the first ones) the C prototypes and the Godot spike, removed after M7 (§10).
 
 How to use this doc: §3 is what was decided and why; §12 lists the alternatives and which layer each one replaces, so
 switching approach means swapping one layer behind an interface that stays put (§4.1, §5.1). §13 is what is still
@@ -58,7 +58,8 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
   are, so a direct write takes effect live (*measured*). Reference write path = the editor protocol's ED_SET /
   ED_TRACK_PARAM: clamp to the descriptor, `enum_orig()`, `motion_capture()`, `ui.force = 1`. Engines: `set_engine_of()`.
 - **Descriptors.** `params.c`: `TP[]`, `GP[]` (label, fmt, min, max, def, enum names); engine parameters from
-  `ENGINES[e]->edit[8]` via `track_desc()`; pages in `PAGES[]` (title, scope, 4 ids). Dump: `prototypes/params.json`.
+  `ENGINES[e]->edit[8]` via `track_desc()`; pages in `PAGES[]` (title, scope, 4 ids). Dump: `build/gen_api/params.json`
+  (`core/tools/dump_params.c`, built by SConstruct).
 - **Projects.** The web app's "Felucca-project-*.json" = `{format:"felucca-project", version:1, firmware, slot,
   object:{size, crc, data}}`: `crc` is CRC-32 (zlib) of the decoded bytes, `data` base64 of the 3840-byte FUN10 store
   object (`proj_pack()`; editor_backup.c packs exports the same way; accepted sizes 3840 3648 3584 3388 for older
@@ -760,19 +761,23 @@ profile: no errors.
 
 ## 10. Evidence
 
-C tests reproduced on 63f88ec + series by `prototypes/run_all.sh`; Godot tests by `spikes/godot_clock_pause/run.sh`. The
-core itself (M1) asserts T1–T4, T8 and T11 through `fel_core_t` in `core/tests/run.sh`, on the host clock: T2 for all
-ten ARP RATE values (exact step counts, stopped and playing, 120 and 90 BPM); T8 on renamed pool copies (0 of 51 680 mix
-steps differ in 10 min; the user's project identical in two copies); T4 0.7–0.8 % of a core on this machine. M2 adds T5
-and T6 on the core (`test_timing.c`, `test_delay.c`, test copies with white-box accessors): T5, 5 min of int tweens and
-3 min of a float tempo with pauses, every step 0 to 0.725 ms early, mean −0.36 ms, never late; T6, 0 jumps constant /
-int tween / float tween (the same analysis finds 52 and 1140 without the glide); and locate (§6.4). M3 runs T12 and T13
-with Felucca sources in Godot 4.7.2 (`extension/run_tests.sh`: `demo/tests/m3_test.tscn` headless on the Dummy driver,
-at 44.1 and 48 kHz): the clock 168 (184) mix steps in 2 s and 88 (96) during a 1 s pause with the conductor's timeline
-standing; 7 sources of the user's project, 4000 nodes apart, started in one frame on a bar: one position, and after 300
-tree pause / unpause cycles 0 checks out of step and the players' spacing moved 0 frames; a source started later on a
-bar plays on the others' bars; a source's own pause survives the tree's unpause, `follow` resumes where the music is
-(exactly at 44.1 kHz), `hold` where it stopped; a stopped source's instance returns to the pool.
+C tests reproduced on 63f88ec + series by `prototypes/run_all.sh`; Godot tests by `spikes/godot_clock_pause/run.sh`.
+Both were removed after M7 with `tests/fixtures/` (the user's export, the same bytes as `demo/tests/project.json`): the
+core's and the extension's tests (next) cover T1–T6, T8, T9 and T11–T13; T7, T10 and the clocks not taken (T5's A and B,
+T6's B) were measured only there. `git log --diff-filter=D --format=%h -1 -- prototypes` names the commit that removed
+them; `git checkout <that commit>^ -- prototypes spikes tests` brings them back. The core itself (M1) asserts T1–T4, T8
+and T11 through `fel_core_t` in `core/tests/run.sh`, on the host clock: T2 for all ten ARP RATE values (exact step
+counts, stopped and playing, 120 and 90 BPM); T8 on renamed pool copies (0 of 51 680 mix steps differ in 10 min; the
+user's project identical in two copies); T4 0.7–0.8 % of a core on this machine. M2 adds T5 and T6 on the core
+(`test_timing.c`, `test_delay.c`, test copies with white-box accessors): T5, 5 min of int tweens and 3 min of a float
+tempo with pauses, every step 0 to 0.725 ms early, mean −0.36 ms, never late; T6, 0 jumps constant / int tween / float
+tween (the same analysis finds 52 and 1140 without the glide); and locate (§6.4). M3 runs T12 and T13 with Felucca
+sources in Godot 4.7.2 (`extension/run_tests.sh`: `demo/tests/m3_test.tscn` headless on the Dummy driver, at 44.1 and 48
+kHz): the clock 168 (184) mix steps in 2 s and 88 (96) during a 1 s pause with the conductor's timeline standing; 7
+sources of the user's project, 4000 nodes apart, started in one frame on a bar: one position, and after 300 tree pause /
+unpause cycles 0 checks out of step and the players' spacing moved 0 frames; a source started later on a bar plays on
+the others' bars; a source's own pause survives the tree's unpause, `follow` resumes where the music is (exactly at 44.1
+kHz), `hold` where it stopped; a stopped source's instance returns to the pool.
 
 | | Test | Result |
 |---|---|---|
@@ -786,7 +791,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | T8 | Two copies in one binary (`multi.c`, `lockstep.c`) | isolated; 10 min: identical positions, 0 of 206 718 blocks differ |
 | T9 | Knock then door (`sched.c`) | 4 kicks within 12–14 samples of their KNOCK events; DOOR at the next loop's step 1 |
 | T10 | Felucca's wasm in Node (`probe.mjs`, spinkham/felucca-try's build) | 0 imports; two instances isolated; ~60× real time |
-| T11 | **The user's export** `tests/fixtures/Felucca-project-D-2026-10-24.json` (`project_load.c`) | firmware 1.6.1, 3840 bytes, CRC-32 642C0757 ok; "SOLAR SIGNAL", 68 BPM: PHASE (LEN 32), PHASE, LOFI (empty), DRUM; plays (rms ≈ 0.05, peak 0.27); two renders identical |
+| T11 | **The user's export** `tests/fixtures/Felucca-project-D-2026-10-24.json` (now `demo/tests/project.json`; `project_load.c`) | firmware 1.6.1, 3840 bytes, CRC-32 642C0757 ok; "SOLAR SIGNAL", 68 BPM: PHASE (LEN 32), PHASE, LOFI (empty), DRUM; plays (rms ≈ 0.05, peak 0.27); two renders identical |
 | T12 | Godot 4.7.2: clock effect, `_process_silence() → true`, muted empty bus (`spikes/`) | 168 calls in 2 s (172 expected at 512 frames/44.1 kHz with the dummy driver's sleep timing); runs while paused; autoload hears PAUSED first |
 | T13 | Godot 4.7.2: 8 players, 4000 nodes between each, 300 pause/unpause cycles (`spikes/`) | per-node (Godot default): 21 504 frames apart, 287/300 checks out of step; atomic under `AudioServer.lock()`: 0 |
 

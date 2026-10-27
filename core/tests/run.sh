@@ -10,7 +10,7 @@ ROOT=$(cd "$CORE/.." && pwd)
 F=${FELUCCA:-$ROOT/third_party/felucca}
 OUT=${OUT:-$ROOT/build/core}
 CC=${CC:-clang}
-FIX=$ROOT/tests/fixtures/Felucca-project-D-2026-10-24.json
+FIX=$ROOT/demo/tests/project.json
 export FELUCCA="$F" OUT CC
 set -e
 "$CORE/build.sh"

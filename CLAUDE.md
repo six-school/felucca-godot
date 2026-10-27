@@ -8,7 +8,6 @@ layer it replaces) and keep the seams of §4.1 intact.
 ## Setup and checks
 
 - `tools/setup_felucca.sh`: Felucca `63f88ec` + `patches/` + generated headers into `third_party/felucca` (gitignored).
-- `prototypes/run_all.sh`: rebuilds and reruns the C prototypes; expected results are DESIGN.md §10.
 - `core/build.sh [N]`: the pool (N renamed copies of `core/board.c`) → `build/core/libfelucca_core.a`;
   `core/tests/run.sh` builds it and runs the checks: M1's (T1–T4, T8, T11, the 2-copy link test),
   M2's (T5, T6, locate) and M5's (the cut) on test copies (`core/tests/test_hooks.c`: white-box accessors, renamed as
@@ -21,7 +20,8 @@ layer it replaces) and keep the seams of §4.1 intact.
   path) → `demo/addons/felucca/bin/libfelucca.*.so`; `extension/run_tests.sh`: build, import, then headless
   `demo/tests/m3_test`, `m5_test` and `m5_scene_test` (the pool), `m6_test` (scheduling) at 44.1 and 48 kHz, `m4_test`
   (the typed API), `project_test` (the project file), the typo scripts.
-- `spikes/godot_clock_pause/run.sh <godot-4.7.2-binary>`: the GDScript spike of T12, T13.
+- The C prototypes, the Godot spike and `tests/fixtures/` (§10's first evidence) were removed after M7; DESIGN.md §10
+  says how to get them back from git.
 - Web (M7, DESIGN.md §9: threads only, Chromium only): `tools/setup_web.sh` (after `setup_godot.sh`): Emscripten
   4.0.20 (the version Godot 4.7.2's web templates are built with) into `third_party/emsdk`, and the 4.7.2 export
   templates' `web_dlink_*` (SHA-512 checked) into Godot's templates folder (Linux's). Build (emsdk_env.sh is bash's):

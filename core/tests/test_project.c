@@ -2,8 +2,8 @@
  *   T3   a project's bytes out and back in: 3840 bytes, magic ANUF, values restored; damaged bytes refused; the clock
  *        and MIDI routing the project carries do not take the core's over (the transport plays on the conductor's
  *        timeline after)
- *   T11  the user's own export (tests/fixtures: its bytes, core/tests/fixture.h), imported, what it holds, played 16 s
- *        on the conductor's timeline at its own tempo
+ *   T11  the user's own export (demo/tests/project.json: its bytes, core/tests/fixture.h), imported, what it holds,
+ *        played 16 s on the conductor's timeline at its own tempo
  *   test_project build/core/fixture.bin */
 #include "board.c"
 #include "fixture.h"

@@ -1,6 +1,6 @@
 /* T8 (docs/DESIGN.md §10) on the pool as L2 gets it: libfelucca_core.a, every copy renamed (core/build.sh), only
  * fel_core_t in use (plus each copy's renamed test hook for the heavy song). Black-box: ids are the firmware's
- * numbers (prototypes/params.json, Felucca 1.6.1).
+ * numbers (build/gen_api/params.json, Felucca 1.6.1).
  *   isolation  copies 0 and 1, different values and notes: each hears only its own
  *   T11        the user's project in copies 2 and 3 on the same timeline: the same audio, sample for sample
  *   T8         the heavy song in copies 4 and 5 on the same timeline for 10 minutes: the same positions and audio

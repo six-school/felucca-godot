@@ -1,4 +1,4 @@
-# made by tools/setup_felucca.sh and prototypes/run_all.sh
+# made by tools/setup_felucca.sh and the builds
 /third_party/felucca/
 /third_party/.felucca-venv/
 /build/
@@ -11,6 +11,5 @@
 /demo/.godot/
 /demo/override.cfg
 /.sconsign.dblite
-/spikes/godot_clock_pause/.godot/
 /extension/src/*.os
 /extension/src/*.o
