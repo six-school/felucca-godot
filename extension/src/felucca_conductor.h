@@ -80,6 +80,8 @@ class FeluccaConductor : public Object {
 	double latency = 0.0; // AudioServer's output latency, seconds (asked once a second: it can be slow)
 	int64_t latency_at = INT64_MIN, paused_at = 0;
 	double heard_last = 0.0; // the playhead as heard, last worked out (it never goes back)
+	bool hit_warned = false; // (on_hit on a part that is not DRUM: said once)
+	std::vector<uint32_t> listening; // (deliver's: each live playback's, worked out before the lock)
 	int64_t last_beat = -1; // the last whole beat on_beat said
 	void forget(size_t p_index); // a pending action gone (its playback's pin with it)
 	void refresh_latency(int64_t p_now);

@@ -8,13 +8,17 @@
  *      kicks heard there (the low band's onsets) and nowhere else, the CUT set from there.
  *   C  targets and late policies: the next start of a step (this pass, the next), before step 1, the conductor's
  *      beats; targets a locate jumps past (NEXT: the step's next start, DROP, NOW), a beat target passed (NEXT by its
- *      period, DROP, NOW), a step past LEN; cancel, stop and cut forget; a full table, actions that are not. */
+ *      period, DROP, NOW), a step past LEN; cancel, stop and cut forget; a full table, actions that are not.
+ *   D  notes (ABI 8, patch 0005): a DRUM track's hits (its steps', the scheduled ones) reported in their steps' blocks
+ *      with their lanes, a synth's note with none, a muted track's nothing; every note on paired with one off: the
+ *      sequencer's at their gates' ends and at a stop, held keys (MIDI IN) when released or by a panic (trk_all_off),
+ *      not by a stop. */
 #include "test_hooks.h"
 #include "drive.h"
 #include "check.h"
 #include <stdlib.h>
 
-const fel_test_t *fel_test_0(void), *fel_test_1(void), *fel_test_2(void), *fel_test_3(void);
+const fel_test_t *fel_test_0(void), *fel_test_1(void), *fel_test_2(void), *fel_test_3(void), *fel_test_4(void);
 
 #define EVN 8192u
 static fel_event_t evs[EVN];            /* what a test drained, in order */
@@ -389,10 +393,95 @@ static void test_targets(const fel_test_t *x, const fel_test_t *y)
     }
 }
 
+/* ---- D: notes */
+static void test_notes(const fel_test_t *x)
+{
+    static const uint8_t LANE_NOTE[8] = {36, 38, 39, 42, 46, 45, 37, 56};   /* eng_drum.c DRUM_LANE_NOTE */
+    const fel_core_t *c = x->core;
+    fel_snapshot_t s;
+    uint32_t i, k, L, hats = 0, hats_bad = 0, held[FEL_TRACKS][128] = {{0}}, unpaired = 0, doubled = 0, left = 0;
+    int synth_on = 0, synth_off = 0, muted = 0;
+    c->boot();
+    x->setup(FEL_TEST_KNOCK);
+    c->tempo(120);
+    run(c, frames_ms(300), 0);
+    c->play(drive_timeline + 0.1);
+    run(c, frames_ms(300), 0);
+    c->snapshot(&s);
+    L = s.track[3].loop;
+    for (i = 0; i < 2; i++) {
+        fel_when_t w = at_step(3, i * 4, 1, FEL_LATE_NEXT);
+        fel_action_t kick = {FEL_DO_HIT, 3, 0, 100, 0};
+        c->schedule(&w, &kick, 900 + i);
+    }
+    nev = 0;
+    c->note(0, 99, 90);                                 /* a synth note (ANALOG on track 1, no pattern), held */
+    run(c, frames_ms(500), 0);
+    c->note(0, 99, 0);
+    run(c, frames_ms(500), 0);
+    c->param_set(0, FEL_TEST_MUTE, 1);                  /* muted: neither on nor off */
+    c->note(0, 98, 90);
+    run(c, frames_ms(200), 0);
+    c->note(0, 98, 0);
+    run(c, frames_ms(3000), 0);
+    c->param_set(0, FEL_TEST_MUTE, 0);
+    c->note(0, 97, 90);                                 /* two keys held over a stop (a stop releases the
+                                                         * sequencer's notes, not keys held) */
+    c->note(0, 96, 90);
+    run(c, frames_ms(100), 0);
+    c->stop();
+    run(c, frames_ms(100), 0);
+    for (i = 0, k = 0; i < nev; i++)
+        if (evs[i].track == 0 && evs[i].note >= 96)
+            k += evs[i].kind == FEL_EV_NOTE ? 1u : evs[i].kind == FEL_EV_NOTE_OFF ? (uint32_t)-1 : 0u;
+    CHECK(k == 2, "two keys held over a stop: still on (%u)", k);
+    x->panic();                                         /* .. until a panic (trk_all_off) */
+    run(c, frames_ms(100), 0);
+    for (i = 0; i < nev; i++) {
+        const fel_event_t *e = &evs[i];
+        if (e->kind == FEL_EV_NOTE) {
+            doubled += held[e->track][e->note]++ != 0;
+            if (e->track == 3 && e->note == 42) {       /* the hats, on the odd steps */
+                const fel_event_t *st = step_ev(3, e->step, e->loop);
+                hats++;
+                hats_bad += !(e->lane == 3 && e->step % 2 && st && st->frame == e->frame);
+            }
+            synth_on += e->track == 0 && e->note == 99 && e->lane == -1 && e->velocity == 90;
+            muted += e->track == 0 && e->note == 98;
+        } else if (e->kind == FEL_EV_NOTE_OFF) {
+            unpaired += held[e->track][e->note] == 0;
+            held[e->track][e->note] -= held[e->track][e->note] != 0;
+            synth_off += e->track == 0 && e->note == 99;
+            muted += e->track == 0 && e->note == 98;
+        }
+    }
+    for (i = 0; i < FEL_TRACKS * 128u; i++)
+        if (held[i / 128u][i % 128u]) {
+            left += held[i / 128u][i % 128u];
+            printf("D  left on: track %u note %u\n", i / 128u + 1, i % 128u);
+        }
+    printf("D  %u hats reported, %s\n", hats, hats_bad ? "some wrong" : "each with lane HAT CL in its odd step's block");
+    CHECK(hats >= 14 && hats_bad == 0, "the hats: lane 3 (HAT CL), in their steps' blocks (%u of %u wrong)", hats_bad, hats);
+    for (i = 0; i < 2; i++) {
+        const fel_event_t *a = find(FEL_EV_ACTION, 900 + i), *n = 0;
+        uint32_t j;
+        for (j = 0; j < nev && a; j++)
+            if (evs[j].kind == FEL_EV_NOTE && evs[j].track == 3 && evs[j].note == LANE_NOTE[0] && evs[j].frame == a->frame)
+                n = &evs[j];
+        CHECK(a && n && n->lane == 0 && n->velocity == 100 && a->loop == L + 1,
+              "scheduled kick %u: its note (36, lane KICK, velocity 100) in its action's block", i);
+    }
+    CHECK(synth_on == 1 && synth_off == 1, "a synth's note: on (99, velocity 90, no lane) and off, once each");
+    CHECK(muted == 0, "a muted track's note: neither on nor off");
+    CHECK(doubled == 0 && unpaired == 0 && left == 0, "every note on paired with one off, the panic's too (%u on twice, "
+          "%u off without on, %u left on)", doubled, unpaired, left);
+}
+
 int main(void)
 {
     test_steps(fel_test_0());
     test_knock(fel_test_1());
     test_targets(fel_test_2(), fel_test_3());
+    test_notes(fel_test_4());
     return check_done("test_sched");
 }

@@ -10,9 +10,9 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 7                  /* bump on any change to this file (2: locate, the passes in the snapshot;
+#define FEL_CORE_ABI 8                  /* bump on any change to this file (2: locate, the passes in the snapshot;
                                          * 3: project_info, engine_name; 4: project_info's values; 5: cut;
-                                         * 6: schedule, cancel, events; 7: a step event's length) */
+                                         * 6: schedule, cancel, events; 7: a step event's length; 8: notes) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
@@ -69,10 +69,14 @@ typedef struct {
 } fel_action_t;
 
 /* what happened (events) */
-enum { FEL_EV_ACTION, FEL_EV_DROPPED, FEL_EV_STEP };
+enum { FEL_EV_ACTION, FEL_EV_DROPPED, FEL_EV_STEP, FEL_EV_NOTE, FEL_EV_NOTE_OFF };
 typedef struct {
     uint8_t kind;                       /* ACTION: an action applied; DROPPED: one found passed (FEL_LATE_DROP), or
-                                         * whose step is past its track's LEN; STEP: a track entered a step */
+                                         * whose step is past its track's LEN; STEP: a track entered a step; NOTE: a
+                                         * track started a note (its steps', its arp's, MIDI IN's: the scheduled
+                                         * hits' too; none while muted); NOTE_OFF: released one it had started, once
+                                         * (the sequencer's at their gates' ends and at a stop; keys held, MIDI IN's,
+                                         * when released; a panic, a project load, a cut: every note still on) */
     uint8_t track;
     uint16_t step;                      /* 0-based: the step entered (AT_BEATS: the step playing) */
     uint32_t loop;                      /* the track's pass (as the snapshot counts them) */
@@ -81,6 +85,8 @@ typedef struct {
                                          * frames) */
     double beats;                       /* the conductor's timeline there */
     double length;                      /* STEP: the step's length in beats (its DIV's, swung), as it starts */
+    uint8_t note, velocity;             /* NOTE, NOTE_OFF: the MIDI note; NOTE: its velocity as played (an accent 127) */
+    int8_t lane;                        /* NOTE: the DRUM lane it strikes (0 .. 7) on a DRUM track, else -1 */
 } fel_event_t;
 
 typedef struct {

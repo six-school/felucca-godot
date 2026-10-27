@@ -97,7 +97,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the sources in range of the listener (at most N, a level-design rule) to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come); M5: the range pass, lazy eviction (§7). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
 | D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M9) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
-| D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0004 (`patches/`). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
+| D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0005 (`patches/`; 0005, M6: `FELUCCA_HOST_NOTES`, a hook on every note a track starts and releases and on `trk_all_off`). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
 
 ## 4. Architecture
 
@@ -245,6 +245,15 @@ max)` drains what happened, each stamped with the frame it sounds on (`render()`
 timeline there: an action applied (its id) or dropped, and (part 3) each track's steps and passes and the beat.
 Fixed tables (64 actions, 256 events an instance): nothing allocates. ABI 7 (M6 part 3): a step event carries the
 step's length in beats (its DIV's, swung: base × the step's samples / the unswung step's), for the snapshot's progress.
+ABI 8 (M6, the notes): `FEL_EV_NOTE` / `FEL_EV_NOTE_OFF` with the note, its velocity as played (before the matrix's
+VEL; an accent 127) and, on a DRUM track (`engine_t.oneshot`), the lane it strikes (`drum_lane`: any note strikes one,
+whatever the kit; else −1), from patch 0005's hooks in `trk_note_on` (past a mute and an engine switch's hold),
+`trk_note_off` and `trk_all_off`. The core keeps each track's notes reported on (a bit a note): an off only for one of
+them, once; `trk_all_off` (a panic, a project load, MIDI's All Notes Off, a cut) releases every one still on. A stop
+releases the sequencer's notes (at their gates' ends, and its own), not keys held (MIDI IN's, the scheduled `note`s
+until their steps run out). *Measured* (`test_sched` D): the hats of a DRUM pattern reported with lane HAT CL in their
+steps' blocks, two scheduled kicks with lane KICK in their actions' blocks, a synth's note with none, a muted track's
+nothing, two keys held over a stop still on until a panic, every note on paired with one off.
 
 As built (M6 part 1, `core/board.c`, ABI 6): `fel_when_t` (`FEL_AT_STEP` track, step, `loops`; `FEL_AT_BEATS`
 beats, `every`; `late`), `fel_action_t` (`FEL_DO_MARK`, `_HIT` lane and velocity, `_NOTE` note, velocity and steps,
@@ -366,6 +375,15 @@ loops, bars, beats).
   guide's past tense set aside): the conductor's **`on_beat(bar, beat)`**, a part's **`on_step(step, loop)`** and
   **`on_loop(loop)`** (a shortcut for step 1). At one moment: `on_beat`, a part's `on_loop`, its `on_step`, then an
   action's callback, `triggered`, `schedule_triggered`.
+- A part's notes, when heard (M6, after part 3): **`on_note(note, velocity)`** for every note it starts (its steps'
+  notes and hits, chords, its arpeggio, MIDI IN: the scheduled `hit`s and `note`s; the note as played, after the
+  part's scale; none while muted), **`on_hit(lane, velocity)`** right after it on a DRUM part (the lane it strikes:
+  `FeluccaPart.Lane`; never on another engine: connected there, a warning once), **`on_noteoff(note)`** when it is
+  released: the gate, not the sound's end (a DRUM hit rings on; another engine's release begins). They come in pairs
+  from when a listener connects (an off only for a note it heard on). At one moment, after the part's `on_step`, in
+  the order played (a release before a new note). Only while something is connected: once a frame the conductor asks
+  each part (`has_connections`, no allocation) and the playback drops the notes of parts no one listens to as it takes
+  them from the instance; `on_step` / `on_loop` are emitted only while connected too.
 - **`bound()`** / **`unbound()`**: the source got / lost an instance, emitted after the frame's binding pass (a
   handler may play, stop or free sources); state changes, not musical events: not held until heard; every `bound` has
   one `unbound` unless the node is freed.
@@ -411,7 +429,10 @@ beats at most (the Dummy driver's bursts, ~95 ms at 120 BPM); bar / beat its cou
 once, in order, 0.504–0.511 s apart; `on_step` 34–35 steps of part 4, 1 to 16 and round, the loop counted on step 1,
 0.125 s apart; `on_loop` on each step 1; the snapshot read in `on_step`: that step and loop, every time; its
 progress rising frame by frame; at one moment `on_step`, the callback, `triggered`, `schedule_triggered`;
-`schedule_with_tag`'s tag on the handle and the event; a callable whose object was freed: skipped, no error.
+`schedule_with_tag`'s tag on the handle and the event; a callable whose object was freed: skipped, no error. The notes
+(`m6_test`): a scheduled KICK heard as `on_hit` (velocity 100) at its moment, before its callback; each `on_hit` right
+after its `on_note` on the DRUM part; a synth's scheduled note 99 heard as 98 (its part's scale), its `on_noteoff` 0.255
+s later (2 steps: 0.25); no stray off though connected mid-note; `on_hit` on the synth part: never, a warning once.
 
 ## 6. Timing
 

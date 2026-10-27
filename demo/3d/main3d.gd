@@ -1,6 +1,7 @@
 # The demo: the user's own project ("SOLAR SIGNAL", made on an FM-1, Felucca 1.6.1) in two sources, the cellar on the
 # left and the hallway on the right, at the project's own tempo; the tempo eases to 80 BPM and back. Space pauses the
-# game (and all of its music, at once); headless, it prints where both sources are.
+# game (and all of its music, at once); headless, it prints where both sources are. Each source's sphere pulses on the
+# kicks of its DRUM part (on_hit, LANE_KICK).
 extends Node3D
 
 @onready var cellar: FeluccaSource3D = $Cellar
@@ -23,6 +24,18 @@ func _ready() -> void:
 	timer.autostart = true
 	timer.timeout.connect(_report)
 	add_child(timer)
+	for s: FeluccaSource3D in [cellar, hallway]:
+		_pulse_on_kicks(s)
+
+# each kick of the source's DRUM part, as heard: its sphere grows, then eases back
+func _pulse_on_kicks(s: FeluccaSource3D) -> void:
+	var sphere := s.get_node("CSGSphere3D") as CSGSphere3D
+	for part: FeluccaPart in s.parts:
+		if part.engine == FeluccaPart.Engine.ENGINE_DRUM:
+			part.on_hit.connect(func(lane: int, _velocity: int) -> void:
+				if lane == FeluccaPart.Lane.LANE_KICK:
+					sphere.scale = Vector3.ONE * 1.4
+					create_tween().tween_property(sphere, "scale", Vector3.ONE, 0.25))
 
 func _report() -> void:
 	var a := cellar.get_snapshot()

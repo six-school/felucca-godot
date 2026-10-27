@@ -1,0 +1,64 @@
+From e9ef6ef27e2bfac03cef67541d3474b19b64b529 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 27 Oct 2026 01:54:37 +0000
+Subject: [PATCH 5/5] Host notes: a hook on every note a part starts and
+ releases
+
+FELUCCA_HOST_NOTES (off unless defined): trk_note_on calls the board file's host_note_on() for each note it plays
+(after a mute and an engine switch's hold: when the note starts, with its velocity as played), trk_note_off its
+host_note_off(), and trk_all_off its host_notes_off(), so a host can report a part's notes as they start and end.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ firmware/src/voice.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/firmware/src/voice.c b/firmware/src/voice.c
+index 60cebca..075617a 100644
+--- a/firmware/src/voice.c
++++ b/firmware/src/voice.c
+@@ -392,6 +392,11 @@ static void mono_remove(track_t *t, uint32_t note)
+     t->nmono = (uint8_t)k;
+ }
+ 
++#ifdef FELUCCA_HOST_NOTES
++static void host_note_on(track_t *t, uint32_t note, uint32_t vel);   /* (the board file: a note the part starts, */
++static void host_note_off(track_t *t, uint32_t note);               /* .. releases, */
++static void host_notes_off(track_t *t);                             /* .. or all of them at once) */
++#endif
+ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
+ {
+     uint32_t any = 0, i, mode = trk_vmode(t);
+@@ -407,6 +412,9 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
+         t->xp_vel[i] = (uint8_t)vel;
+         return;
+     }
++#ifdef FELUCCA_HOST_NOTES
++    host_note_on(t, note, vel);                         /* (as played: before the matrix's VEL) */
++#endif
+     vel = mod_note(t, note, vel);                       /* the matrix's VEL / KEY / RAND (1.5.6: VEL as a destination) */
+     for (i = 0; i < NVOICE; i++)
+         any |= t->v[i].gate;
+@@ -442,6 +450,9 @@ static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
+ static void trk_note_off(track_t *t, uint32_t note)
+ {
+     uint32_t i, k = 0, mode = trk_vmode(t);
++#ifdef FELUCCA_HOST_NOTES
++    host_note_off(t, note);
++#endif
+     for (i = 0; i < t->xp_n; i++)                       /* not sounding yet (engine switch): forget it */
+         if (t->xp_note[i] != note) {
+             t->xp_note[k] = t->xp_note[i];
+@@ -475,6 +486,9 @@ static void trk_note_off(track_t *t, uint32_t note)
+ static void trk_all_off(track_t *t)
+ {
+     uint32_t i;
++#ifdef FELUCCA_HOST_NOTES
++    host_notes_off(t);
++#endif
+     for (i = 0; i < NVOICE; i++) {
+         t->v[i].gate = 0;
+         t->v[i].stage = t->v[i].active ? 3 : 0;
+-- 
+2.39.5
+

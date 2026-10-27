@@ -21,6 +21,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 
 namespace godot {
@@ -121,6 +122,15 @@ int FeluccaConductor::get_bar() {
 
 int FeluccaConductor::get_beat() {
 	return int(int64_t(std::floor(get_playhead())) % 4) + 1;
+}
+
+// the DRUM engine's index (FeluccaPart.Engine's ENGINE_DRUM)
+static int32_t drum_engine() {
+	static int32_t d = -2;
+	for (int k = 0; d == -2 && k < felucca::API_ENGINE_ENUM.count; k++) {
+		d = String(felucca::API_ENGINE_ENUM.values[k].name) == "ENGINE_DRUM" ? felucca::API_ENGINE_ENUM.values[k].value : d;
+	}
+	return d;
 }
 
 void FeluccaConductor::refresh_latency(int64_t p_now) {
@@ -531,8 +541,8 @@ Ref<FeluccaSnapshot> FeluccaConductor::heard_snapshot(FeluccaPlayback *p_playbac
 	for (int t = 0; t < FEL_TRACKS; t++) {
 		parts[t] = p_playback->heard_parts[t];
 	}
-	for (const FeluccaPlayback::StepAhead &a : p_playback->ahead) {
-		if (a.heard_us <= now) {
+	for (const FeluccaPlayback::Ahead &a : p_playback->ahead) {
+		if (a.kind == FEL_EV_STEP && a.heard_us <= now) {
 			parts[a.track] = { a.step, a.loop, a.start, a.length };
 		}
 	}
@@ -550,9 +560,9 @@ Ref<FeluccaSnapshot> FeluccaConductor::heard_snapshot(FeluccaPlayback *p_playbac
 // the playbacks' events taken (under the lock, once) and mapped to when they are heard: a mix step's start is heard
 // at its time (Engine::mixes) plus the output latency, an event in it by its place on the step's stretch of the
 // conductor's timeline; then what has been heard by now, in that order (at one moment: the conductor's beat, a part's
-// loop, its step, an action): on_beat, a part's on_loop / on_step (while the part has been asked for: nothing can
-// listen to one that has not), an action's callback, its handle's triggered and its source's schedule_triggered (a
-// dropped action: at once)
+// loop, its step, its notes as the instance played them, an action): on_beat, a part's on_loop / on_step / on_note /
+// on_hit / on_noteoff (only while something listens: a part's notes no one listens to are dropped as they are taken),
+// an action's callback, its handle's triggered and its source's schedule_triggered (a dropped action: at once)
 void FeluccaConductor::deliver() {
 	felucca::Engine &e = felucca::Engine::get();
 	const int64_t now = felucca::Engine::now_us();
@@ -597,19 +607,47 @@ void FeluccaConductor::deliver() {
 			AudioServer::get_singleton()->unlock();
 		}
 	}
-	enum { BEAT, LOOP, STEP, ACTION };
+	enum { BEAT, LOOP, STEP, NOTE, ACTION };
 	struct Emit {
 		int kind;
 		int64_t at;
-		ObjectID source; // (LOOP, STEP: the part's source)
-		int a = 0, b = 0, c = 0; // BEAT: bar, beat; LOOP, STEP: track, step, loop (1-based)
+		ObjectID source; // (LOOP, STEP, NOTE: the part's source)
+		int a = 0, b = 0, c = 0, d = -1; // BEAT: bar, beat; LOOP, STEP: track, step, loop (1-based); NOTE: track,
+										 // note, velocity, lane
 		Pending x = {}; // ACTION
-		bool dropped = false;
+		bool dropped = false, off = false; // (NOTE: a release; its order with the notes started kept as played)
 	};
 	std::vector<Emit> out;
+	listening.clear();
+	for (FeluccaPlayback *p : live) { // the parts' notes listened to (an on_hit on a part not DRUM: said once)
+		Node *n = Object::cast_to<Node>(ObjectDB::get_instance(p->source));
+		const FelSource *f = n ? FelSource::of(n) : nullptr;
+		uint32_t l = 0;
+		for (int t = 0; f && t < FEL_TRACKS; t++) {
+			const Ref<FeluccaPart> &q = f->parts[t];
+			if (q.is_null()) {
+				continue;
+			}
+			const bool hits = q->has_connections("on_hit");
+			l |= (hits || q->has_connections("on_note") || q->has_connections("on_noteoff") ? 1u : 0u) << t;
+			if (hits && !hit_warned && q->get_engine() != drum_engine()) {
+				hit_warned = true;
+				UtilityFunctions::push_warning(n->get_name(), ": on_hit is connected on part ", t + 1,
+						", which is not a DRUM part, so it will not fire.");
+			}
+		}
+		listening.push_back(l);
+	}
 	refresh_latency(now);
 	AudioServer::get_singleton()->lock();
-	for (FeluccaPlayback *p : live) {
+	for (size_t i = 0; i < live.size(); i++) {
+		FeluccaPlayback *p = live[i];
+		for (int t = 0; t < FEL_TRACKS; t++) { // (no longer listened to: no release to pair any more)
+			if (!((listening[i] >> t) & 1u)) {
+				memset(p->notes_on[t], 0, sizeof p->notes_on[t]);
+			}
+		}
+		p->listening = listening[i];
 		taken.clear();
 		p->take_events(taken);
 		for (const FelHeard &h : taken) {
@@ -651,8 +689,19 @@ void FeluccaConductor::deliver() {
 			continue;
 		}
 		inbox.erase(inbox.begin() + std::ptrdiff_t(i));
-		if (in.e.kind == FEL_EV_STEP) { // (to be heard: the snapshot's, on_loop / on_step)
-			in.p->ahead.push_back({ in.e.track, in.e.step + 1, int32_t(in.e.loop) + 1, in.e.beats, in.e.length, in.heard_us });
+		if (in.e.kind == FEL_EV_NOTE || in.e.kind == FEL_EV_NOTE_OFF) { // (a release only of a note taken as on)
+			uint32_t &on = in.p->notes_on[in.e.track][in.e.note >> 5];
+			const uint32_t bit = 1u << (in.e.note & 31u);
+			const bool was = on & bit;
+			on = in.e.kind == FEL_EV_NOTE ? on | bit : on & ~bit;
+			if (in.e.kind == FEL_EV_NOTE_OFF && !was) {
+				continue;
+			}
+		}
+		if (in.e.kind == FEL_EV_STEP || in.e.kind == FEL_EV_NOTE || in.e.kind == FEL_EV_NOTE_OFF) { // (to be heard: the
+																										   // snapshot's, the parts' signals)
+			in.p->ahead.push_back({ in.e.kind, in.e.track, in.e.step + 1, int32_t(in.e.loop) + 1, in.e.beats, in.e.length,
+					in.e.note, in.e.velocity, in.e.lane, in.heard_us });
 			continue;
 		}
 		auto it = std::find_if(pend.begin(), pend.end(), [&](const Pending &x) { return x.id == in.e.id; });
@@ -677,10 +726,20 @@ void FeluccaConductor::deliver() {
 			it->action->values->applied_track(a.track, a.a, a.b);
 		}
 	}
-	for (FeluccaPlayback *p : live) { // the steps heard by now
+	for (FeluccaPlayback *p : live) { // the steps and notes heard by now
 		size_t n = 0;
 		for (; n < p->ahead.size() && p->ahead[n].heard_us <= now; n++) {
-			const FeluccaPlayback::StepAhead &a = p->ahead[n];
+			const FeluccaPlayback::Ahead &a = p->ahead[n];
+			if (a.kind != FEL_EV_STEP) {
+				Emit x = { NOTE, a.heard_us, p->source };
+				x.a = a.track;
+				x.b = a.note;
+				x.c = a.velocity;
+				x.d = a.lane;
+				x.off = a.kind == FEL_EV_NOTE_OFF;
+				out.push_back(x);
+				continue;
+			}
 			p->heard_parts[a.track] = { a.step, a.loop, a.start, a.length };
 			if (a.step == 1) {
 				Emit x = { LOOP, a.heard_us, p->source };
@@ -715,11 +774,20 @@ void FeluccaConductor::deliver() {
 		Node *n = Object::cast_to<Node>(ObjectDB::get_instance(x.source));
 		if (x.kind != ACTION) {
 			FelSource *f = n ? FelSource::of(n) : nullptr;
-			if (f && f->parts[x.a].is_valid()) {
-				if (x.kind == LOOP) {
-					f->parts[x.a]->emit_signal("on_loop", x.c);
-				} else {
-					f->parts[x.a]->emit_signal("on_step", x.b, x.c);
+			const Ref<FeluccaPart> q = f ? f->parts[x.a] : Ref<FeluccaPart>();
+			if (q.is_null()) {
+				continue;
+			}
+			if (x.kind == LOOP && q->has_connections("on_loop")) {
+				q->emit_signal("on_loop", x.c);
+			} else if (x.kind == STEP && q->has_connections("on_step")) {
+				q->emit_signal("on_step", x.b, x.c);
+			} else if (x.kind == NOTE && x.off) {
+				q->emit_signal("on_noteoff", x.b);
+			} else if (x.kind == NOTE) {
+				q->emit_signal("on_note", x.b, x.c);
+				if (x.d >= 0) {
+					q->emit_signal("on_hit", x.d, x.c);
 				}
 			}
 			continue;
@@ -761,7 +829,7 @@ void FeluccaConductor::tree_paused(bool p_paused) {
 			in.heard_us += in.heard_us > paused_at ? now - paused_at : 0;
 		}
 		for (FeluccaPlayback *p : live) {
-			for (FeluccaPlayback::StepAhead &a : p->ahead) {
+			for (FeluccaPlayback::Ahead &a : p->ahead) {
 				a.heard_us += a.heard_us > paused_at ? now - paused_at : 0;
 			}
 		}

@@ -340,6 +340,11 @@ void FeluccaPart::_bind_methods() {
 	// (M6, DESIGN.md §5.2) each step the part starts, each pass, when heard; 1-based
 	ADD_SIGNAL(MethodInfo("on_step", PropertyInfo(Variant::INT, "step"), PropertyInfo(Variant::INT, "loop")));
 	ADD_SIGNAL(MethodInfo("on_loop", PropertyInfo(Variant::INT, "loop")));
+	// .. each note it starts (on_hit: a DRUM part's, as its lane), each it releases (gate released: a hit rings on), in
+	// pairs
+	ADD_SIGNAL(MethodInfo("on_note", PropertyInfo(Variant::INT, "note"), PropertyInfo(Variant::INT, "velocity")));
+	ADD_SIGNAL(MethodInfo("on_hit", PropertyInfo(Variant::INT, "lane"), PropertyInfo(Variant::INT, "velocity")));
+	ADD_SIGNAL(MethodInfo("on_noteoff", PropertyInfo(Variant::INT, "note")));
 }
 
 void FeluccaPart::_set_value(int p_id, int32_t p_value) {

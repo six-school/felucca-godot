@@ -112,18 +112,26 @@ public:
 	int pins = 0; // its actions pending (scheduled, not heard yet): it keeps an instance (DESIGN.md §7)
 	bool timed = false; // its play() resolved to an origin
 	// each part's step as heard (1-based, 0 none yet), its start on the conductor's timeline and its length in beats;
-	// the steps rendered, still to be heard (the conductor's: heard snapshot, on_step / on_loop)
+	// the moments rendered, still to be heard (the conductor's: the heard snapshot, the parts' signals): a step (step,
+	// loop, start, length) or a note (note, velocity, lane; NOTE_OFF: the note), with its heard time
 	struct PartHeard {
 		int32_t step = 0, loop = 0;
 		double start = 0.0, length = 0.0;
 	};
-	struct StepAhead {
+	struct Ahead {
+		uint8_t kind; // FEL_EV_STEP, _NOTE, _NOTE_OFF
 		int32_t track, step, loop; // (1-based)
 		double start, length;
+		int32_t note, velocity, lane;
 		int64_t heard_us;
 	};
 	PartHeard heard_parts[FEL_TRACKS];
-	std::vector<StepAhead> ahead;
+	std::vector<Ahead> ahead;
+	// which parts' notes something listens to (on_note, on_hit, on_noteoff: the conductor's, once a frame, under the
+	// lock): bit t part t + 1's; the others' are dropped as they are taken from the instance. And the notes taken as
+	// on (main thread): a release passes only for one of them, so a listener hears pairs from when it connects
+	uint32_t listening = 0;
+	uint32_t notes_on[FEL_TRACKS][4] = {};
 	// published under the lock (main thread), read by _mix (audio thread)
 	const fel_core_t *core = nullptr;
 	bool fresh = false; // bound since the last mix: the copy joins the music (locate) and fades in, in the next one

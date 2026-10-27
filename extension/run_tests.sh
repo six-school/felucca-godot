@@ -49,8 +49,10 @@ for rate in 44100 48000; do
     n=$(grep -c -E "$REFUSED" build/m6_test_$rate.log || true)
     [ "$n" = 11 ] && echo "ok   11 refusals, each an error" || { echo "FAIL $n refusals said (11 made)"; fail=1; }
     grep -E "^(ERROR|SCRIPT ERROR)" build/m6_test_$rate.log | grep -v -E "$REFUSED" || true
-    for w in "more Felucca sources in range than engines available" "more pinned Felucca sources than engines available"; do
-        n=$(grep -c "WARNING: FeluccaConductor: $w" build/m6_test_$rate.log || true)
+    for w in "FeluccaConductor: more Felucca sources in range than engines available" \
+            "FeluccaConductor: more pinned Felucca sources than engines available" \
+            "Notes: on_hit is connected on part 1, which is not a DRUM part, so it will not fire."; do
+        n=$(grep -c -F "WARNING: $w" build/m6_test_$rate.log || true)
         [ "$n" = 1 ] && echo "ok   one warning: $w" || { echo "FAIL $n warnings: $w"; fail=1; }
     done
 done

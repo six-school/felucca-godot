@@ -5,7 +5,8 @@
 # (NEXT, DROP: dropped at once, NOW); set_param kept for the next binding; pinning (actions pending, pinned = true,
 # more pinned than engines: a warning, counted by extension/run_tests.sh); bound / unbound; the conductor's playhead
 # (never back), bar / beat and on_beat; a part's on_step / on_loop; the snapshot as heard; callbacks, in their order
-# with the signals. (The knock and the door
+# with the signals; a part's notes: on_note / on_noteoff in pairs, a DRUM part's on_hit, the warning for on_hit on
+# another. (The knock and the door
 # together are the demo's; the core's timing: core/tests/test_sched.c.)
 extends Node
 
@@ -86,6 +87,7 @@ func _ready() -> void:
 	await pinning()
 	await heard_time()
 	await callbacks()
+	await notes()
 	await stop_all()
 	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every engine free")
 	print("m6_test: %d failed" % fails)
@@ -412,4 +414,57 @@ func callbacks() -> void:
 	await g.triggered
 	check(not g.pending, "a callable whose object is gone: skipped (any error would be printed by extension/run_tests.sh)")
 	a.schedule_triggered.disconnect(all)
+	await stop_all()
+
+# ---- notes: a part's on_note and on_noteoff, in pairs; a DRUM part's on_hit right after its on_note; a scheduled hit
+# heard as a hit (KICK, its velocity) before its callback; a synth's scheduled note: on_note, on_noteoff two steps on, no
+# on_hit; on_hit on a part that is not DRUM: never, and a warning (extension/run_tests.sh counts it)
+func notes() -> void:
+	var a := await started("Notes")
+	var drums := a.part_4
+	var synth := a.part_1
+	var order: Array[String] = []
+	var held := {}
+	var off_alone := [0]
+	var hit_alone := [0]
+	var synth_hits := [0]
+	var synth_us: Array[int] = []
+	var synth_note := [-1]               # (the scheduled one: its velocity, 90, says which; the part's scale may move it)
+	var noted := func(part: int, note: int, velocity: int) -> void:
+		order.append("note %d %d %d" % [part, note, velocity])
+		held[Vector2i(part, note)] = int(held.get(Vector2i(part, note), 0)) + 1
+		if part == 1 and velocity == 90:
+			synth_note[0] = note
+			synth_us.append(Time.get_ticks_usec())
+	var released := func(part: int, note: int) -> void:
+		var k := Vector2i(part, note)
+		off_alone[0] += int(int(held.get(k, 0)) == 0)
+		held[k] = maxi(int(held.get(k, 0)) - 1, 0)
+		if part == 1 and note == synth_note[0] and synth_us.size() == 1:
+			synth_us.append(Time.get_ticks_usec())
+	var hit := func(lane: int, velocity: int) -> void:
+		var last: String = "" if order.is_empty() else order[-1]
+		hit_alone[0] += int(not last.begins_with("note 4 ") or not last.ends_with(" %d" % velocity))
+		order.append("hit %d %d" % [lane, velocity])
+	drums.on_note.connect(func(n: int, v: int) -> void: noted.call(4, n, v))
+	drums.on_noteoff.connect(func(n: int) -> void: released.call(4, n))
+	drums.on_hit.connect(hit)
+	synth.on_note.connect(func(n: int, v: int) -> void: noted.call(1, n, v))
+	synth.on_noteoff.connect(func(n: int) -> void: released.call(1, n))
+	synth.on_hit.connect(func(_l: int, _v: int) -> void: synth_hits[0] += 1)
+	var kick := a.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_KICK),
+		func(_e: FeluccaEvent) -> void: order.append("callback"))
+	a.schedule(FeluccaWhen.next_loop(drums, 5), FeluccaAction.note(synth, 99, 90, 2))
+	await kick.triggered
+	await wait(1.0)
+	var at := order.find("callback")
+	var kick_at := order.slice(0, maxi(at, 0)).rfind("hit %d 100" % FeluccaPart.Lane.LANE_KICK)
+	check(at > 0 and kick_at >= 0 and at - kick_at <= 4,
+		"a scheduled hit: heard as KICK (velocity 100), at its moment and before its callback (%s)" % [order.slice(kick_at, at + 1)])
+	var hits := order.filter(func(e: String) -> bool: return e.begins_with("hit "))
+	check(hits.size() >= 2 and hit_alone[0] == 0, "on_hit: %d hits, each right after its on_note on the DRUM part" % hits.size())
+	check(synth_us.size() == 2 and abs((synth_us[1] - synth_us[0]) / 1e6 - 0.25) < 0.05 and synth_hits[0] == 0,
+		"a synth's note: on_note (99 on its scale: %d, velocity 90), on_noteoff %.3f s on (2 steps: 0.25), no on_hit" %
+		[synth_note[0], (synth_us[1] - synth_us[0]) / 1e6 if synth_us.size() == 2 else -1.0])
+	check(off_alone[0] == 0, "on_noteoff only for a note heard on (%d not), though connected mid-note" % off_alone[0])
 	await stop_all()

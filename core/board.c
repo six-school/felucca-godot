@@ -16,6 +16,7 @@
 #endif
 #define FELUCCA_HOST_CLOCK 1
 #define FELUCCA_DELAY_GLIDE 1           /* patch 0003: a new delay TIME (the tempo moved) glides there, no click (D9) */
+#define FELUCCA_HOST_NOTES 1            /* patch 0005: every note a track starts and releases (the events' NOTE) */
 #include "web/emu/felucca_web.c"
 #include "fel_core.h"
 
@@ -453,7 +454,49 @@ static void fel_event(uint32_t kind, uint32_t track, uint32_t step, uint32_t loo
 {
     if (fel_ev_w - fel_ev_r < FEL_EVENTS)
         fel_ev[fel_ev_w++ % FEL_EVENTS] = (fel_event_t){(uint8_t)kind, (uint8_t)track, (uint16_t)step, loop, id,
-                                                        fel_blk_frame, fel_blk_beats, length};
+                                                        fel_blk_frame, fel_blk_beats, length, 0, 0, -1};
+}
+
+/* ------------------------------------------------------------ notes (patch 0005's hooks) --- */
+/* every note a track starts (trk_note_on, past its mute and an engine switch's hold), and its release, once: a note
+ * is reported on only while it is not on already, off only when it was reported on, and trk_all_off (a stop, a cut,
+ * an engine change, a panic) releases every one still on. Stamped with the block being ticked (one started from the
+ * MIDI queue, before the block's clock, with the block before: 32 samples early at most) */
+static uint32_t fel_on[NTRK][4];        /* each track's notes on, one bit a note */
+
+static void fel_note_event(uint32_t kind, uint32_t k, uint32_t note, uint32_t vel, int32_t lane)
+{
+    if (fel_ev_w - fel_ev_r < FEL_EVENTS)
+        fel_ev[fel_ev_w++ % FEL_EVENTS] = (fel_event_t){(uint8_t)kind, (uint8_t)k, trk[k].seq_idx, fel_loops[k], 0,
+                                                        fel_blk_frame, fel_blk_beats, 0.0, (uint8_t)note,
+                                                        (uint8_t)vel, (int8_t)lane};
+}
+
+static void host_note_on(track_t *t, uint32_t note, uint32_t vel)
+{
+    uint32_t k = trk_index(t), bit = 1u << (note & 31u);
+    if (note > 127u || (fel_on[k][note >> 5] & bit))
+        return;
+    fel_on[k][note >> 5] |= bit;
+    fel_note_event(FEL_EV_NOTE, k, note, vel, ENGINES[t->engine]->oneshot ? (int32_t)drum_lane(note) : -1);
+}
+
+static void host_note_off(track_t *t, uint32_t note)
+{
+    uint32_t k = trk_index(t), bit = 1u << (note & 31u);
+    if (note > 127u || !(fel_on[k][note >> 5] & bit))
+        return;
+    fel_on[k][note >> 5] &= ~bit;
+    fel_note_event(FEL_EV_NOTE_OFF, k, note, 0, -1);
+}
+
+static void host_notes_off(track_t *t)
+{
+    uint32_t k = trk_index(t), n;
+    for (n = 0; n < 128u; n++)
+        if (fel_on[k][n >> 5] & (1u << (n & 31u)))
+            fel_note_event(FEL_EV_NOTE_OFF, k, n, 0, -1);
+    memset(fel_on[k], 0, sizeof fel_on[k]);
 }
 
 /* a division's step in beats, unswung (div_samples' DIV_DEN and its slow rates, in beats) */

@@ -9,6 +9,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <cmath>
+#include <cstring>
 
 namespace godot {
 
@@ -97,6 +98,7 @@ bool FeluccaPlayback::bind(int p_slot) {
 	for (PartHeard &h : heard_parts) {
 		h = PartHeard(); // (its steps as heard: from this instance's)
 	}
+	memset(notes_on, 0, sizeof notes_on);
 	ahead.clear();
 	AudioServer::get_singleton()->lock();
 	core = c;
@@ -142,6 +144,9 @@ void FeluccaPlayback::keep_events() {
 	for (uint32_t n = 32; n == 32 && core;) {
 		n = core->events(e, 32);
 		for (uint32_t i = 0; i < n; i++) {
+			if ((e[i].kind == FEL_EV_NOTE || e[i].kind == FEL_EV_NOTE_OFF) && !((listening >> e[i].track) & 1u)) {
+				continue; // (a note no one listens to)
+			}
 			if (heard_w - heard_r < HEARD) {
 				heard[heard_w++ % HEARD] = { e[i], step };
 			}

@@ -7,6 +7,7 @@ typedef struct { uint32_t frame, track, step; } fel_test_entry_t;   /* a step en
 enum { FEL_TEST_TIMING = 1, FEL_TEST_DELAY, FEL_TEST_DELAY_DRY, FEL_TEST_LOCATE, FEL_TEST_TAILS,
        FEL_TEST_KNOCK };                        /* setup()'s */
 #define FEL_TEST_CUT 107                        /* ANALOG's CUT (E4): a parameter id for param_set */
+#define FEL_TEST_MUTE 40                        /* a part's MUTE */
 
 typedef struct {
     const fel_core_t *core;
@@ -16,4 +17,6 @@ typedef struct {
     void (*restart)(void);                      /* entries: forget the steps seen (before a play) */
     uint32_t (*frame)(void);                    /* the frame render() returns next (frames count from power-on) */
     uint32_t (*beat_len)(void);                 /* the beat length in samples (the delay, LFO sync, gates) */
+    void (*panic)(void);                        /* every track's notes off in the next block (panic_req: as a project
+                                                 * load, MIDI's All Notes Off) */
 } fel_test_t;

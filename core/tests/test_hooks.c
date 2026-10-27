@@ -136,11 +136,12 @@ static void test_setup(int which)
     ui.force = 1;
 }
 
-_Static_assert(P_E0 + 4 == FEL_TEST_CUT, "test_hooks.h's CUT");
+_Static_assert(P_E0 + 4 == FEL_TEST_CUT && P_MUTE == FEL_TEST_MUTE, "test_hooks.h's CUT, MUTE");
 
 static uint32_t test_frame(void) { return ring_r; }
 static uint32_t test_beat_len(void) { return beat_samples(); }
+static void test_panic(void) { panic_req = (1u << NTRK) - 1u; }
 
 static const fel_test_t FEL_TEST = {&FEL_CORE, test_setup, test_track, test_entries, test_restart, test_frame,
-                                    test_beat_len};
+                                    test_beat_len, test_panic};
 const fel_test_t *FEL_CAT(fel_test_, FEL_COPY)(void) { return &FEL_TEST; }

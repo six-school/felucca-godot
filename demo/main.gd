@@ -2,7 +2,10 @@
 # left and the hallway on the right, at the project's own tempo; the tempo eases to 80 BPM and back. Space pauses the
 # game (and all of its music, at once); headless, it prints where both sources are. Each source is drawn with its range
 # and a ring: green while it has an engine, orange in range without one, grey playing out of range, dark stopped; its
-# squares pulse on each pass of its drum part (part 4's on_loop: on 16 steps of 1/16, a bar).
+# squares pulse on each pass of its drum part (part 4's on_loop: on 16 steps of 1/16, a bar). Above it, a small square a
+# part (1 to 4, left to right) pulses on each note the part starts (on_note; a DRUM part's on_hit), coloured by the
+# note's place in the octave (C red, round the hues to B), lighter an octave up from middle C, darker an octave down,
+# and greys once the part's notes are all released (on_noteoff).
 extends Node2D
 
 @onready var cellar: FeluccaSource2D = $Cellar
@@ -31,6 +34,7 @@ func _ready() -> void:
 		if c is FeluccaSource2D:
 			sources.append(c)
 			_pulse_on_loops(c)
+			_note_squares(c)
 
 # each pass of the source's drum part, as heard: its squares grow, then ease back
 func _pulse_on_loops(s: FeluccaSource2D) -> void:
@@ -40,9 +44,42 @@ func _pulse_on_loops(s: FeluccaSource2D) -> void:
 			rects.append(c)
 	s.part_4.on_loop.connect(func(_loop: int) -> void:
 		for r: ColorRect in rects:
-			r.pivot_offset = r.size / 2.0
-			r.scale = Vector2(1.6, 1.6)
-			create_tween().tween_property(r, "scale", Vector2.ONE, 0.4))
+			_pulse(r, 1.6, 0.4))
+
+# a square a part above the source: each note it starts, its colour and a pulse (a DRUM part's: on its hit); grey once
+# its notes are all released
+func _note_squares(s: FeluccaSource2D) -> void:
+	for i in 4:
+		var part: FeluccaPart = s.parts[i]
+		var r := ColorRect.new()
+		r.size = Vector2(12, 12)
+		r.position = Vector2(-36 + i * 20, -62)
+		r.color = Color.GRAY
+		s.add_child(r)
+		var held := [0]
+		var drum := part.engine == FeluccaPart.Engine.ENGINE_DRUM
+		part.on_note.connect(func(note: int, _velocity: int) -> void:
+			held[0] += 1
+			r.color = _note_color(note)
+			if not drum:
+				_pulse(r, 1.8, 0.25))
+		part.on_noteoff.connect(func(_note: int) -> void:
+			held[0] = maxi(held[0] - 1, 0)
+			if held[0] == 0:
+				r.color = Color.GRAY)
+		if drum:
+			part.on_hit.connect(func(_lane: int, _velocity: int) -> void: _pulse(r, 1.8, 0.25))
+
+# a note's colour: its hue by its place in the octave, lighter or darker by its octave from middle C's (60)
+func _note_color(note: int) -> Color:
+	var c := Color.from_hsv((note % 12) / 12.0, 0.75, 0.85)
+	var octave := note / 12 - 5
+	return c.lightened(minf(0.18 * octave, 0.9)) if octave >= 0 else c.darkened(minf(-0.18 * octave, 0.9))
+
+func _pulse(r: Control, size: float, seconds: float) -> void:
+	r.pivot_offset = r.size / 2.0
+	r.scale = Vector2(size, size)
+	create_tween().tween_property(r, "scale", Vector2.ONE, seconds)
 
 func _report() -> void:
 	var a := cellar.get_snapshot()
