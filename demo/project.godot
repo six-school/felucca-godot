@@ -12,8 +12,8 @@ config_version=5
 
 config/name="Felucca demo"
 run/main_scene="res://main.tscn"
-run/main_scene.web_tests="res://tests/web_tests.tscn"
 config/features=PackedStringArray("4.7")
+run/main_scene.web_tests="res://tests/web_tests.tscn"
 
 [autoload]
 
