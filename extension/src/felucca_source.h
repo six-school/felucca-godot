@@ -49,7 +49,8 @@ struct FelSource {
 	// M6: an action held until its target, on the source while it plays (FeluccaConductor::schedule), -> its handle,
 	// or null (an error said why); cancel: the pending ones with that tag
 	Ref<FeluccaSchedule> schedule(Node *p_owner, const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action,
-			const StringName &p_tag);
+			const StringName &p_tag, const Callable &p_callback);
+	Ref<FeluccaSnapshot> rendered_snapshot(Node *p_owner) const; // (hidden: the tests')
 	void cancel(Node *p_owner, const StringName &p_tag);
 	static FelSource *of(Node *p_node); // a Felucca source's, else nullptr
 	static FeluccaPlayback *playing(Node *p_owner); // its playback while it plays, paused too (stopped: nullptr)
@@ -98,7 +99,12 @@ public:                                                                         
 	bool is_bound() { return src.bound(this); }                                                     \
 	Ref<FeluccaSnapshot> get_snapshot() { return src.snapshot(this); }                              \
 	Ref<FeluccaSchedule> schedule(const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action, \
-			const StringName &p_tag) { return src.schedule(this, p_when, p_action, p_tag); }         \
+			const Callable &p_callback) { return src.schedule(this, p_when, p_action, StringName(), p_callback); } \
+	Ref<FeluccaSchedule> schedule_with_tag(const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action, \
+			const StringName &p_tag, const Callable &p_callback) {                                  \
+		return src.schedule(this, p_when, p_action, p_tag, p_callback);                             \
+	}                                                                                               \
+	Ref<FeluccaSnapshot> _get_rendered_snapshot() { return src.rendered_snapshot(this); }           \
 	void cancel(const StringName &p_tag) { src.cancel(this, p_tag); }                               \
 	void set_pinned(bool p_v) { src.pinned = p_v; }                                                 \
 	bool is_pinned() const { return src.pinned; }                                                   \

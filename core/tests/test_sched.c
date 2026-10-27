@@ -1,7 +1,8 @@
 /* M6's scheduler (docs/DESIGN.md §5.1) on test copies (core/tests/test_hooks.c), one timeline (the conductor's):
  *   A  the steps it works out ahead of the sequencer are the steps the sequencer enters: every FEL_EV_STEP against
  *      patch 0004's hook (the block each track entered a step in), on FEL_TEST_LOCATE's pattern (odd LENs, swing,
- *      1/8T with nudges, conditions), 24 s with the tempo tweened (int, then float), a pause and a locate. Exact.
+ *      1/8T with nudges, conditions), 24 s with the tempo tweened (int, then float), a pause and a locate. Exact. And
+ *      each step's length in beats (ABI 7): swung, a long step and the short one after it make two of its DIV's.
  *   B  the knock (T9 on the core, prototypes/sched.c): KICK hits on steps 1 5 9 13 of the DRUM track's next pass, a
  *      mark and ANALOG's CUT one pass later: each applied in the block its step starts in (that step's own event), the
  *      kicks heard there (the low band's onsets) and nowhere else, the CUT set from there.
@@ -66,6 +67,9 @@ static void test_steps(const fel_test_t *x)
     static fel_test_entry_t ent[4096];
     fel_snapshot_t s;
     uint32_t off, nent, matched = 0, bad = 0, landed = 0, i, j, k, chunks = 24u * FEL_RATE / 512u;
+    uint32_t pairs = 0, pairs_bad = 0, swung = 0, last_step[FEL_TRACKS] = {99, 99, 99, 99};
+    double last_len[FEL_TRACKS] = {0};
+    static const double BASE[FEL_TRACKS] = {0.25, 1.0 / 3.0, 1.0, 0.25};   /* FEL_TEST_LOCATE: 1/16, 1/8T, 1/4, 1/16 */
     static uint8_t used[4096];
     double origin;
     c->boot();
@@ -100,6 +104,17 @@ static void test_steps(const fel_test_t *x)
         for (i = 0; i < nev; i++) {                     /* every step worked out: entered, in its block */
             if (evs[i].kind != FEL_EV_STEP)
                 continue;
+            {                                           /* (its length: a swung pair makes two DIVs) */
+                uint32_t t = evs[i].track;
+                if (evs[i].step % 2u && evs[i].step == last_step[t] + 1u) {
+                    pairs++;
+                    pairs_bad += fabs(last_len[t] + evs[i].length - 2.0 * BASE[t]) > 2e-3 * BASE[t];   /* (the swing is
+                                                         * whole samples of the step's tempo: the tween moves it) */
+                    swung += last_len[t] > BASE[t] + 1e-6;
+                }
+                last_step[t] = evs[i].step;
+                last_len[t] = evs[i].length;
+            }
             for (j = 0; j < nent; j++)
                 if (!used[j] && ent[j].track == evs[i].track && ent[j].step == evs[i].step &&
                     ent[j].frame == (uint32_t)evs[i].frame + off)
@@ -127,6 +142,10 @@ static void test_steps(const fel_test_t *x)
     printf("A  %u steps entered in 24 s (tempo tweened, a pause, a locate), %u worked out ahead exactly; the "
            "locate's landing on %u tracks\n", matched + bad, matched, landed);
     CHECK(matched > 400 && bad == 0, "every step worked out ahead is the step entered, in its block (%u wrong)", bad);
+    printf("A  step lengths: %u of %u swung pairs (a long step and its short one) make two of their DIV's (within "
+           "0.1 %%), %u longer than unswung\n", pairs - pairs_bad, pairs, swung);
+    CHECK(pairs > 150 && pairs_bad == 0 && swung == pairs, "each swung pair two DIVs long, its first step the longer (%u "
+          "wrong of %u)", pairs_bad, pairs);
     drive_bpm = 120;
 }
 
@@ -162,6 +181,9 @@ static void test_knock(const fel_test_t *x)
     nev = 0;
     a0 = s.frames;
     run(c, n, audio);
+    for (i = 0, k = 0; i < nev; i++)
+        k += evs[i].kind == FEL_EV_STEP && evs[i].length != 0.25;
+    CHECK(k == 0, "unswung 1/16: every step 0.25 beats long (%u not)", k);
     for (i = 0; i < 4; i++) {
         const fel_event_t *e = find(FEL_EV_ACTION, 100 + i), *st = step_ev(3, i * 4, L + 1);
         CHECK(e && st && e->track == 3 && e->step == i * 4 && e->loop == L + 1 && e->frame == st->frame,

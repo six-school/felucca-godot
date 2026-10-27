@@ -337,6 +337,9 @@ void FeluccaPart::_bind_methods() {
 													  PROPERTY_USAGE_NONE, #m_class),                      \
 			"", "get_" #m_access);
 	FELUCCA_ENGINE_VIEWS(FELUCCA_BIND_VIEW)
+	// (M6, DESIGN.md §5.2) each step the part starts, each pass, when heard; 1-based
+	ADD_SIGNAL(MethodInfo("on_step", PropertyInfo(Variant::INT, "step"), PropertyInfo(Variant::INT, "loop")));
+	ADD_SIGNAL(MethodInfo("on_loop", PropertyInfo(Variant::INT, "loop")));
 }
 
 void FeluccaPart::_set_value(int p_id, int32_t p_value) {

@@ -243,7 +243,8 @@ passed when resolved (after a FOLLOW resume, a binding, a bar gone by) follows t
 occurrence (the default: on the grid), drop, or now. `cancel(id)`; `cut()` and `stop()` clear them. `events(out,
 max)` drains what happened, each stamped with the frame it sounds on (`render()`'s count) and the conductor's
 timeline there: an action applied (its id) or dropped, and (part 3) each track's steps and passes and the beat.
-Fixed tables (64 actions, 256 events an instance): nothing allocates.
+Fixed tables (64 actions, 256 events an instance): nothing allocates. ABI 7 (M6 part 3): a step event carries the
+step's length in beats (its DIV's, swung: base × the step's samples / the unswung step's), for the snapshot's progress.
 
 As built (M6 part 1, `core/board.c`, ABI 6): `fel_when_t` (`FEL_AT_STEP` track, step, `loops`; `FEL_AT_BEATS`
 beats, `every`; `late`), `fel_action_t` (`FEL_DO_MARK`, `_HIT` lane and velocity, `_NOTE` note, velocity and steps,
@@ -338,29 +339,47 @@ Conventions: steps **1-based** in the API (as on the device), 0-based inside; ra
 optional normalized floats. `FeluccaOverrides`: a resource of typed `(part, Param, value)` entries (inspector dropdowns
 from the generated enums) plus shortcuts such as `mute`.
 
-Planned (M6; the user's decisions, 2026-10-26):
-- `schedule(when: FeluccaWhen, action: FeluccaAction, tag := &"") -> FeluccaSchedule` on a source, **playing only**
-  (an error otherwise, and null); `cancel(tag)` cancels every pending action with that tag; `stop()` cancels them all.
-  The source keeps its pending actions (main thread): they go to its instance under the lock and again on a binding,
-  as what scripts set does; a `set` that has applied becomes a value its scripts set (a later binding keeps it).
+M6 (the user's decisions, 2026-10-26 and -27; the names as revised in part 3). **Heard time is the default** for
+everything a script reads or hears: signals when heard, the playhead and the snapshot as heard; the rendered ones are
+hidden (`_get_rendered_playhead()`, `_get_rendered_snapshot()`: tests, debugging). Every count is 1-based (steps,
+loops, bars, beats).
+- A source's `schedule(when: FeluccaWhen, action: FeluccaAction, callback := Callable()) -> FeluccaSchedule` and
+  `schedule_with_tag(when, action, tag, callback := Callable())` (GDScript has no keyword arguments: no placeholder
+  for the common case; the handle's `tag` is read-only), on a **playing** source only (an error otherwise, and null);
+  `cancel(tag)` cancels every pending action with that tag (a lambda cannot be a key: each call makes a new one);
+  `stop()` cancels them all. The source keeps its pending actions (main thread): they go to its instance under the
+  lock and again on a binding; a `set_param` that has applied becomes a value its scripts set.
 - `FeluccaWhen`: `next_step(part, step)` (the next time the part reaches it), `next_loop(part, step)` (in the part's
   next pass), `loops_ahead(part, n, step)`, `next_bar(beat := 1)` (the conductor's bars, 4 beats from its 0, as
-  `QUANTIZE_BAR`'s); a late policy on it: `LATE_NEXT` (the default: the next occurrence, on the grid), `LATE_DROP`,
-  `LATE_NOW`.
-- `FeluccaAction`: `hit(part, lane)` (`FeluccaPart.Lane`: the DRUM lanes KICK .. BELL, generated), `note(part, note,
-  velocity, steps)`, `set(part, param, value)` (`FeluccaPart.Param`), `mark()`, `pattern(part, FeluccaPattern)`.
-- Signals of a source: **`scheduled(tag: StringName, event: FeluccaEvent)`**, once an action, *when heard* (§6.3), in
-  heard order; a dropped action (`LATE_DROP`) emits at once with `event.dropped`; a cancelled one (`cancel`, `stop()`,
-  the node freed) emits nothing. `FeluccaEvent` (read-only): `tag`, `action` (the object scheduled), `part`, `step`
-  (1-based), `loop` (the part's pass since step 1), `beats` (the conductor's timeline), `late_by` (seconds), `dropped`.
-  `FeluccaSchedule` (what `schedule()` returns) has its own `heard(event)` signal, for `await
-  source.schedule(...).heard` (a cancelled one never emits). **`bound()`** / **`unbound()`**: the source got / lost
-  an instance, emitted after the frame's binding pass (a handler may play, stop or free sources); state changes, not
-  musical events: not held until heard; every `bound` has one `unbound` unless the node is freed. Part 3: `step`,
-  `loop`, `beat` signals when heard (emitted only when connected) and a heard-time snapshot.
+  `QUANTIZE_BAR`'s); a late policy on each: `LATE_NEXT` (the default: the next occurrence, on the grid), `LATE_DROP`,
+  `LATE_NOW`. (Nothing can be scheduled into audio already rendered: a target within the last few tens of ms before
+  it, as heard, may resolve to its next occurrence.)
+- `FeluccaAction`: `hit(part, lane)` (`FeluccaPart.Lane`), `note(part, note, velocity, steps)`, `set_param(part,
+  param, value)`, `mark()`, `pattern(part, FeluccaPattern)` (part 4).
+- An action, when heard (§6.3): its **callback** (called with the `FeluccaEvent`; skipped when its object is gone),
+  then its handle's **`triggered(event)`** (`await source.schedule(...).triggered`), then the source's catch-all
+  **`schedule_triggered(tag, event)`** (debugging, tests). A dropped action (`LATE_DROP`, or a step past LEN) arrives
+  at once with `event.dropped`; a cancelled one (`cancel`, the handle's `cancel()`, `stop()`, the node freed) never.
+  `FeluccaEvent` (read-only): `tag`, `action` (the object scheduled), `part`, `step`, `loop`, `playhead` (the
+  conductor's, where it happened), `late_by` (seconds since heard), `dropped`.
+- Musical moments, when heard (the user's names: `on_<thing>`, plain to read for events that repeat, the style
+  guide's past tense set aside): the conductor's **`on_beat(bar, beat)`**, a part's **`on_step(step, loop)`** and
+  **`on_loop(loop)`** (a shortcut for step 1). At one moment: `on_beat`, a part's `on_loop`, its `on_step`, then an
+  action's callback, `triggered`, `schedule_triggered`.
+- **`bound()`** / **`unbound()`**: the source got / lost an instance, emitted after the frame's binding pass (a
+  handler may play, stop or free sources); state changes, not musical events: not held until heard; every `bound` has
+  one `unbound` unless the node is freed.
+- The conductor's **`playhead`** (the timeline as heard, in beats: continuous, never back; it stands while stopped or
+  paused, and never resets), **`bar`** and **`beat`** (its counter: 4-beat bars from 0, beat 1 .. 4). A source's
+  **`get_snapshot()`**, as heard: `playhead` (beats since its step 1), `origin`, each part's `steps`, `loops` and
+  `progress` (0 .. 1 into the step). Test diagnostics hidden too (`_get_booted_count()`, `_get_mix_steps()`,
+  `_get_paused_mix_steps()`): a leading `_` keeps a method out of the class reference and GDScript's completion
+  (Godot 4.7.2's sources), callable all the same; the snapshot's rendered fields (`frames`, `slot`, `positions`) are
+  `PROPERTY_USAGE_INTERNAL`, hidden likewise.
 - `pinned` (bool): see §7.
 
-As built (M6 part 2, `extension/src/felucca_schedule.*`, `felucca_conductor.cpp`): as planned, with these names:
+As built (M6 part 2, `extension/src/felucca_schedule.*`, `felucca_conductor.cpp`; part 3 renamed a few of its names, as
+above): as planned, with these names:
 `FeluccaWhen.next_step / next_loop / loops_ahead(part, loops, step) / next_bar(beat := 1)`, each with an optional
 `late` (`FeluccaWhen.Late`: `LATE_NEXT`, `LATE_DROP`, `LATE_NOW`; also a property); `FeluccaAction.hit(part, lane,
 velocity := 100)`, `note(part, note, velocity := 100, steps := 1)`, **`set_param(part, param, value)`** (not `set`:
@@ -378,6 +397,21 @@ apart (0.5 s due: the Dummy driver mixes ~2 % slow, T12); next_step this pass / 
 beat; cancel(tag), a handle's cancel(), stop(): nothing heard; a FOLLOW resume past three targets: DROP dropped at
 once, NOW on the first step after, NEXT on step 5 a pass later; set_param applied when heard and kept for the next
 binding.
+
+As built (M6 part 3): the conductor's heard playhead (`FeluccaConductor::heard_locked`): the newest mix step whose start
+has been heard (§6.3), and the way into it, never lower than the last answer; `bar` and `beat` count it. `on_beat`:
+each whole beat the heard playhead has reached, the first once it has moved off 0. The core's step events (every
+step a track enters, with its length in beats: ABI 7) go, with their heard times, to the playback's steps ahead; the
+frame's `deliver` moves the ones heard into each part's step as heard and emits `on_loop` / `on_step` while the part's
+object exists (`part_n` asked for: nothing can listen to one that has not). The snapshot: the heard playhead less the
+origin; each part's step as heard (and any step ahead heard since the last frame), `progress` = (heard playhead − the
+step's start) / its length, below 1. The callback: a `Callable` kept with the pending action, called if still valid.
+*Measured* (`m6_test`, 44.1 and 48 kHz): the playhead never back over 60 frames, behind the rendered one by 0.17–0.19
+beats at most (the Dummy driver's bursts, ~95 ms at 120 BPM); bar / beat its counter; `on_beat` 8–9 beats, each
+once, in order, 0.504–0.511 s apart; `on_step` 34–35 steps of part 4, 1 to 16 and round, the loop counted on step 1,
+0.125 s apart; `on_loop` on each step 1; the snapshot read in `on_step`: that step and loop, every time; its
+progress rising frame by frame; at one moment `on_step`, the callback, `triggered`, `schedule_triggered`;
+`schedule_with_tag`'s tag on the handle and the event; a callable whose object was freed: skipped, no error.
 
 ## 6. Timing
 

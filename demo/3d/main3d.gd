@@ -27,13 +27,13 @@ func _ready() -> void:
 func _report() -> void:
 	var a := cellar.get_snapshot()
 	var b := hallway.get_snapshot()
-	print("B %8.3f beats at %6.2f BPM | cellar %s | hallway %s" % [FeluccaConductor.beats, FeluccaConductor.tempo,
+	print("B %8.3f beats at %6.2f BPM | cellar %s | hallway %s" % [FeluccaConductor.playhead, FeluccaConductor.tempo,
 		_steps(a), _steps(b)])
 
 func _steps(s: FeluccaSnapshot) -> String:
 	if not s.bound:
 		return "unbound"
-	return " ".join(Array(s.steps).map(func(step: int) -> String: return "%2d" % (step + 1)))
+	return " ".join(Array(s.steps).map(func(step: int) -> String: return "%2d" % step))
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e.is_action_pressed("ui_accept"):

@@ -13,6 +13,7 @@
 #include <godot_cpp/classes/audio_stream.hpp>
 #include <godot_cpp/classes/audio_stream_playback.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 
 #include <atomic>
@@ -20,8 +21,9 @@
 
 namespace godot {
 
-// where a source's instance is (FeluccaSource.get_snapshot), typed. As rendered: up to a half (128 frames) ahead of what
-// has been heard (DESIGN.md §13.12)
+// where a source's music is (FeluccaSource.get_snapshot), as heard: the conductor's playhead as heard (§6.3), the
+// parts' steps as their starts have been heard. The hidden _get_rendered_snapshot gives the instance's own, as rendered
+// (tests, debugging: up to a mix step and the output latency ahead), with the internal fields too
 class FeluccaSnapshot : public RefCounted {
 	GDCLASS(FeluccaSnapshot, RefCounted);
 
@@ -30,19 +32,22 @@ protected:
 
 public:
 	bool bound = false, playing = false;
-	double beats = 0.0, origin = 0.0; // beats since step 1; the conductor's timeline at step 1
-	int64_t frames = 0, slot = -1;
-	PackedInt32Array steps, positions, loops; // each part's step (0-based), samples into it, passes through its LEN
+	double playhead = 0.0, origin = 0.0; // beats since its step 1; the conductor's playhead at its step 1
+	PackedInt32Array steps, loops; // each part's step and pass, 1-based (unbound: none)
+	PackedFloat32Array progress; // each part's way into its step, 0 .. 1
+	int64_t frames = 0, slot = -1; // (internal, rendered: frames render() returned, the pool's copy)
+	PackedInt32Array positions; // (internal, rendered: samples into each step)
 
 	bool is_bound() const { return bound; }
 	bool is_playing() const { return playing; }
-	double get_beats() const { return beats; }
+	double get_playhead() const { return playhead; }
 	double get_origin() const { return origin; }
+	PackedInt32Array get_steps() const { return steps; }
+	PackedInt32Array get_loops() const { return loops; }
+	PackedFloat32Array get_progress() const { return progress; }
 	int64_t get_frames() const { return frames; }
 	int64_t get_slot() const { return slot; }
-	PackedInt32Array get_steps() const { return steps; }
 	PackedInt32Array get_positions() const { return positions; }
-	PackedInt32Array get_loops() const { return loops; }
 };
 
 class FeluccaStream : public AudioStream {
@@ -105,6 +110,20 @@ public:
 	uint64_t seq = 0; // the order of the play()s (the first come binds first while copies are free)
 	bool refused = false; // its project did not import: it never binds
 	int pins = 0; // its actions pending (scheduled, not heard yet): it keeps an instance (DESIGN.md §7)
+	bool timed = false; // its play() resolved to an origin
+	// each part's step as heard (1-based, 0 none yet), its start on the conductor's timeline and its length in beats;
+	// the steps rendered, still to be heard (the conductor's: heard snapshot, on_step / on_loop)
+	struct PartHeard {
+		int32_t step = 0, loop = 0;
+		double start = 0.0, length = 0.0;
+	};
+	struct StepAhead {
+		int32_t track, step, loop; // (1-based)
+		double start, length;
+		int64_t heard_us;
+	};
+	PartHeard heard_parts[FEL_TRACKS];
+	std::vector<StepAhead> ahead;
 	// published under the lock (main thread), read by _mix (audio thread)
 	const fel_core_t *core = nullptr;
 	bool fresh = false; // bound since the last mix: the copy joins the music (locate) and fades in, in the next one
@@ -138,7 +157,7 @@ public:
 	// main thread: evicted (DESIGN.md §7): its copy fades out over the next mix step; the conductor's pass unbinds it
 	// once that is done
 	void leave();
-	Ref<FeluccaSnapshot> snapshot() const; // the instance's (main thread: takes the lock)
+	Ref<FeluccaSnapshot> rendered_snapshot() const; // the instance's, as rendered (main thread: takes the lock)
 	void take_events(std::vector<FelHeard> &r_out); // main thread, under the lock: the ring's, in order
 };
 

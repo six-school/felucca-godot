@@ -10,9 +10,9 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 6                  /* bump on any change to this file (2: locate, the passes in the snapshot;
+#define FEL_CORE_ABI 7                  /* bump on any change to this file (2: locate, the passes in the snapshot;
                                          * 3: project_info, engine_name; 4: project_info's values; 5: cut;
-                                         * 6: schedule, cancel, events) */
+                                         * 6: schedule, cancel, events; 7: a step event's length) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
@@ -80,6 +80,7 @@ typedef struct {
     uint64_t frame;                     /* the first frame of the block it sounds in (render()'s count, as the snapshot's
                                          * frames) */
     double beats;                       /* the conductor's timeline there */
+    double length;                      /* STEP: the step's length in beats (its DIV's, swung), as it starts */
 } fel_event_t;
 
 typedef struct {

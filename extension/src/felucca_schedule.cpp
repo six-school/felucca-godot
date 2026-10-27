@@ -134,7 +134,7 @@ void FeluccaEvent::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_part"), &FeluccaEvent::get_part);
 	ClassDB::bind_method(D_METHOD("get_step"), &FeluccaEvent::get_step);
 	ClassDB::bind_method(D_METHOD("get_loop"), &FeluccaEvent::get_loop);
-	ClassDB::bind_method(D_METHOD("get_beats"), &FeluccaEvent::get_beats);
+	ClassDB::bind_method(D_METHOD("get_playhead"), &FeluccaEvent::get_playhead);
 	ClassDB::bind_method(D_METHOD("get_late_by"), &FeluccaEvent::get_late_by);
 	ClassDB::bind_method(D_METHOD("is_dropped"), &FeluccaEvent::is_dropped);
 	const uint32_t ro = PROPERTY_USAGE_NONE;
@@ -143,7 +143,7 @@ void FeluccaEvent::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "part", PROPERTY_HINT_NONE, "", ro), "", "get_part");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "step", PROPERTY_HINT_NONE, "", ro), "", "get_step");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "loop", PROPERTY_HINT_NONE, "", ro), "", "get_loop");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beats", PROPERTY_HINT_NONE, "", ro), "", "get_beats");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "playhead", PROPERTY_HINT_NONE, "", ro), "", "get_playhead");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "late_by", PROPERTY_HINT_NONE, "", ro), "", "get_late_by");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "dropped", PROPERTY_HINT_NONE, "", ro), "", "is_dropped");
 }
@@ -160,7 +160,7 @@ void FeluccaSchedule::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("cancel"), &FeluccaSchedule::cancel);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "tag", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_tag");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "pending", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "is_pending");
-	ADD_SIGNAL(MethodInfo("heard", PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "FeluccaEvent")));
+	ADD_SIGNAL(MethodInfo("triggered", PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "FeluccaEvent")));
 }
 
 } // namespace godot

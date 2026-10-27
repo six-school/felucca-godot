@@ -116,12 +116,23 @@ PackedStringArray FelSource::warnings(const Node *p_owner) const {
 
 Ref<FeluccaSnapshot> FelSource::snapshot(Node *p_owner) const {
 	FeluccaPlayback *p = playback_of(p_owner);
+	FeluccaConductor *c = FeluccaConductor::get_singleton();
+	if (!p || !c) {
+		Ref<FeluccaSnapshot> s;
+		s.instantiate();
+		return s;
+	}
+	return c->heard_snapshot(p);
+}
+
+Ref<FeluccaSnapshot> FelSource::rendered_snapshot(Node *p_owner) const {
+	FeluccaPlayback *p = playback_of(p_owner);
 	if (!p) {
 		Ref<FeluccaSnapshot> s;
 		s.instantiate();
 		return s;
 	}
-	return p->snapshot();
+	return p->rendered_snapshot();
 }
 
 bool FelSource::bound(Node *p_owner) const {
@@ -135,14 +146,14 @@ FeluccaPlayback *FelSource::playing(Node *p_owner) {
 }
 
 Ref<FeluccaSchedule> FelSource::schedule(Node *p_owner, const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action,
-		const StringName &p_tag) {
+		const StringName &p_tag, const Callable &p_callback) {
 	FeluccaConductor *c = FeluccaConductor::get_singleton();
 	FeluccaPlayback *p = playing(p_owner);
 	if (!p || !c) {
 		UtilityFunctions::push_error(p_owner->get_name(), ": schedule() on a source that is not playing.");
 		return Ref<FeluccaSchedule>();
 	}
-	return c->schedule(p_owner, p, p_when, p_action, p_tag);
+	return c->schedule(p_owner, p, p_when, p_action, p_tag, p_callback);
 }
 
 void FelSource::cancel(Node *p_owner, const StringName &p_tag) {
@@ -188,10 +199,13 @@ void FelSource::bind() {
 	ClassDB::bind_method(D_METHOD("get_join"), &T::get_join);
 	ClassDB::bind_method(D_METHOD("is_bound"), &T::is_bound);
 	ClassDB::bind_method(D_METHOD("get_snapshot"), &T::get_snapshot); // (not get_position: Node2D / 3D's position's)
+	ClassDB::bind_method(D_METHOD("_get_rendered_snapshot"), &T::_get_rendered_snapshot);
 	ClassDB::bind_method(D_METHOD("set_overrides", "overrides"), &T::set_overrides);
 	ClassDB::bind_method(D_METHOD("get_overrides"), &T::get_overrides);
 	ClassDB::bind_method(D_METHOD("_on_overrides_changed"), &T::_on_overrides_changed);
-	ClassDB::bind_method(D_METHOD("schedule", "when", "action", "tag"), &T::schedule, DEFVAL(StringName()));
+	ClassDB::bind_method(D_METHOD("schedule", "when", "action", "callback"), &T::schedule, DEFVAL(Callable()));
+	ClassDB::bind_method(D_METHOD("schedule_with_tag", "when", "action", "tag", "callback"), &T::schedule_with_tag,
+			DEFVAL(Callable()));
 	ClassDB::bind_method(D_METHOD("cancel", "tag"), &T::cancel);
 	ClassDB::bind_method(D_METHOD("set_pinned", "pinned"), &T::set_pinned);
 	ClassDB::bind_method(D_METHOD("is_pinned"), &T::is_pinned);
@@ -221,8 +235,9 @@ void FelSource::bind() {
 			"get_quantize");
 	ClassDB::add_property(c, PropertyInfo(Variant::INT, "join", PROPERTY_HINT_ENUM, "Follow,Hold"), "set_join", "get_join");
 	ClassDB::add_property(c, PropertyInfo(Variant::BOOL, "pinned"), "set_pinned", "is_pinned");
-	// (M6, DESIGN.md §5.2) an action, when heard; the source got / lost an instance
-	ClassDB::add_signal(c, MethodInfo("scheduled", PropertyInfo(Variant::STRING_NAME, "tag"),
+	// (M6, DESIGN.md §5.2) an action, when heard (every one: the callbacks' and handles' too); the source got / lost an
+	// instance
+	ClassDB::add_signal(c, MethodInfo("schedule_triggered", PropertyInfo(Variant::STRING_NAME, "tag"),
 								   PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "FeluccaEvent")));
 	ClassDB::add_signal(c, MethodInfo("bound"));
 	ClassDB::add_signal(c, MethodInfo("unbound"));

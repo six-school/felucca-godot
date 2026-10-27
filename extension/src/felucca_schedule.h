@@ -64,8 +64,8 @@ protected:
 public:
 	StringName tag;
 	Ref<FeluccaAction> action;
-	int part = 0, step = 0, loop = 0; // part 1 .. 4 (0: none, a mark on a bar), step 1-based, loop the part's pass
-	double beats = 0.0, late_by = 0.0; // the conductor's timeline there; seconds since it was heard
+	int part = 0, step = 0, loop = 0; // part 1 .. 4 (0: none, a mark on a bar), step and the part's pass, 1-based
+	double playhead = 0.0, late_by = 0.0; // the conductor's playhead there; seconds since it was heard
 	bool dropped = false;
 
 	StringName get_tag() const { return tag; }
@@ -73,12 +73,12 @@ public:
 	int get_part() const { return part; }
 	int get_step() const { return step; }
 	int get_loop() const { return loop; }
-	double get_beats() const { return beats; }
+	double get_playhead() const { return playhead; }
 	double get_late_by() const { return late_by; }
 	bool is_dropped() const { return dropped; }
 };
 
-// one scheduled action: heard(event) when it is (or dropped); never when cancelled
+// one scheduled action: triggered(event) when it is heard (or dropped); never when cancelled
 class FeluccaSchedule : public RefCounted {
 	GDCLASS(FeluccaSchedule, RefCounted);
 

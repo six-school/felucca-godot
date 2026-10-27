@@ -24,6 +24,7 @@ class Viewport;
 class FeluccaWhen;
 class FeluccaAction;
 class FeluccaSchedule;
+class FeluccaSnapshot;
 struct FelHeard;
 
 class FeluccaConductor : public Object {
@@ -57,6 +58,7 @@ class FeluccaConductor : public Object {
 		StringName tag;
 		Ref<FeluccaAction> action;
 		Ref<FeluccaSchedule> handle;
+		Callable callback; // (none: invalid)
 		fel_when_t when; // as the instance takes it (next_bar's beats resolved when scheduled)
 		int part; // the event's (1 .. 4, 0 none)
 		bool applied = false; // in the instance: its event is on its way to being heard
@@ -77,7 +79,12 @@ class FeluccaConductor : public Object {
 	uint32_t next_id = 0;
 	double latency = 0.0; // AudioServer's output latency, seconds (asked once a second: it can be slow)
 	int64_t latency_at = INT64_MIN, paused_at = 0;
+	double heard_last = 0.0; // the playhead as heard, last worked out (it never goes back)
+	int64_t last_beat = -1; // the last whole beat on_beat said
 	void forget(size_t p_index); // a pending action gone (its playback's pin with it)
+	void refresh_latency(int64_t p_now);
+	double heard_locked(int64_t p_now); // the playhead as heard at p_now (under the lock)
+	int64_t heard_at_locked(double p_beats, int64_t p_now); // when a value of the timeline is heard (under the lock)
 	const Ear *ear(Viewport *p_viewport);
 	double reach(Node *p_node, bool &r_paused);
 
@@ -94,11 +101,14 @@ public:
 	void play(); // the conductor's timeline moves
 	void stop(); // the conductor's timeline stands (the sources stay where they are)
 	bool is_running() const;
-	double get_beats() const; // the conductor's timeline where the next mix step starts
+	double get_playhead(); // the conductor's timeline as heard, in beats: continuous, it never goes back
+	int get_bar(); // .. its 4-beat bars from 0, 1-based
+	int get_beat(); // .. its beat in the bar, 1 .. 4
+	double get_rendered_playhead() const; // (hidden) the conductor's timeline where the next mix step starts
 	int get_pool_size() const;
 	void boot_pool(); // boot every pool instance now (the Felucca autoload does it when the game starts)
 	int get_bound_count() const;
-	int get_booted_count() const;
+	int get_booted_count() const; // (these three hidden: the tests')
 	int64_t get_mix_steps() const;
 	int64_t get_paused_mix_steps() const;
 
@@ -114,7 +124,8 @@ public:
 	// M6: FelSource's schedule / cancel; a playback's, binding (its actions into the instance, before it is mixed),
 	// its instance coming or going; FeluccaSchedule.cancel
 	Ref<FeluccaSchedule> schedule(Node *p_source, FeluccaPlayback *p_playback, const Ref<FeluccaWhen> &p_when,
-			const Ref<FeluccaAction> &p_action, const StringName &p_tag);
+			const Ref<FeluccaAction> &p_action, const StringName &p_tag, const Callable &p_callback);
+	Ref<FeluccaSnapshot> heard_snapshot(FeluccaPlayback *p_playback); // FeluccaSource.get_snapshot
 	void cancel_tag(Node *p_source, const StringName &p_tag);
 	void cancel_id(uint32_t p_id);
 	void send_pending(FeluccaPlayback *p_playback, const fel_core_t *p_core);

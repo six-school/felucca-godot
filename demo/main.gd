@@ -1,11 +1,14 @@
 # The demo: the user's own project ("SOLAR SIGNAL", made on an FM-1, Felucca 1.6.1) in two sources, the cellar on the
 # left and the hallway on the right, at the project's own tempo; the tempo eases to 80 BPM and back. Space pauses the
-# game (and all of its music, at once); headless, it prints where both sources are.
+# game (and all of its music, at once); headless, it prints where both sources are. Each source is drawn with its range
+# and a ring: green while it has an engine, orange in range without one, grey playing out of range, dark stopped; its
+# squares pulse on each pass of its drum part (part 4's on_loop: on 16 steps of 1/16, a bar).
 extends Node2D
 
 @onready var cellar: FeluccaSource2D = $Cellar
 #@onready var upstairs: FeluccaSource2D = $Upstairs
 @onready var hallway: FeluccaSource2D = $Hallway
+var sources: Array[FeluccaSource2D] = []
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -24,24 +27,63 @@ func _ready() -> void:
 	timer.autostart = true
 	timer.timeout.connect(_report)
 	add_child(timer)
+	for c in get_children():
+		if c is FeluccaSource2D:
+			sources.append(c)
+			_pulse_on_loops(c)
+
+# each pass of the source's drum part, as heard: its squares grow, then ease back
+func _pulse_on_loops(s: FeluccaSource2D) -> void:
+	var rects: Array[ColorRect] = []
+	for c in s.get_children():
+		if c is ColorRect:
+			rects.append(c)
+	s.part_4.on_loop.connect(func(_loop: int) -> void:
+		for r: ColorRect in rects:
+			r.pivot_offset = r.size / 2.0
+			r.scale = Vector2(1.6, 1.6)
+			create_tween().tween_property(r, "scale", Vector2.ONE, 0.4))
 
 func _report() -> void:
 	var a := cellar.get_snapshot()
 	var b := hallway.get_snapshot()
-	print("B %8.3f beats at %6.2f BPM | cellar %s | hallway %s" % [FeluccaConductor.beats, FeluccaConductor.tempo,
+	print("B %8.3f beats at %6.2f BPM | cellar %s | hallway %s" % [FeluccaConductor.playhead, FeluccaConductor.tempo,
 		_steps(a), _steps(b)])
 
 func _steps(s: FeluccaSnapshot) -> String:
 	if not s.bound:
 		return "unbound"
-	return " ".join(Array(s.steps).map(func(step: int) -> String: return "%2d" % (step + 1)))
+	return " ".join(Array(s.steps).map(func(step: int) -> String: return "%2d" % step))
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e.is_action_pressed("ui_accept"):
 		get_tree().paused = not get_tree().paused
 		queue_redraw()
-		
+
+func _process(_delta: float) -> void:
+	queue_redraw()
+
+# the listener, as Godot's 2D players find it without an AudioListener2D: the screen's centre (the camera)
+func _ear() -> Vector2:
+	var vp := get_viewport()
+	return (vp.global_canvas_transform * vp.canvas_transform).affine_inverse() * (vp.get_visible_rect().size * 0.5)
+
+func _in_range(s: FeluccaSource2D, at: Vector2) -> bool:
+	return s.playing and not s.stream_paused and s.global_position.distance_to(at) <= s.max_distance
+
 func _draw():
+	var at := _ear()
+	for s in sources:
+		var c := Color(0.25, 0.25, 0.25)
+		if s.is_bound():
+			c = Color.LIME_GREEN
+		elif _in_range(s, at):
+			c = Color.ORANGE
+		elif s.playing:
+			c = Color.GRAY
+		draw_arc(s.position, s.max_distance, 0.0, TAU, 128, Color(c, 0.25), 2.0)
+		draw_arc(s.position, 30.0, 0.0, TAU, 32, c, 4.0)
+		draw_string(ThemeDB.fallback_font, s.position + Vector2(38, 8), s.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, c)
 	if get_tree().paused:
 		draw_string(
 			ThemeDB.fallback_font,

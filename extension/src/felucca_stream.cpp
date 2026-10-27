@@ -94,6 +94,10 @@ bool FeluccaPlayback::bind(int p_slot) {
 		fc->send_pending(this, c); // .. and its actions still to apply
 	}
 	slot = p_slot;
+	for (PartHeard &h : heard_parts) {
+		h = PartHeard(); // (its steps as heard: from this instance's)
+	}
+	ahead.clear();
 	AudioServer::get_singleton()->lock();
 	core = c;
 	fresh = true;
@@ -138,7 +142,7 @@ void FeluccaPlayback::keep_events() {
 	for (uint32_t n = 32; n == 32 && core;) {
 		n = core->events(e, 32);
 		for (uint32_t i = 0; i < n; i++) {
-			if (e[i].kind != FEL_EV_STEP && heard_w - heard_r < HEARD) { // (steps: not yet listened to)
+			if (heard_w - heard_r < HEARD) {
 				heard[heard_w++ % HEARD] = { e[i], step };
 			}
 		}
@@ -290,7 +294,7 @@ void FeluccaPlayback::render(AudioFrame *p_out, int32_t p_frames, double p_b0, d
 	}
 }
 
-Ref<FeluccaSnapshot> FeluccaPlayback::snapshot() const {
+Ref<FeluccaSnapshot> FeluccaPlayback::rendered_snapshot() const {
 	Ref<FeluccaSnapshot> r;
 	r.instantiate();
 	r->slot = slot;
@@ -304,12 +308,12 @@ Ref<FeluccaSnapshot> FeluccaPlayback::snapshot() const {
 	AudioServer::get_singleton()->unlock();
 	r->bound = true;
 	r->playing = s.playing != 0;
-	r->beats = s.beats;
+	r->playhead = s.beats;
 	r->frames = int64_t(s.frames);
 	for (int t = 0; t < FEL_TRACKS; t++) {
-		r->steps.push_back(int32_t(s.track[t].step));
+		r->steps.push_back(int32_t(s.track[t].step) + 1);
 		r->positions.push_back(int32_t(s.track[t].pos));
-		r->loops.push_back(int32_t(s.track[t].loop));
+		r->loops.push_back(int32_t(s.track[t].loop) + 1);
 	}
 	return r;
 }
@@ -317,23 +321,25 @@ Ref<FeluccaSnapshot> FeluccaPlayback::snapshot() const {
 void FeluccaSnapshot::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_bound"), &FeluccaSnapshot::is_bound);
 	ClassDB::bind_method(D_METHOD("is_playing"), &FeluccaSnapshot::is_playing);
-	ClassDB::bind_method(D_METHOD("get_beats"), &FeluccaSnapshot::get_beats);
+	ClassDB::bind_method(D_METHOD("get_playhead"), &FeluccaSnapshot::get_playhead);
 	ClassDB::bind_method(D_METHOD("get_origin"), &FeluccaSnapshot::get_origin);
-	ClassDB::bind_method(D_METHOD("get_frames"), &FeluccaSnapshot::get_frames);
-	ClassDB::bind_method(D_METHOD("get_slot"), &FeluccaSnapshot::get_slot);
 	ClassDB::bind_method(D_METHOD("get_steps"), &FeluccaSnapshot::get_steps);
-	ClassDB::bind_method(D_METHOD("get_positions"), &FeluccaSnapshot::get_positions);
 	ClassDB::bind_method(D_METHOD("get_loops"), &FeluccaSnapshot::get_loops);
-	const uint32_t ro = PROPERTY_USAGE_NONE;
+	ClassDB::bind_method(D_METHOD("get_progress"), &FeluccaSnapshot::get_progress);
+	ClassDB::bind_method(D_METHOD("_get_frames"), &FeluccaSnapshot::get_frames);
+	ClassDB::bind_method(D_METHOD("_get_slot"), &FeluccaSnapshot::get_slot);
+	ClassDB::bind_method(D_METHOD("_get_positions"), &FeluccaSnapshot::get_positions);
+	const uint32_t ro = PROPERTY_USAGE_NONE, hidden = PROPERTY_USAGE_INTERNAL; // (hidden: the docs, completion)
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bound", PROPERTY_HINT_NONE, "", ro), "", "is_bound");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "playing", PROPERTY_HINT_NONE, "", ro), "", "is_playing");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beats", PROPERTY_HINT_NONE, "", ro), "", "get_beats");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "playhead", PROPERTY_HINT_NONE, "", ro), "", "get_playhead");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "origin", PROPERTY_HINT_NONE, "", ro), "", "get_origin");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "frames", PROPERTY_HINT_NONE, "", ro), "", "get_frames");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "slot", PROPERTY_HINT_NONE, "", ro), "", "get_slot");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "steps", PROPERTY_HINT_NONE, "", ro), "", "get_steps");
-	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "positions", PROPERTY_HINT_NONE, "", ro), "", "get_positions");
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "loops", PROPERTY_HINT_NONE, "", ro), "", "get_loops");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "progress", PROPERTY_HINT_NONE, "", ro), "", "get_progress");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "frames", PROPERTY_HINT_NONE, "", hidden), "", "_get_frames");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "slot", PROPERTY_HINT_NONE, "", hidden), "", "_get_slot");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "positions", PROPERTY_HINT_NONE, "", hidden), "", "_get_positions");
 }
 
 } // namespace godot

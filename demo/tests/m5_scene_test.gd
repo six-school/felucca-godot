@@ -41,10 +41,10 @@ func bound_set() -> String:
 # where the source plays: where its origin puts it on the conductor's timeline (read in one mix step)
 func in_time(s: FeluccaSource2D) -> bool:
 	AudioServer.lock()
-	var p := s.get_snapshot()
-	var bt := FeluccaConductor.beats
+	var p := s._get_rendered_snapshot()
+	var bt := FeluccaConductor._get_rendered_playhead()
 	AudioServer.unlock()
-	return p.bound and p.playing and abs(p.beats - (bt - p.origin)) < 0.02
+	return p.bound and p.playing and abs(p.playhead - (bt - p.origin)) < 0.02
 
 # the sources in range of the listener (at: where it is now, by default), the nearest first
 func in_range(at := Vector2.INF) -> Array[FeluccaSource2D]:

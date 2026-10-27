@@ -45,17 +45,25 @@ void FeluccaConductor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("play"), &FeluccaConductor::play);
 	ClassDB::bind_method(D_METHOD("stop"), &FeluccaConductor::stop);
 	ClassDB::bind_method(D_METHOD("is_running"), &FeluccaConductor::is_running);
-	ClassDB::bind_method(D_METHOD("get_beats"), &FeluccaConductor::get_beats);
+	ClassDB::bind_method(D_METHOD("get_playhead"), &FeluccaConductor::get_playhead);
+	ClassDB::bind_method(D_METHOD("get_bar"), &FeluccaConductor::get_bar);
+	ClassDB::bind_method(D_METHOD("get_beat"), &FeluccaConductor::get_beat);
 	ClassDB::bind_method(D_METHOD("get_pool_size"), &FeluccaConductor::get_pool_size);
 	ClassDB::bind_method(D_METHOD("get_bound_count"), &FeluccaConductor::get_bound_count);
-	ClassDB::bind_method(D_METHOD("get_booted_count"), &FeluccaConductor::get_booted_count);
 	ClassDB::bind_method(D_METHOD("boot_pool"), &FeluccaConductor::boot_pool);
-	ClassDB::bind_method(D_METHOD("get_mix_steps"), &FeluccaConductor::get_mix_steps);
-	ClassDB::bind_method(D_METHOD("get_paused_mix_steps"), &FeluccaConductor::get_paused_mix_steps);
+	// (hidden: the tests' and debugging's; a leading _ keeps them out of the docs and completion)
+	ClassDB::bind_method(D_METHOD("_get_rendered_playhead"), &FeluccaConductor::get_rendered_playhead);
+	ClassDB::bind_method(D_METHOD("_get_booted_count"), &FeluccaConductor::get_booted_count);
+	ClassDB::bind_method(D_METHOD("_get_mix_steps"), &FeluccaConductor::get_mix_steps);
+	ClassDB::bind_method(D_METHOD("_get_paused_mix_steps"), &FeluccaConductor::get_paused_mix_steps);
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "tempo", PROPERTY_HINT_RANGE, "1,999,0.001,or_greater"), "set_tempo", "get_tempo");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "running", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "is_running");
-	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "beats", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_beats");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "playhead", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_playhead");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "bar", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_bar");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "beat", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_beat");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pool_size", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_pool_size");
+	// each whole beat of the playhead, when heard (DESIGN.md §5.2)
+	ADD_SIGNAL(MethodInfo("on_beat", PropertyInfo(Variant::INT, "bar"), PropertyInfo(Variant::INT, "beat")));
 }
 
 // main thread: a change the audio thread sees from the next mix step, for every instance at once
@@ -91,11 +99,75 @@ bool FeluccaConductor::is_running() const {
 	return felucca::Engine::get().running;
 }
 
-double FeluccaConductor::get_beats() const {
+double FeluccaConductor::get_rendered_playhead() const {
 	AudioServer::get_singleton()->lock();
 	double b = felucca::Engine::get().plan.b0;
 	AudioServer::get_singleton()->unlock();
 	return b;
+}
+
+double FeluccaConductor::get_playhead() {
+	const int64_t now = felucca::Engine::now_us();
+	refresh_latency(now);
+	AudioServer::get_singleton()->lock();
+	const double h = heard_locked(now);
+	AudioServer::get_singleton()->unlock();
+	return h;
+}
+
+int FeluccaConductor::get_bar() {
+	return int(std::floor(get_playhead() / 4.0)) + 1;
+}
+
+int FeluccaConductor::get_beat() {
+	return int(int64_t(std::floor(get_playhead())) % 4) + 1;
+}
+
+void FeluccaConductor::refresh_latency(int64_t p_now) {
+	if (p_now - latency_at > 1000000) {
+		latency = AudioServer::get_singleton()->get_output_latency();
+		latency_at = p_now;
+	}
+}
+
+// the timeline as heard at p_now (DESIGN.md §6.3): the newest mix step whose start has been heard (its time in
+// Engine::mixes plus the output latency), and the way into it; before any is, the oldest one's start. Never back (the
+// latency figure is asked again now and then)
+double FeluccaConductor::heard_locked(int64_t p_now) {
+	felucca::Engine &e = felucca::Engine::get();
+	const uint64_t k = e.steps.load(std::memory_order_relaxed);
+	const int64_t lat = int64_t(latency * 1e6);
+	double h = k ? heard_last : e.plan.b0;
+	for (uint64_t j = k; j-- > 0 && k - j < felucca::Engine::MIXES - 1;) {
+		const felucca::Engine::Mix &m = e.mixes[j % felucca::Engine::MIXES];
+		if (m.step != j) {
+			break;
+		}
+		h = m.b0;
+		if (p_now >= m.at_us + lat) {
+			const double f = std::min(double(p_now - m.at_us - lat) / (m.frames * 1e6 / e.mix_rate), 1.0);
+			h = m.b0 + f * (m.b1 - m.b0);
+			break;
+		}
+	}
+	heard_last = std::max(heard_last, h);
+	return heard_last;
+}
+
+// when the timeline's p_beats is heard: in the mix step whose stretch holds it (else p_now)
+int64_t FeluccaConductor::heard_at_locked(double p_beats, int64_t p_now) {
+	felucca::Engine &e = felucca::Engine::get();
+	const uint64_t k = e.steps.load(std::memory_order_relaxed);
+	for (uint64_t j = k; j-- > 0 && k - j < felucca::Engine::MIXES - 1;) {
+		const felucca::Engine::Mix &m = e.mixes[j % felucca::Engine::MIXES];
+		if (m.step != j || p_beats > m.b1) {
+			break;
+		}
+		if (p_beats >= m.b0 && m.b1 > m.b0) {
+			return m.at_us + int64_t((latency + (p_beats - m.b0) / (m.b1 - m.b0) * m.frames / e.mix_rate) * 1e6);
+		}
+	}
+	return p_now;
 }
 
 int FeluccaConductor::get_pool_size() const {
@@ -175,6 +247,7 @@ void FeluccaConductor::resolve_pending() {
 		double unit = p->quantize == FeluccaSource::QUANTIZE_BAR ? 4.0 : p->quantize == FeluccaSource::QUANTIZE_BEAT ? 1.0 : 0.0;
 		p->origin = unit > 0.0 ? std::ceil(b / unit - 1e-9) * unit : b;
 		p->armed = true;
+		p->timed = true;
 	}
 	AudioServer::get_singleton()->unlock();
 	pending.clear();
@@ -341,7 +414,7 @@ void FeluccaConductor::binding_pass() {
 // ---------------------------------------------------------------- scheduling (M6, DESIGN.md §5.2, §6.3) ---
 
 Ref<FeluccaSchedule> FeluccaConductor::schedule(Node *p_source, FeluccaPlayback *p_playback, const Ref<FeluccaWhen> &p_when,
-		const Ref<FeluccaAction> &p_action, const StringName &p_tag) {
+		const Ref<FeluccaAction> &p_action, const StringName &p_tag, const Callable &p_callback) {
 	const FelSource *f = FelSource::of(p_source);
 	if (p_when.is_null() || p_action.is_null()) {
 		UtilityFunctions::push_error(p_source->get_name(), ": schedule() needs a FeluccaWhen and a FeluccaAction.");
@@ -361,6 +434,7 @@ Ref<FeluccaSchedule> FeluccaConductor::schedule(Node *p_source, FeluccaPlayback 
 	x.source = ObjectID(p_source->get_instance_id());
 	x.tag = p_tag;
 	x.action = p_action;
+	x.callback = p_callback;
 	x.handle.instantiate();
 	x.handle->id = x.id;
 	x.handle->tag = p_tag;
@@ -436,11 +510,49 @@ void FeluccaConductor::forget_all() {
 	inbox.clear();
 }
 
+// a source's music as heard (FeluccaSource.get_snapshot): the playhead as heard, less its origin; each part's step as
+// its start was heard (the steps taken by the last deliver, and any of those still ahead heard since), its way into
+// it by the playhead against the step's start and length (exact unswung; swung, the step's own length)
+Ref<FeluccaSnapshot> FeluccaConductor::heard_snapshot(FeluccaPlayback *p_playback) {
+	Ref<FeluccaSnapshot> r;
+	r.instantiate();
+	const int64_t now = felucca::Engine::now_us();
+	refresh_latency(now);
+	AudioServer::get_singleton()->lock();
+	const double h = heard_locked(now), origin = p_playback->origin;
+	AudioServer::get_singleton()->unlock();
+	r->origin = origin;
+	r->playhead = p_playback->timed ? h - origin : 0.0;
+	r->bound = p_playback->is_bound();
+	if (!r->bound) {
+		return r;
+	}
+	FeluccaPlayback::PartHeard parts[FEL_TRACKS];
+	for (int t = 0; t < FEL_TRACKS; t++) {
+		parts[t] = p_playback->heard_parts[t];
+	}
+	for (const FeluccaPlayback::StepAhead &a : p_playback->ahead) {
+		if (a.heard_us <= now) {
+			parts[a.track] = { a.step, a.loop, a.start, a.length };
+		}
+	}
+	for (int t = 0; t < FEL_TRACKS; t++) {
+		const FeluccaPlayback::PartHeard &q = parts[t];
+		r->playing |= q.step > 0;
+		r->steps.push_back(q.step);
+		r->loops.push_back(q.loop);
+		r->progress.push_back(q.step > 0 && q.length > 0.0 ? float(CLAMP((h - q.start) / q.length, 0.0, 0.9999)) : 0.0f);
+	}
+	return r;
+}
+
 // once a frame, after the binding pass: bound / unbound; the actions of sources stopped (or played again) cancelled;
 // the playbacks' events taken (under the lock, once) and mapped to when they are heard: a mix step's start is heard
 // at its time (Engine::mixes) plus the output latency, an event in it by its place on the step's stretch of the
-// conductor's timeline; then the scheduled / heard signals of what has been heard, in that order (a dropped action:
-// at once)
+// conductor's timeline; then what has been heard by now, in that order (at one moment: the conductor's beat, a part's
+// loop, its step, an action): on_beat, a part's on_loop / on_step (while the part has been asked for: nothing can
+// listen to one that has not), an action's callback, its handle's triggered and its source's schedule_triggered (a
+// dropped action: at once)
 void FeluccaConductor::deliver() {
 	felucca::Engine &e = felucca::Engine::get();
 	const int64_t now = felucca::Engine::now_us();
@@ -485,10 +597,17 @@ void FeluccaConductor::deliver() {
 			AudioServer::get_singleton()->unlock();
 		}
 	}
-	if (now - latency_at > 1000000) {
-		latency = AudioServer::get_singleton()->get_output_latency();
-		latency_at = now;
-	}
+	enum { BEAT, LOOP, STEP, ACTION };
+	struct Emit {
+		int kind;
+		int64_t at;
+		ObjectID source; // (LOOP, STEP: the part's source)
+		int a = 0, b = 0, c = 0; // BEAT: bar, beat; LOOP, STEP: track, step, loop (1-based)
+		Pending x = {}; // ACTION
+		bool dropped = false;
+	};
+	std::vector<Emit> out;
+	refresh_latency(now);
 	AudioServer::get_singleton()->lock();
 	for (FeluccaPlayback *p : live) {
 		taken.clear();
@@ -512,13 +631,19 @@ void FeluccaConductor::deliver() {
 		const double at = m.b1 > m.b0 ? (in.e.beats - m.b0) / (m.b1 - m.b0) : 0.0;
 		in.heard_us = m.at_us + int64_t((latency + at * m.frames / e.mix_rate) * 1e6);
 	}
+	{ // the conductor's whole beats heard since (the first: once the playhead has moved off 0)
+		const double h = heard_locked(now);
+		const int64_t upto = h > 0.0 ? int64_t(std::floor(h)) : -1;
+		for (int64_t b = last_beat + 1; b <= upto; b++) {
+			Emit x = { BEAT, heard_at_locked(double(b), now), ObjectID() };
+			x.a = int(b / 4) + 1;
+			x.b = int(b % 4) + 1;
+			out.push_back(x);
+		}
+		last_beat = std::max(last_beat, upto);
+	}
 	AudioServer::get_singleton()->unlock();
 
-	struct Emit {
-		Pending x;
-		bool dropped;
-	};
-	std::vector<Emit> out;
 	for (size_t i = 0; i < inbox.size();) {
 		const Inbound in = inbox[i];
 		if (in.heard_us < 0) {
@@ -526,15 +651,22 @@ void FeluccaConductor::deliver() {
 			continue;
 		}
 		inbox.erase(inbox.begin() + std::ptrdiff_t(i));
+		if (in.e.kind == FEL_EV_STEP) { // (to be heard: the snapshot's, on_loop / on_step)
+			in.p->ahead.push_back({ in.e.track, in.e.step + 1, int32_t(in.e.loop) + 1, in.e.beats, in.e.length, in.heard_us });
+			continue;
+		}
 		auto it = std::find_if(pend.begin(), pend.end(), [&](const Pending &x) { return x.id == in.e.id; });
 		if (it == pend.end()) {
 			continue; // (cancelled meanwhile)
 		}
 		it->step = in.e.step + 1;
-		it->loop = int(in.e.loop);
+		it->loop = int(in.e.loop) + 1;
 		it->beats = in.e.beats;
 		if (in.e.kind == FEL_EV_DROPPED) {
-			out.push_back({ *it, true });
+			Emit x = { ACTION, now, it->source };
+			x.x = *it;
+			x.dropped = true;
+			out.push_back(x);
 			forget(size_t(it - pend.begin()));
 			continue;
 		}
@@ -545,16 +677,53 @@ void FeluccaConductor::deliver() {
 			it->action->values->applied_track(a.track, a.a, a.b);
 		}
 	}
+	for (FeluccaPlayback *p : live) { // the steps heard by now
+		size_t n = 0;
+		for (; n < p->ahead.size() && p->ahead[n].heard_us <= now; n++) {
+			const FeluccaPlayback::StepAhead &a = p->ahead[n];
+			p->heard_parts[a.track] = { a.step, a.loop, a.start, a.length };
+			if (a.step == 1) {
+				Emit x = { LOOP, a.heard_us, p->source };
+				x.a = a.track;
+				x.c = a.loop;
+				out.push_back(x);
+			}
+			Emit x = { STEP, a.heard_us, p->source };
+			x.a = a.track;
+			x.b = a.step;
+			x.c = a.loop;
+			out.push_back(x);
+		}
+		p->ahead.erase(p->ahead.begin(), p->ahead.begin() + std::ptrdiff_t(n));
+	}
 	for (size_t i = pend.size(); i-- > 0;) {
 		if (pend[i].applied && pend[i].heard_us <= now) {
-			out.push_back({ pend[i], false });
+			Emit x = { ACTION, pend[i].heard_us, pend[i].source };
+			x.x = pend[i];
+			out.push_back(x);
 			forget(i);
 		}
 	}
 	std::stable_sort(out.begin(), out.end(), [](const Emit &a, const Emit &b) {
-		return (a.dropped ? 0 : a.x.heard_us) < (b.dropped ? 0 : b.x.heard_us);
+		return a.at != b.at ? a.at < b.at : a.kind < b.kind;
 	});
 	for (const Emit &x : out) {
+		if (x.kind == BEAT) {
+			emit_signal("on_beat", x.a, x.b);
+			continue;
+		}
+		Node *n = Object::cast_to<Node>(ObjectDB::get_instance(x.source));
+		if (x.kind != ACTION) {
+			FelSource *f = n ? FelSource::of(n) : nullptr;
+			if (f && f->parts[x.a].is_valid()) {
+				if (x.kind == LOOP) {
+					f->parts[x.a]->emit_signal("on_loop", x.c);
+				} else {
+					f->parts[x.a]->emit_signal("on_step", x.b, x.c);
+				}
+			}
+			continue;
+		}
 		Ref<FeluccaEvent> ev;
 		ev.instantiate();
 		ev->tag = x.x.tag;
@@ -562,13 +731,16 @@ void FeluccaConductor::deliver() {
 		ev->part = x.x.part;
 		ev->step = x.x.step;
 		ev->loop = x.x.loop;
-		ev->beats = x.x.beats;
+		ev->playhead = x.x.beats;
 		ev->dropped = x.dropped;
 		ev->late_by = x.dropped ? 0.0 : double(now - x.x.heard_us) / 1e6;
-		if (Node *n = Object::cast_to<Node>(ObjectDB::get_instance(x.x.source))) {
-			n->emit_signal("scheduled", x.x.tag, ev);
+		if (x.x.callback.is_valid()) {
+			x.x.callback.call(ev);
 		}
-		x.x.handle->emit_signal("heard", ev);
+		x.x.handle->emit_signal("triggered", ev);
+		if (n) {
+			n->emit_signal("schedule_triggered", x.x.tag, ev);
+		}
 	}
 }
 
@@ -587,6 +759,11 @@ void FeluccaConductor::tree_paused(bool p_paused) {
 		}
 		for (Inbound &in : inbox) {
 			in.heard_us += in.heard_us > paused_at ? now - paused_at : 0;
+		}
+		for (FeluccaPlayback *p : live) {
+			for (FeluccaPlayback::StepAhead &a : p->ahead) {
+				a.heard_us += a.heard_us > paused_at ? now - paused_at : 0;
+			}
 		}
 	}
 	AudioServer::get_singleton()->lock();

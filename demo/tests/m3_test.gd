@@ -48,7 +48,7 @@ func positions() -> Array[FeluccaSnapshot]:   # every source's music, read in on
 	var a: Array[FeluccaSnapshot] = []
 	AudioServer.lock()
 	for s in sources:
-		a.append(s.get_snapshot())
+		a.append(s._get_rendered_snapshot())
 	AudioServer.unlock()
 	return a
 
@@ -63,11 +63,11 @@ func same_music(a: FeluccaSnapshot, b: FeluccaSnapshot) -> bool:
 	if not (a.bound and b.bound and a.playing and b.playing):
 		return false
 	if tol == 0:
-		return a.beats == b.beats and a.steps == b.steps and a.positions == b.positions and a.loops == b.loops
+		return a.playhead == b.playhead and a.steps == b.steps and a.positions == b.positions and a.loops == b.loops
 	for t in 4:                    # (a step's end within tol: one has crossed it, the other not)
 		if not same_step(a, b, t):
 			return false
-	return abs(a.beats - b.beats) < 0.005
+	return abs(a.playhead - b.playhead) < 0.005
 
 func same_step(a: FeluccaSnapshot, b: FeluccaSnapshot, t: int) -> bool:   # part t on one step (within tol)
 	if a.steps[t] == b.steps[t]:
@@ -104,22 +104,22 @@ func _ready() -> void:
 	check(FeluccaProject.from_json("{\"format\": \"something else\"}") == null, "from_json: not a project -> null (its error above)")
 
 	# ---- T12
-	var b0 := FeluccaConductor.beats
-	var s0 := FeluccaConductor.get_mix_steps()
+	var b0 := FeluccaConductor._get_rendered_playhead()
+	var s0 := FeluccaConductor._get_mix_steps()
 	await wait(2.0)
-	var steps := FeluccaConductor.get_mix_steps() - s0
-	var moved := FeluccaConductor.beats - b0
+	var steps := FeluccaConductor._get_mix_steps() - s0
+	var moved := FeluccaConductor._get_rendered_playhead() - b0
 	check(steps > 100 and abs(moved - 2.0 * 68 / 60) < 0.2,
 		"T12 the clock: %d mix steps in 2 s, the conductor's timeline moved %.3f beats (%.3f at 68 BPM)"
 		% [steps, moved, 2.0 * 68 / 60])
 	get_tree().paused = true
-	var p0 := FeluccaConductor.get_paused_mix_steps()
-	var bp := FeluccaConductor.beats
+	var p0 := FeluccaConductor._get_paused_mix_steps()
+	var bp := FeluccaConductor._get_rendered_playhead()
 	await wait(1.0)
-	var ps := FeluccaConductor.get_paused_mix_steps() - p0
-	check(ps > 50 and FeluccaConductor.beats == bp,
+	var ps := FeluccaConductor._get_paused_mix_steps() - p0
+	check(ps > 50 and FeluccaConductor._get_rendered_playhead() == bp,
 		"T12 paused: the clock ran (%d mix steps), the conductor's timeline stood (%.6f)"
-		% [ps, FeluccaConductor.beats - bp])
+		% [ps, FeluccaConductor._get_rendered_playhead() - bp])
 	get_tree().paused = false
 
 	# ---- T13
@@ -145,7 +145,7 @@ func _ready() -> void:
 	var start := positions()
 	var seven := range(7)
 	check(all_same(start, seven) and fmod(start[0].origin, 4.0) == 0.0, "T13 7 sources started in one frame: one position (beats %.4f, origin %.1f, on a bar)"
-		% [start[0].beats, start[0].origin])
+		% [start[0].playhead, start[0].origin])
 	check(AudioServer.get_bus_peak_volume_left_db(0, 0) > -60.0, "T13 they sound (Master peak %.1f dB)" % AudioServer.get_bus_peak_volume_left_db(0, 0))
 	var m0 := mixed()
 	var out_of_step := 0
@@ -163,13 +163,13 @@ func _ready() -> void:
 		var before := positions()
 		get_tree().paused = false
 		await wait(randf_range(0.0, 0.03))
-		var m := FeluccaConductor.get_mix_steps()    # (the Dummy driver mixes in bursts: wait for two mix steps)
+		var m := FeluccaConductor._get_mix_steps()    # (the Dummy driver mixes in bursts: wait for two mix steps)
 		var t := Time.get_ticks_msec()
-		while FeluccaConductor.get_mix_steps() < m + 2 and Time.get_ticks_msec() - t < 500:
+		while FeluccaConductor._get_mix_steps() < m + 2 and Time.get_ticks_msec() - t < 500:
 			await wait(0.005)
 		var after := positions()
 		for i in 7:
-			stuck += int(not after[i].playing or after[i].beats <= before[i].beats)
+			stuck += int(not after[i].playing or after[i].playhead <= before[i].playhead)
 		if not all_same(after, seven):
 			out_of_step += 1
 	var m1 := mixed()
@@ -180,9 +180,9 @@ func _ready() -> void:
 	for i in 7:
 		spacing = max(spacing, abs((m1[i] - m1[0]) - (m0[i] - m0[0])))
 	var p := positions()
-	check(out_of_step == 0 and spacing == 0 and p[0].beats > start[0].beats,
+	check(out_of_step == 0 and spacing == 0 and p[0].playhead > start[0].playhead,
 		"T13 300 tree pause / unpause cycles: %d checks out of step; the players' spacing moved %d frames (music at %.3f beats)"
-		% [out_of_step, spacing, p[0].beats])
+		% [out_of_step, spacing, p[0].playhead])
 
 	# ---- a source started later, on the bar
 	sources[7].play()
@@ -194,11 +194,11 @@ func _ready() -> void:
 	check(p[7].playing and fmod(p[7].origin, 4.0) == 0.0 and fmod(p[7].origin - p[2].origin, 4.0) == 0.0
 		and p[7].steps[3] == p[2].steps[3] and abs(p[7].positions[3] - p[2].positions[3]) <= tol,
 		"sync: started %.0f beats later, on a bar: the DRUM track (a bar long) on its step with the others (%d / %d)"
-		% [p[7].origin - p[2].origin, p[7].steps[3] + 1, p[2].steps[3] + 1])
+		% [p[7].origin - p[2].origin, p[7].steps[3], p[2].steps[3]])
 
 	# ---- own pause: source 0 FOLLOW, source 1 HOLD; source 2 plays on
 	own = [sources[0], sources[1]]
-	var b_pause := FeluccaConductor.beats
+	var b_pause := FeluccaConductor._get_rendered_playhead()
 	sources[0].stream_paused = true
 	sources[1].stream_paused = true
 	await wait(0.6)
@@ -209,18 +209,18 @@ func _ready() -> void:
 	await wait(0.2)
 	check(sources[0].stream_paused and sources[1].stream_paused, "own pause: still paused after the tree's pause and unpause (godot #65743)")
 	p = positions()
-	check(p[0].beats == held[0].beats and p[1].beats == held[1].beats and p[2].beats > held[2].beats,
-		"own pause: their music stood (%.3f), the others' moved on (%.3f -> %.3f)" % [p[0].beats, held[2].beats, p[2].beats])
+	check(p[0].playhead == held[0].playhead and p[1].playhead == held[1].playhead and p[2].playhead > held[2].playhead,
+		"own pause: their music stood (%.3f), the others' moved on (%.3f -> %.3f)" % [p[0].playhead, held[2].playhead, p[2].playhead])
 	await wait(1.6)                    # (over 2 beats in all: HOLD's origin moves by a bar, these sources' quantize)
-	var missed := FeluccaConductor.beats - b_pause
+	var missed := FeluccaConductor._get_rendered_playhead() - b_pause
 	sources[0].stream_paused = false
 	sources[1].stream_paused = false
 	own = []
 	await wait(0.5)
 	p = positions()
-	check(same_music(p[0], p[2]), "own pause, FOLLOW: back where the music is (%.4f beats, as source 2's %.4f)" % [p[0].beats, p[2].beats])
+	check(same_music(p[0], p[2]), "own pause, FOLLOW: back where the music is (%.4f beats, as source 2's %.4f)" % [p[0].playhead, p[2].playhead])
 	var gap: float = p[1].origin - p[2].origin
-	check(gap == 4.0 * roundf(missed / 4.0) and gap > 0.0 and abs((p[2].beats - p[1].beats) - gap) < (0.005 if tol else 1.0 / 24000 + 1e-9),
+	check(gap == 4.0 * roundf(missed / 4.0) and gap > 0.0 and abs((p[2].playhead - p[1].playhead) - gap) < (0.005 if tol else 1.0 / 24000 + 1e-9),
 		"own pause, HOLD: its origin later by the pause (%.3f beats) to the nearest bar, %.0f beats: on its bars still" % [missed, gap])
 
 	# ---- a pausable source whose play() comes in a pause: its music does not start until the unpause (then on its
@@ -232,14 +232,14 @@ func _ready() -> void:
 	await wait(0.1)
 	sources[5].play()
 	await wait(0.8)
-	var in_pause := sources[5].get_snapshot()
+	var in_pause := sources[5]._get_rendered_snapshot()
 	get_tree().paused = false
 	t0 = Time.get_ticks_msec()
-	while not sources[5].get_snapshot().playing and Time.get_ticks_msec() - t0 < 6000:
+	while not sources[5]._get_rendered_snapshot().playing and Time.get_ticks_msec() - t0 < 6000:
 		await wait(0.02)
-	var after_pause := sources[5].get_snapshot()
+	var after_pause := sources[5]._get_rendered_snapshot()
 	check(not in_pause.bound and not in_pause.playing and after_pause.bound and after_pause.playing
-		and fmod(after_pause.origin, 4.0) == 0.0 and after_pause.origin > FeluccaConductor.beats - 4.5,
+		and fmod(after_pause.origin, 4.0) == 0.0 and after_pause.origin > FeluccaConductor._get_rendered_playhead() - 4.5,
 		"play() in a pause: no copy and its music not started in it; bound after the unpause, on the next bar (origin %.1f)"
 		% after_pause.origin)
 

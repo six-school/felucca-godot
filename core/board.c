@@ -449,11 +449,17 @@ static struct { uint8_t used, track, note; uint32_t left; } fel_offs[FEL_OFFS]; 
 static uint64_t fel_blk_frame;          /* the block being ticked: its first frame (render()'s count), */
 static double fel_blk_beats;            /* .. the conductor's timeline there */
 
-static void fel_event(uint32_t kind, uint32_t track, uint32_t step, uint32_t loop, uint32_t id)
+static void fel_event(uint32_t kind, uint32_t track, uint32_t step, uint32_t loop, uint32_t id, double length)
 {
     if (fel_ev_w - fel_ev_r < FEL_EVENTS)
         fel_ev[fel_ev_w++ % FEL_EVENTS] = (fel_event_t){(uint8_t)kind, (uint8_t)track, (uint16_t)step, loop, id,
-                                                        fel_blk_frame, fel_blk_beats};
+                                                        fel_blk_frame, fel_blk_beats, length};
+}
+
+/* a division's step in beats, unswung (div_samples' DIV_DEN and its slow rates, in beats) */
+static double fel_div_beats(uint32_t div)
+{
+    return div < 6u ? 1.0 / DIV_DEN[div] : div < 10u ? (double)(1u << (div - 5u)) : 1.0 / DIV_DEN[div % 6u];
 }
 
 /* a note now (this block), as MIDI IN plays it on the track's channel, and its end len samples on. The same note again
@@ -495,12 +501,12 @@ static void fel_do(const fel_sched_t *s)
     }
 }
 
-/* track k enters step idx of pass loop in this block: what is due there, and what it finds passed (a locate jumped
- * it: a resumed FOLLOW source, an instance bound late) by its late policy */
-static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len)
+/* track k enters step idx of pass loop in this block (length beats long): what is due there, and what it finds passed
+ * (a locate jumped it: a resumed FOLLOW source, an instance bound late) by its late policy */
+static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len, double length)
 {
     uint32_t i;
-    fel_event(FEL_EV_STEP, k, idx, loop, 0);
+    fel_event(FEL_EV_STEP, k, idx, loop, 0, length);
     for (i = 0; i < FEL_SCHEDULES; i++) {
         fel_sched_t *s = &fel_sched[i];
         if (!s->used || !s->resolved || s->w.kind != FEL_AT_STEP || s->w.track != k ||
@@ -508,7 +514,7 @@ static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len
             continue;                                   /* (still to come) */
         if (s->loop != loop || s->w.step != idx) {
             if (s->w.late == FEL_LATE_DROP || s->w.step >= len) {
-                fel_event(FEL_EV_DROPPED, k, idx, loop, s->id);
+                fel_event(FEL_EV_DROPPED, k, idx, loop, s->id, 0.0);
                 s->used = 0;
                 continue;
             }
@@ -518,7 +524,7 @@ static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len
             }
         }                                               /* (FEL_LATE_NOW: here) */
         fel_do(s);
-        fel_event(FEL_EV_ACTION, k, idx, loop, s->id);
+        fel_event(FEL_EV_ACTION, k, idx, loop, s->id, 0.0);
         s->used = 0;
     }
 }
@@ -550,14 +556,14 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
                 if (s->w.beats <= b0 && s->w.late == FEL_LATE_NEXT && s->w.every > 0.0)
                     s->w.beats += ceil((b0 - s->w.beats) / s->w.every + 1e-12) * s->w.every;
                 else if (s->w.beats <= b0 && s->w.late != FEL_LATE_NOW) {
-                    fel_event(FEL_EV_DROPPED, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id);
+                    fel_event(FEL_EV_DROPPED, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id, 0.0);
                     s->used = 0;
                     continue;
                 }
             }
             if (s->w.beats <= b1 && b1 > b0) {          /* (FEL_LATE_NOW passed: the first block that moves) */
                 fel_do(s);
-                fel_event(FEL_EV_ACTION, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id);
+                fel_event(FEL_EV_ACTION, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id, 0.0);
                 s->used = 0;
             }
         } else if (!s->resolved && song.playing) {      /* a step target: its pass, from where the track is */
@@ -584,7 +590,8 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
             pos = top ? (chain.running ? chain.carry : 0u) : pos - cur;
             idx = (idx + 1u) % len;
             loop = top ? 0u : loop + (idx == 0u);
-            fel_sched_step(k, idx, loop, len);
+            fel_sched_step(k, idx, loop, len,
+                           fel_div_beats((uint32_t)t->p[P_SDIV]) * step_samples(t, period, idx) / (period ? period : 1u));
         }
     }
     return units;
