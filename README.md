@@ -1,7 +1,7 @@
 # felucca-godot
 
 The is [Felucca](https://github.com/hugelton/Felucca) (the wonderful multi-engine synth firmware for the M-VAVE FM-1) running inside
-Godot 4.7+ as a native extension. You can load projects you made on your real hardware FM-1 into Godot and control them from GDScript! You can sync game events to the music, or sequence notes and effect changes for any instrument.  You can even run multiple Felucca engines in parallel with everything's synced to a global beat so it all lines up. All of this can run in the browser, too. Pretty cool.
+Godot 4.7+ as a native extension. You can load projects you made on your real hardware FM-1 into Godot and control them from GDScript! You can sync game events to the music, or sequence notes and effect changes for any instrument.  You can even run multiple Felucca engines in parallel with everything synced to a global beat. All of this can run in the browser, too. Pretty cool.
 
 > [!NOTE]
 > Note that the desktop version only runs on Linux right now, so if you're on Mac or Windows you'll have to stick to web builds.
