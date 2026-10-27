@@ -16,6 +16,10 @@ config/features=PackedStringArray("4.7")
 run/main_scene.web_tests="res://tests/web_tests.tscn"
 run/main_scene.web="res://picker.tscn"
 
+[audio]
+
+buses/default_bus_layout=""
+
 [autoload]
 
 Felucca="*res://addons/felucca/felucca.tscn"

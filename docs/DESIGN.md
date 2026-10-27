@@ -96,7 +96,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D13 | Projects: import plugin turns the web app's `.json` into a `FeluccaProject` resource (validated: format, version, size, CRC-32); loaded with `proj_import` + `project_restore_runtime`. As built (M3): the importer takes **`.felucca`** files (the export renamed: an importer of `.json` would take every JSON file of the game); `FeluccaProject.load_json(path)` reads the `.json` itself at run time; name, BPM and engines from the core's `project_info`. Since M5 the JSON is read with Godot's own `JSON` and `Marshalls` (`FeluccaProject::parse_json` and its helpers, ~110 lines with the strict base64 check, the same messages; `check_json(text)` says why a file does not read), no longer by a JSON reader of ~400 lines in the core; the importer declares `FeluccaProject` (it declared `Resource`: Quick Load and typed fields did not offer the files). | R2; *measured* with the user's export (T11; M3: imported and played in Godot; `project_test`: the export, 5 rewritings of it that read and 21 damaged copies, each named by its first problem, as the core's reader's test did). | backup → flash image (user samples, later) |
 | D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the sources in range of the listener (at most N, a level-design rule) to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come); M5: the range pass, lazy eviction (§7). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
-| D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M7) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
+| D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M7) with an early spike; threaded web builds are the target (audio on its own thread). | §9. M7: the demos play in Chromium from a threaded build, 8 heavy instances in 26 % of its audio thread (*measured*). | desktop only |
 | D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0006 (`patches/`; 0005, M6: `FELUCCA_HOST_NOTES`, a hook on every note a track starts and releases and on `trk_all_off`; 0006, M6: `FELUCCA_HOST_STEPS`, a hook in `seq_play` and `seq_ratchet` that leaves out a step's own notes, as live recording's `rskip` does). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
 
 ## 4. Architecture
@@ -733,6 +733,31 @@ export's files. *Measured* (i5-1240P; Chromium 156; release):
   10.5 MB, its main module 1.6 / 0.6, `index.js` 3.0 / 0.4; ours 9.4 / 3.7 MB (8 copies and godot-cpp: a quarter of
   the compressed download); the pack 0.16 MB.
 
+**Part 4, done; M7 complete (2026-10-27).** `demo/picker.tscn`, the demos' first scene (`run/main_scene`, and
+`run/main_scene.web`: the "Web tests" export, whose feature matches as well, gives way to its launcher): its `scenes`
+(an exported `Array[PackedScene]`: main, pool, knock, `3d/main3d`; an export follows them), a button each by its file's
+name, the number keys. The click or key that picks one is the gesture a browser waits for before a page plays sound.
+P or Escape in a demo picked there comes back: a node the first pick adds to the tree's root beside the current scene
+(as an autoload is: it outlives each scene change; a demo run on its own keeps its keys), which takes the key first
+(`_input`), works while the demo is paused, and undoes what a demo leaves: the pause, the 3D scene's captured mouse, the
+conductor running (each demo sets its tempo and plays). The user exported "Web" from the editor and played the demos in
+Chromium. Found:
+- Export mode "selected scenes" leaves the extension out: scenes name its classes and never reference
+  `felucca.gdextension` as a file, so neither the library nor the extension list is exported ("Cannot get class
+  'FeluccaConductorNode'"). All resources, all but `tests/` (the preset now), or `*.gdextension` in the include filter
+  (tried on a copy) keep it.
+- The PWA option's service worker can supply COOP/COEP itself (a plain `python -m http.server` then works), but it
+  serves cache-first: after a re-export the browser keeps the old build until the worker is unregistered (DevTools,
+  Application; or its "Update on reload"). The preset has it off.
+- The editor's run-in-browser server sends COOP/COEP (in the 4.7.2 binary); an exported folder needs a server that does
+  (`tools/serve_web.py`). The extension's web builds (debug and release) must be in `demo/bin` (built, not in git): an
+  export without them fails ("Could not write file").
+- An empty `default_bus_layout.tres` the editor left: a selected-scenes export records the bus layout's UID without
+  packing the file ("Unrecognized UID" at start, harmless); the project now names no bus layout.
+*Measured:* headless (a scratch script pressing keys): 1-4 open the four demos; in each, Space pauses, then P or Escape
+comes back unpaused with the conductor stopped; Escape in the picker stays there. The user's export in a fresh Chromium
+profile: no errors.
+
 ## 10. Evidence
 
 C tests reproduced on 63f88ec + series by `prototypes/run_all.sh`; Godot tests by `spikes/godot_clock_pause/run.sh`. The
@@ -827,8 +852,11 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
    the external-clock paths).
 3. Clock effect with WASAPI and CoreAudio. PulseAudio is fine at 44.1 and 48 kHz (the user's runs of the demo,
    2026-10-25). The buffer size per step (512 here) is driver-dependent: the clock effect reads it each step.
-4. Web: dlink templates and Emscripten pairing for 4.7.2, threaded audio, CPU of N instances in wasm (§9).
-5. Symbol renames on Windows (MSVC vs clang-cl), macOS, Emscripten; hostsim imports stubbed.
+4. **Answered (M7, §9):** Godot 4.7.2's `dlink` web templates pair with Emscripten 4.0.20 and godot-cpp's wasm32 side
+   modules; the threaded build mixes off the main thread; 8 heavy instances take 26 % of the audio thread in Chromium.
+   Not tried: a build without threads, Firefox, Safari, hosting.
+5. Symbol renames on Windows (MSVC vs clang-cl), macOS; hostsim imports stubbed. (Emscripten: the renames' check passes
+   on the wasm objects, M7.)
 6. Pattern switching with automation (shared motion store); v1 may swap steps and timing only.
 7. **Decided (2026-10-25, user): N = 8, no spare copies, no prefetch.** Measured on one copy (the pool's flags):
    first boot 5–6 ms, import 0.06 ms (fresh or reused), locate and its first render 0.2 ms; 1.6 MB of mutable state
@@ -870,6 +898,8 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
     second timeline (the conductor's is single for now).
 14. A bound part's reads and writes take `AudioServer.lock()` each (cheap, but a tween of several values a frame takes
     it several times); §4.2's per-instance command queue would replace them.
+15. A scene that quits while its sources play prints "N ObjectDB instances were leaked at exit" (m3_test: 7,
+    m7_bench: 8; seen since M3 at least). Not looked into.
 
 ## 14. Implementation plan
 
@@ -881,7 +911,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
 | M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | with N = 8: a walk, a teleport, 9 sources in range; a reused copy carries no tail (`core/tests/test_cut.c`). Tested headless in a **simple 2D scene like `demo/main.tscn`** (a scripted listener; `m5_scene_test`, its sources differ by project, `demo/music`'s four: the demo's projects do not use all four parts), not a replay of §1's cellar/hallway/bedroom scenario (the user's decision, 2026-10-26: the pass's behaviour matters, overflow first); `demo/pool.tscn` is the same layout to try by hand. No 3D scene (the user's decisions: 2026-10-25, 3D is too involved to drive in a test; 2026-10-26, the 2D scene is proof enough for M5, a 3D listening scene skipped for now; the 3D listener lookup is not tested). **Done** (2026-10-26): `extension/run_tests.sh` |
 | M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6), **done** (727a3ba); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `bound` / `unbound`, **done** (89d8ea0); (3) heard time: the conductor's `playhead`, `bar` / `beat`, `on_beat`, a part's `on_step` / `on_loop`, the snapshot as heard, callbacks (ABI 7), **done** (f7852d6); (4) a part's notes: `on_note`, `on_hit`, `on_noteoff` (patch 0005, ABI 8), **done** (daf6cf9); (5) replace and mask (the user's decisions, 2026-10-27; patch 0006: a hook that silences a step's own notes, its ratchets and nudged notes too; ABI 9): `hit` replaces its own lane on the step, `note` the step's own notes, `note_layered` plays over them; `mask_steps` / `mask_loops` / `mask_bars(part, count)` silence the part's own steps for a span, **done**; (6) a `Param` enum on each engine view, so `set_param` schedules an engine's parameters (ANALOG's CUT ..), tagged with its engine (ABI 10), **done**; (7) the knock-and-door scene, a demo, **done** (`demo/knock.tscn`: test-4 behind a door, its synths' cutoff low; K masks the drums' next loop but four snares on its beats, dust off the door on each as heard; on the next loop's first step `set_param` lifts the cutoff exactly and a tween sweeps it open over a bar as the door opens; F knocks fast, a snare on each of the next beat's four steps, those masked, the door on the step after (a press late in the step before a beat takes the beat after: that beat's first step may be mixed already); R opens the door at once or closes it; Space pauses. Driven headless: K's four hits alone in that loop, the cutoff 45 on the door's step, then 61, 78, 95 at the bar's quarters; paused while waiting, the knocks still came on the next loop; F six times at random moments: four snares from a beat's first step each time, none of the drums' own hits in them, the door and the cutoff 45 on the step after). Patterns from the device moved to M9 (the user's decision, 2026-10-27) | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
-| M7 | Web: next after M6 (the user's decision, 2026-10-27: it was M9); planned 2026-10-27 (§9): (1) the toolchain and the spike, go/no-go, **done: go**; (2) the tests in headless Chromium, **done**; (3) CPU, download, boot and latency measured, **done** (8 heavy: 26 % of the audio thread in wasm; 15.3 MB gzip); (4) the demos in a browser. Threads only, Chromium only, local only, the pool stays 8 | demo scene in a browser, threads on |
+| M7 | Web: next after M6 (the user's decision, 2026-10-27: it was M9); planned 2026-10-27 (§9): (1) the toolchain and the spike, go/no-go, **done: go**; (2) the tests in headless Chromium, **done**; (3) CPU, download, boot and latency measured, **done** (8 heavy: 26 % of the audio thread in wasm; 15.3 MB gzip); (4) the demos in a browser, **done** (`demo/picker.tscn`: main, pool, knock and the 3D scene, P or Escape back; exported from the editor and played by the user). Threads only, Chromium only, local only, the pool stays 8 | demo scene in a browser, threads on. **Done** (2026-10-27): `extension/run_web_tests.sh`, `extension/run_web_bench.sh`, the user's export |
 | M8 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M9 | Patterns (the user's decisions: moved here, 2026-10-27, M6's from the device and M7's built by hand): `FeluccaPattern` from a part of a project made on the device and the `pattern` action (its automation later: §13.6); patterns built in code and in the Godot editor (the user's wish, 2026-10-26): steps, notes and hits set from scripts; an inspector for a pattern's steps. To explore here or after (the user, 2026-10-27): ramps, a parameter moved by the core every block along the conductor's timeline (`ramp_param(part, param, to, steps)`: sample-exact, in beats, stopped by a pause), where a script's tween (works today, measured: `tween_method` on `analog.cutoff`, one write a frame) is in seconds and heard a mix step and the output latency after it starts | — |
 
