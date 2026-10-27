@@ -47,8 +47,16 @@ public:
 	fel_action_t action = {};
 	std::shared_ptr<FelValues> values; // the source the part is of (mark: none)
 
+	// on the step occurrence it targets: hit in place of the step's own hit of its lane (its other lanes play), note
+	// in place of the step's own notes (its hits play), note_layered over them; the pattern stays as it is
 	static Ref<FeluccaAction> hit(const Ref<FeluccaPart> &p_part, int p_lane, int p_velocity);
 	static Ref<FeluccaAction> note(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps);
+	static Ref<FeluccaAction> note_layered(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps);
+	// the part's own steps silent for a span from the target (the scheduled notes in it play): so many of its steps,
+	// its loops (its LEN), the conductor's bars (the steps starting within them)
+	static Ref<FeluccaAction> mask_steps(const Ref<FeluccaPart> &p_part, int p_steps);
+	static Ref<FeluccaAction> mask_loops(const Ref<FeluccaPart> &p_part, int p_loops);
+	static Ref<FeluccaAction> mask_bars(const Ref<FeluccaPart> &p_part, int p_bars);
 	// (not set(): Object's)
 	static Ref<FeluccaAction> set_param(const Ref<FeluccaPart> &p_part, int p_param, int p_value);
 	static Ref<FeluccaAction> mark();

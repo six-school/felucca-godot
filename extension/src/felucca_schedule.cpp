@@ -102,6 +102,34 @@ Ref<FeluccaAction> FeluccaAction::note(const Ref<FeluccaPart> &p_part, int p_not
 	return part_action(p_part, FEL_DO_NOTE, p_note, p_velocity, p_steps);
 }
 
+Ref<FeluccaAction> FeluccaAction::note_layered(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps) {
+	if (p_part.is_null() || p_note < 0 || p_note > 127 || p_velocity < 1 || p_velocity > 127 || p_steps < 1 || p_steps > 64) {
+		UtilityFunctions::push_error("FeluccaAction.note_layered(): a part, a note (0 to 127), a velocity (1 to 127) and steps (1 to 64).");
+		return Ref<FeluccaAction>();
+	}
+	return part_action(p_part, FEL_DO_NOTE_OVER, p_note, p_velocity, p_steps);
+}
+
+static Ref<FeluccaAction> mask(const Ref<FeluccaPart> &p_part, int p_count, int p_unit, const char *p_name) {
+	if (p_part.is_null() || p_count < 1 || p_count > 4096) {
+		UtilityFunctions::push_error("FeluccaAction.", p_name, "(): a part and a count (1 to 4096).");
+		return Ref<FeluccaAction>();
+	}
+	return part_action(p_part, FEL_DO_MASK, p_count, p_unit, 0);
+}
+
+Ref<FeluccaAction> FeluccaAction::mask_steps(const Ref<FeluccaPart> &p_part, int p_steps) {
+	return mask(p_part, p_steps, FEL_SPAN_STEPS, "mask_steps");
+}
+
+Ref<FeluccaAction> FeluccaAction::mask_loops(const Ref<FeluccaPart> &p_part, int p_loops) {
+	return mask(p_part, p_loops, FEL_SPAN_LOOPS, "mask_loops");
+}
+
+Ref<FeluccaAction> FeluccaAction::mask_bars(const Ref<FeluccaPart> &p_part, int p_bars) {
+	return mask(p_part, p_bars, FEL_SPAN_BARS, "mask_bars");
+}
+
 Ref<FeluccaAction> FeluccaAction::set_param(const Ref<FeluccaPart> &p_part, int p_param, int p_value) {
 	const ApiProp *p = api_prop(API_PART, p_param);
 	if (p_part.is_null() || !p) {
@@ -122,6 +150,11 @@ void FeluccaAction::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("hit", "part", "lane", "velocity"), &FeluccaAction::hit, DEFVAL(100));
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("note", "part", "note", "velocity", "steps"), &FeluccaAction::note,
 			DEFVAL(100), DEFVAL(1));
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("note_layered", "part", "note", "velocity", "steps"),
+			&FeluccaAction::note_layered, DEFVAL(100), DEFVAL(1));
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("mask_steps", "part", "steps"), &FeluccaAction::mask_steps);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("mask_loops", "part", "loops"), &FeluccaAction::mask_loops);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("mask_bars", "part", "bars"), &FeluccaAction::mask_bars);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("set_param", "part", "param", "value"), &FeluccaAction::set_param);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("mark"), &FeluccaAction::mark);
 }

@@ -6,7 +6,8 @@
 # more pinned than engines: a warning, counted by extension/run_tests.sh); bound / unbound; the conductor's playhead
 # (never back), bar / beat and on_beat; a part's on_step / on_loop; the snapshot as heard; callbacks, in their order
 # with the signals; a part's notes: on_note / on_noteoff in pairs, a DRUM part's on_hit, the warning for on_hit on
-# another. (The knock and the door
+# another; replace and mask: a note in place of a step's own, one layered over it, a loop masked but for a scheduled
+# kick, a mask of 0 refused. (The knock and the door
 # together are the demo's; the core's timing: core/tests/test_sched.c.)
 extends Node
 
@@ -88,6 +89,7 @@ func _ready() -> void:
 	await heard_time()
 	await callbacks()
 	await notes()
+	await replace_mask()
 	await stop_all()
 	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every engine free")
 	print("m6_test: %d failed" % fails)
@@ -467,4 +469,62 @@ func notes() -> void:
 		"a synth's note: on_note (99 on its scale: %d, velocity 90), on_noteoff %.3f s on (2 steps: 0.25), no on_hit" %
 		[synth_note[0], (synth_us[1] - synth_us[0]) / 1e6 if synth_us.size() == 2 else -1.0])
 	check(off_alone[0] == 0, "on_noteoff only for a note heard on (%d not), though connected mid-note" % off_alone[0])
+	await stop_all()
+
+# ---- replace and mask (each case at the core: core/tests/test_sched.c E). The synth part's own notes, heard over a
+# pass, say which of its steps plays one: a note scheduled there next is heard in place of it, one layered the pass
+# after with it; the drum part's next loop masked but for a kick scheduled in it, its own hits the loop after
+func replace_mask() -> void:
+	var a := source("Replace")
+	a.part_1.seq_length = 16
+	a.part_1.seq_division = FeluccaPart.SeqDivision.SEQ_DIVISION_1_16
+	a.play()
+	await until(func() -> bool: return a.is_bound())
+	var synth := a.part_1
+	var drums := a.part_4
+	var heard_at := {}                  # part -> {Vector2i(loop, step): [Vector2i(note, velocity)]}
+	for part: FeluccaPart in [synth, drums]:
+		var at := {}
+		heard_at[part.index] = at
+		var now := [Vector2i(-1, -1)]
+		part.on_step.connect(func(step: int, loop: int) -> void: now[0] = Vector2i(loop, step))
+		part.on_note.connect(func(note: int, velocity: int) -> void:
+			if not at.has(now[0]):
+				at[now[0]] = []
+			(at[now[0]] as Array).append(Vector2i(note, velocity)))
+	await wait(2.3)                     # (a pass of 16 x 1/16 at 120 BPM: 2 s)
+	var own := -1                       # a step of the synth's with a note of its own
+	var own_notes: Array = []
+	for k: Vector2i in heard_at[1]:
+		if own < 0 and ((heard_at[1] as Dictionary)[k] as Array).size() > 0:
+			own = k.y
+			own_notes = ((heard_at[1] as Dictionary)[k] as Array).map(func(v: Vector2i) -> int: return v.x)
+	check(own >= 1, "the synth part plays a note of its own on step %d (%s)" % [own, own_notes])
+	var r := a.schedule(FeluccaWhen.next_step(synth, own), FeluccaAction.note(synth, 99, 90))
+	var e1: FeluccaEvent = await r.triggered
+	var l := a.schedule(FeluccaWhen.next_step(synth, own), FeluccaAction.note_layered(synth, 99, 90))
+	var e2: FeluccaEvent = await l.triggered
+	await wait(0.2)
+	var replaced: Array = (heard_at[1] as Dictionary).get(Vector2i(e1.loop, e1.step), [])
+	var layered: Array = (heard_at[1] as Dictionary).get(Vector2i(e2.loop, e2.step), [])
+	check(replaced.size() == 1 and (replaced[0] as Vector2i).y == 90, "note(): heard in place of the step's own (%s)" % [replaced])
+	check(layered.size() == own_notes.size() + 1 and layered.any(func(v: Vector2i) -> bool: return v.y == 90) and
+		own_notes.all(func(n: int) -> bool: return layered.any(func(v: Vector2i) -> bool: return v.x == n)),
+		"note_layered(): heard with the step's own (%s)" % [layered])
+
+	var m := a.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.mask_loops(drums, 1))
+	a.schedule(FeluccaWhen.next_loop(drums, 9), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_KICK, 77))
+	var em: FeluccaEvent = await m.triggered
+	await wait(4.3)                     # (that loop, and the next)
+	var in_loop := func(loop: int) -> Array:
+		var out := []
+		for k: Vector2i in heard_at[4]:
+			if k.x == loop:
+				out.append_array((heard_at[4] as Dictionary)[k])
+		return out
+	var masked: Array = in_loop.call(em.loop)
+	var after: Array = in_loop.call(em.loop + 1)
+	check(masked == [Vector2i(36, 77)], "mask_loops(drums, 1): its own hits silent, the kick scheduled in it heard (%s)" % [masked])
+	check(after.size() >= 2 and after.any(func(v: Vector2i) -> bool: return v.y != 77), "the loop after: its own hits (%d)" % after.size())
+	check(FeluccaAction.mask_loops(drums, 0) == null, "mask_loops(drums, 0): refused")
 	await stop_all()

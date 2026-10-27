@@ -97,7 +97,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the sources in range of the listener (at most N, a level-design rule) to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come); M5: the range pass, lazy eviction (§7). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
 | D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M7) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
-| D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0005 (`patches/`; 0005, M6: `FELUCCA_HOST_NOTES`, a hook on every note a track starts and releases and on `trk_all_off`). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
+| D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0006 (`patches/`; 0005, M6: `FELUCCA_HOST_NOTES`, a hook on every note a track starts and releases and on `trk_all_off`; 0006, M6: `FELUCCA_HOST_STEPS`, a hook in `seq_play` and `seq_ratchet` that leaves out a step's own notes, as live recording's `rskip` does). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
 
 ## 4. Architecture
 
@@ -254,6 +254,21 @@ releases the sequencer's notes (at their gates' ends, and its own), not keys hel
 until their steps run out). *Measured* (`test_sched` D): the hats of a DRUM pattern reported with lane HAT CL in their
 steps' blocks, two scheduled kicks with lane KICK in their actions' blocks, a synth's note with none, a muted track's
 nothing, two keys held over a stop still on until a panic, every note on paired with one off.
+ABI 9 (M6 part 5, replace and mask): `FEL_DO_HIT` now in place of the step's own hit of its lane (and of a note of the
+step's that strikes it, on a DRUM track), `FEL_DO_NOTE` in place of the step's own notes, `FEL_DO_NOTE_OVER` over them,
+`FEL_DO_MASK` (a count of `FEL_SPAN_STEPS` / `_LOOPS` / `_BARS`): the track's own steps silent for the span. What an
+action silences is a span of the action's track's step occurrences (pass × LEN + step), from its target step when it
+is a step of that track (known when resolved), else from the track's next step to start (when applied); a bar span
+counts the steps that start within 4 beats a bar (their lengths swung). Patch 0006's hook (`host_step_skip`, from
+`seq_play` and each ratchet repeat: every play of a step, its start, a late or early nudge) leaves out what any
+pending or applied span covers, so an early-nudged note played in the step before is silenced too; an applied span
+keeps its table entry until the track passes its end (a running mask cannot be cancelled: it runs to its end; `stop`
+and `cut` end it). *Measured* (`test_sched` E, every note started counted before the events' pairing): a kick hit on a
+step of a kick and a hat (as notes): one kick, the hit's velocity, the hat; a snare hit on a step's lane hit: one
+snare, the hat; a note on a ratcheted step: none of its three, the note; a layered one: both; a step masked whose note
+is nudged early, one nudged late: silent; a loop masked but for a scheduled kick: that kick only; 1/8T × 6: a bar
+masked silences two of its loops, a loop one; a mask cancelled before it starts: none, while running: to its end; a
+mask from a bar's beat: from the step starting there; each against the same step a pass later. T4 unchanged.
 
 As built (M6 part 1, `core/board.c`, ABI 6): `fel_when_t` (`FEL_AT_STEP` track, step, `loops`; `FEL_AT_BEATS`
 beats, `every`; `late`), `fel_action_t` (`FEL_DO_MARK`, `_HIT` lane and velocity, `_NOTE` note, velocity and steps,
@@ -364,7 +379,7 @@ loops, bars, beats).
   `LATE_NOW`. (Nothing can be scheduled into audio already rendered: a target within the last few tens of ms before
   it, as heard, may resolve to its next occurrence.)
 - `FeluccaAction`: `hit(part, lane)` (`FeluccaPart.Lane`), `note(part, note, velocity, steps)`, `set_param(part,
-  param, value)`, `mark()`, `pattern(part, FeluccaPattern)` (M9). Planned (M6 part 5; the user's decisions,
+  param, value)`, `mark()`, `pattern(part, FeluccaPattern)` (M9). As built in M6 part 5 (the user's decisions,
   2026-10-27): on the step occurrence it targets, `hit` **replaces its own lane** (the step's other lanes play; the
   scheduled velocity is heard: a lane struck twice in a block sounds once, so no layered hit), `note` **replaces the
   step's own notes** (its hits play), `note_layered(part, note, velocity, steps)` plays over them; the pattern is not
@@ -372,8 +387,12 @@ loops, bars, beats).
   `mask_bars(part, bars)`** (a count always given: `mask_loops(drums)` reads as no span) silence everything the part's
   own steps play for the span from the target (notes, hits, ratchets, nudged notes; loops: the part's LEN in steps;
   bars: the conductor's, those steps starting within them); scheduled notes in the span still play; masks overlap as
-  a union; a running mask runs to its end (cancel before it starts; `stop()` ends it). Permanent step changes, the
-  step's data type and phrases (temporary patterns, looping or once): M9.
+  a union; a running mask runs to its end (cancel before it starts; `stop()` ends it), while its source keeps its
+  instance (an action pending pins its source until heard; a mask's run does not: a source evicted mid-mask comes back
+  to its own steps). Permanent step changes, the step's data type and phrases (temporary patterns, looping or once):
+  M9. *Measured* (`m6_test`): a note scheduled on a step where the synth part plays its own (33): heard in its place
+  (98: the scheduled 99 on the part's scale); layered the pass after: both; `mask_loops(drums, 1)` with a kick
+  scheduled in it: only that kick that loop, its own hits the loop after; `mask_loops(drums, 0)`: refused.
 - An action, when heard (§6.3): its **callback** (called with the `FeluccaEvent`; skipped when its object is gone),
   then its handle's **`triggered(event)`** (`await source.schedule(...).triggered`), then the source's catch-all
   **`schedule_triggered(tag, event)`** (debugging, tests). A dropped action (`LATE_DROP`, or a step past LEN) arrives
@@ -769,7 +788,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources. **Done** (2026-10-24): `extension/run_tests.sh` |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
 | M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | with N = 8: a walk, a teleport, 9 sources in range; a reused copy carries no tail (`core/tests/test_cut.c`). Tested headless in a **simple 2D scene like `demo/main.tscn`** (a scripted listener; `m5_scene_test`, its sources differ by project, `demo/music`'s four: the demo's projects do not use all four parts), not a replay of §1's cellar/hallway/bedroom scenario (the user's decision, 2026-10-26: the pass's behaviour matters, overflow first); `demo/pool.tscn` is the same layout to try by hand. No 3D scene (the user's decisions: 2026-10-25, 3D is too involved to drive in a test; 2026-10-26, the 2D scene is proof enough for M5, a 3D listening scene skipped for now; the 3D listener lookup is not tested). **Done** (2026-10-26): `extension/run_tests.sh` |
-| M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6), **done** (727a3ba); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `bound` / `unbound`, **done** (89d8ea0); (3) heard time: the conductor's `playhead`, `bar` / `beat`, `on_beat`, a part's `on_step` / `on_loop`, the snapshot as heard, callbacks (ABI 7), **done** (f7852d6); (4) a part's notes: `on_note`, `on_hit`, `on_noteoff` (patch 0005, ABI 8), **done** (daf6cf9); (5) replace and mask (the user's decisions, 2026-10-27; patch 0006: a hook that silences a step's own notes, its ratchets and nudged notes too): `hit` replaces its own lane on the step, `note` the step's own notes, `note_layered` plays over them; `mask_steps` / `mask_loops` / `mask_bars(part, count)` silence the part's own steps for a span; (6) a `Param` enum on each engine view, so `set_param` schedules an engine's parameters (ANALOG's CUT ..); (7) the knock-and-door scene, a demo. Patterns from the device moved to M9 (the user's decision, 2026-10-27) | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
+| M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6), **done** (727a3ba); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `bound` / `unbound`, **done** (89d8ea0); (3) heard time: the conductor's `playhead`, `bar` / `beat`, `on_beat`, a part's `on_step` / `on_loop`, the snapshot as heard, callbacks (ABI 7), **done** (f7852d6); (4) a part's notes: `on_note`, `on_hit`, `on_noteoff` (patch 0005, ABI 8), **done** (daf6cf9); (5) replace and mask (the user's decisions, 2026-10-27; patch 0006: a hook that silences a step's own notes, its ratchets and nudged notes too; ABI 9): `hit` replaces its own lane on the step, `note` the step's own notes, `note_layered` plays over them; `mask_steps` / `mask_loops` / `mask_bars(part, count)` silence the part's own steps for a span, **done**; (6) a `Param` enum on each engine view, so `set_param` schedules an engine's parameters (ANALOG's CUT ..); (7) the knock-and-door scene, a demo. Patterns from the device moved to M9 (the user's decision, 2026-10-27) | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
 | M7 | Web (if the spike after M2/M3 says yes): next after M6 (the user's decision, 2026-10-27: it was M9) | demo scene in a browser, threads on |
 | M8 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M9 | Patterns (the user's decisions: moved here, 2026-10-27, M6's from the device and M7's built by hand): `FeluccaPattern` from a part of a project made on the device and the `pattern` action (its automation later: §13.6); patterns built in code and in the Godot editor (the user's wish, 2026-10-26): steps, notes and hits set from scripts; an inspector for a pattern's steps | — |

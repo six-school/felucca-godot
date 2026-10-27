@@ -1,0 +1,55 @@
+From dbfcc656d70f10280fd0ae1745ff80778771b51f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 27 Oct 2026 03:03:10 +0000
+Subject: [PATCH 6/6] Host steps: a hook to leave out a step's own notes
+
+FELUCCA_HOST_STEPS (off unless defined): seq_play asks the board file's host_step_skip() which of step idx's own notes
+not to play this time (seq_step's skip bits: note i, lane 8 + i), as live recording's rskip does, and seq_ratchet asks
+again for each repeat. Every play of a step goes through them (its start, a late or early nudge, a ratchet), so a host
+can silence a step's own notes once, or a lane of it, while its own notes play.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ firmware/src/seq.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/firmware/src/seq.c b/firmware/src/seq.c
+index 275424d..f059573 100644
+--- a/firmware/src/seq.c
++++ b/firmware/src/seq.c
+@@ -963,6 +963,10 @@ static int seq_miss(const track_t *t, const step_t *s, uint32_t idx)
+ #define SEQ_REP (1u << 16)
+ #define SEQ_ROLLED (1u << 17)   /* seq_tick rolled the chance already (before the step's parameter locks): it passed */
+ #define SEQ_MISS (1u << 18)     /* .. it failed: nothing plays */
++#ifdef FELUCCA_HOST_STEPS
++static uint32_t host_step_skip(track_t *t, uint32_t idx);   /* (the board file: what of step idx's own notes not to play
++                                                             * now, as seq_step's skip: bit i its note i, 8 + i lane i) */
++#endif
+ static __attribute__((noinline)) void seq_step(track_t *t, const step_t *s, uint32_t idx, uint32_t period, uint32_t skip)
+ {
+     uint32_t i, j, gate = period * (uint32_t)t->p[P_SGATE] / 128u;
+@@ -1080,7 +1084,11 @@ static __attribute__((noinline)) void seq_ratchet(track_t *t, uint32_t period)
+     if (t->seq_pos < (hits - t->rat_left) * (step_samples(t, period, t->seq_idx) / hits))
+         return;
+     t->rat_left--;
++#ifdef FELUCCA_HOST_STEPS
++    seq_step(t, s, t->seq_idx, period, SEQ_REP | host_step_skip(t, t->seq_idx));
++#else
+     seq_step(t, s, t->seq_idx, period, SEQ_REP);
++#endif
+ }
+ 
+ /* the nudge of step s in 1/NUDGE_DIV of the step (NUDGE, core.h) when it plays off its start: the track's QUANTIZE OFF,
+@@ -1134,6 +1142,9 @@ static __attribute__((noinline)) void seq_play(track_t *t, uint32_t idx, uint32_
+         }
+         t->rskip_n = 0;
+     }
++#ifdef FELUCCA_HOST_STEPS
++    skip |= host_step_skip(t, idx);                 /* (a host's: its own notes left out this once) */
++#endif
+     seq_step(t, s, idx, period, skip);
+ }
+ 
+-- 
+2.39.5
+

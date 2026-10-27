@@ -17,6 +17,7 @@
 #define FELUCCA_HOST_CLOCK 1
 #define FELUCCA_DELAY_GLIDE 1           /* patch 0003: a new delay TIME (the tempo moved) glides there, no click (D9) */
 #define FELUCCA_HOST_NOTES 1            /* patch 0005: every note a track starts and releases (the events' NOTE) */
+#define FELUCCA_HOST_STEPS 1            /* patch 0006: a step's own notes left out (replace, mask: host_step_skip) */
 #include "web/emu/felucca_web.c"
 #include "fel_core.h"
 
@@ -59,6 +60,16 @@ static void fel_loops_count(void)
         fel_last_pos[k] = t->seq_pos;
     }
 }
+/* the pass the step track k plays now is in (as fel_loops_count would count it: blocks of this one ticked since) */
+static uint32_t fel_pass_now(uint32_t k)
+{
+    const track_t *t = &trk[k];
+    if (!song.playing || t->seq_pos >= 0x7FFFFFFFu)
+        return fel_loops[k];
+    return fel_loops[k] + (t->seq_idx < fel_last_idx[k] ||
+                           (t->seq_idx == fel_last_idx[k] && t->p[P_SLEN] <= 1 && t->seq_pos < fel_last_pos[k]));
+}
+
 static void fel_loops_reset(void)
 {
     memset(fel_loops, 0, sizeof fel_loops);
@@ -441,7 +452,10 @@ typedef struct {
     fel_action_t a;
     uint32_t id;
     uint32_t loop;                      /* AT_STEP, resolved: the pass its step plays in */
+    uint32_t from, len, span;           /* what it silences of the action's track (HIT, NOTE, MASK): span steps from
+                                         * its step from (pass x len + step: len its LEN then); span 0: not known yet */
     uint8_t used, resolved;             /* (AT_BEATS: resolved once the late policy has looked at it) */
+    uint8_t done;                       /* applied, kept while its span lasts (silencing, no more to apply) */
 } fel_sched_t;
 static fel_sched_t fel_sched[FEL_SCHEDULES];
 static fel_event_t fel_ev[FEL_EVENTS];
@@ -472,9 +486,15 @@ static void fel_note_event(uint32_t kind, uint32_t k, uint32_t note, uint32_t ve
                                                         (uint8_t)vel, (int8_t)lane};
 }
 
+#ifdef FEL_MEASURE
+static void fel_measure_note(uint32_t k, uint32_t note, uint32_t vel);   /* (test copies: every note started) */
+#endif
 static void host_note_on(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t k = trk_index(t), bit = 1u << (note & 31u);
+#ifdef FEL_MEASURE
+    fel_measure_note(k, note, vel);
+#endif
     if (note > 127u || (fel_on[k][note >> 5] & bit))
         return;
     fel_on[k][note >> 5] |= bit;
@@ -537,22 +557,110 @@ static void fel_do(const fel_sched_t *s)
     uint32_t step = div_samples((uint32_t)trk[a->track].p[P_SDIV]);   /* (the track's step, unswung) */
     switch (a->kind) {
     case FEL_DO_HIT: fel_note_for(a->track, DRUM_LANE_NOTE[a->a], (uint32_t)a->b, step); break;
-    case FEL_DO_NOTE: fel_note_for(a->track, (uint32_t)a->a, (uint32_t)a->b, step * (uint32_t)a->c); break;
+    case FEL_DO_NOTE:
+    case FEL_DO_NOTE_OVER: fel_note_for(a->track, (uint32_t)a->a, (uint32_t)a->b, step * (uint32_t)a->c); break;
     case FEL_DO_SET: (void)core_param_set(a->track, a->a, a->b); break;
     case FEL_DO_GLOBAL: (void)core_global_set(a->a, a->b); break;
-    default: break;                                     /* (MARK: the event only) */
+    default: break;                                     /* (MARK: the event only; MASK: host_step_skip) */
     }
 }
 
+/* replace and mask: the steps of the action's track an action silences (span steps from from) */
+static int fel_silences(const fel_sched_t *s)
+{
+    return s->a.kind == FEL_DO_HIT || s->a.kind == FEL_DO_NOTE || s->a.kind == FEL_DO_MASK;
+}
+
+/* MASK's FEL_SPAN_BARS: the track's steps from idx that start within bars x 4 beats (their lengths swung) */
+static uint32_t fel_bar_steps(uint32_t k, uint32_t idx, uint32_t bars)
+{
+    const track_t *t = &trk[k];
+    uint32_t period = div_samples((uint32_t)t->p[P_SDIV]), len = t->p[P_SLEN] ? (uint32_t)t->p[P_SLEN] : 1u, n = 0;
+    double at = 0.0, base = fel_div_beats((uint32_t)t->p[P_SDIV]);
+    while (at < 4.0 * bars - 1e-9 && n < 65536u) {
+        at += base * step_samples(t, period, idx) / (period ? period : 1u);
+        idx = (idx + 1u) % len;
+        n++;
+    }
+    return n;
+}
+
+/* s silences from its track's step (pass, idx) on */
+static void fel_silence_from(fel_sched_t *s, uint32_t pass, uint32_t idx)
+{
+    const track_t *t = &trk[s->a.track];
+    s->len = t->p[P_SLEN] ? (uint32_t)t->p[P_SLEN] : 1u;
+    s->from = pass * s->len + idx;
+    s->span = s->a.kind != FEL_DO_MASK ? 1u : s->a.b == FEL_SPAN_STEPS ? (uint32_t)s->a.a
+              : s->a.b == FEL_SPAN_LOOPS ? (uint32_t)s->a.a * s->len : fel_bar_steps(s->a.track, idx, (uint32_t)s->a.a);
+}
+
+/* .. from the next of its track's steps to start (in this block or after) */
+static void fel_silence_next(fel_sched_t *s)
+{
+    const track_t *t = &trk[s->a.track];
+    uint32_t len = t->p[P_SLEN] ? (uint32_t)t->p[P_SLEN] : 1u, idx;
+    if (t->seq_pos >= 0x7FFFFFFFu) {
+        fel_silence_from(s, 0u, 0u);
+        return;
+    }
+    idx = (t->seq_idx + 1u) % len;
+    fel_silence_from(s, fel_pass_now(s->a.track) + (idx == 0u), idx);
+}
+
+/* applied: kept while it silences, else gone */
+static void fel_applied(fel_sched_t *s)
+{
+    if (!fel_silences(s)) {
+        s->used = 0;
+        return;
+    }
+    if (!s->span)
+        fel_silence_next(s);
+    s->done = 1;
+}
+
+/* patch 0006 (seq_play, seq_ratchet): what of step idx's own notes on track t not to play now: a HIT's lane (its hit,
+ * and a note of the step's that strikes it on a DRUM track), a NOTE's notes, a MASK's all; pending or applied, so a
+ * nudged play before the step starts is left out too */
+static uint32_t host_step_skip(track_t *t, uint32_t idx)
+{
+    uint32_t k = trk_index(t), i, j, bits = 0, pass = fel_pass_now(k) + (idx != t->seq_idx && idx == 0u);
+    const step_t *st = &seq_steps(t)[idx];
+    for (i = 0; i < FEL_SCHEDULES; i++) {
+        const fel_sched_t *s = &fel_sched[i];
+        uint32_t occ = pass * s->len + idx;
+        if (!s->used || !s->span || s->a.track != k || occ < s->from || occ - s->from >= s->span)
+            continue;
+        if (s->a.kind == FEL_DO_MASK)
+            bits |= 0xFF0Fu;
+        else if (s->a.kind == FEL_DO_NOTE)
+            bits |= 0x000Fu;
+        else {
+            bits |= 1u << (8u + (uint32_t)s->a.a);
+            for (j = 0; j < st->n && j < 4u && ENGINES[t->engine]->oneshot; j++)
+                bits |= (drum_lane(st->note[j]) == (uint32_t)s->a.a) << j;
+        }
+    }
+    return bits;
+}
+
 /* track k enters step idx of pass loop in this block (length beats long): what is due there, and what it finds passed
- * (a locate jumped it: a resumed FOLLOW source, an instance bound late) by its late policy */
+ * (a locate jumped it: a resumed FOLLOW source, an instance bound late) by its late policy; what has silenced its last
+ * step goes */
 static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len, double length)
 {
     uint32_t i;
     fel_event(FEL_EV_STEP, k, idx, loop, 0, length);
     for (i = 0; i < FEL_SCHEDULES; i++) {
         fel_sched_t *s = &fel_sched[i];
-        if (!s->used || !s->resolved || s->w.kind != FEL_AT_STEP || s->w.track != k ||
+        if (s->used && s->done && s->a.track == k && loop * s->len + idx >= s->from &&
+            loop * s->len + idx - s->from >= s->span)
+            s->used = 0;                                /* (its span is over) */
+    }
+    for (i = 0; i < FEL_SCHEDULES; i++) {
+        fel_sched_t *s = &fel_sched[i];
+        if (!s->used || s->done || !s->resolved || s->w.kind != FEL_AT_STEP || s->w.track != k ||
             s->loop > loop || (s->loop == loop && s->w.step > idx))
             continue;                                   /* (still to come) */
         if (s->loop != loop || s->w.step != idx) {
@@ -563,12 +671,16 @@ static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len
             }
             if (s->w.late == FEL_LATE_NEXT) {           /* the step's next start: later in this pass, or the next */
                 s->loop = s->w.step > idx ? loop : loop + 1u;
+                if (s->span && s->a.track == k)
+                    fel_silence_from(s, s->loop, s->w.step);
                 continue;
             }
-        }                                               /* (FEL_LATE_NOW: here) */
+            if (s->span && s->a.track == k)             /* (FEL_LATE_NOW: here, this step) */
+                fel_silence_from(s, loop, idx);
+        }
         fel_do(s);
         fel_event(FEL_EV_ACTION, k, idx, loop, s->id, 0.0);
-        s->used = 0;
+        fel_applied(s);
     }
 }
 
@@ -591,7 +703,7 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
         }
     for (i = 0; i < FEL_SCHEDULES; i++) {
         fel_sched_t *s = &fel_sched[i];
-        if (!s->used)
+        if (!s->used || s->done)
             continue;
         if (s->w.kind == FEL_AT_BEATS) {
             if (!s->resolved) {                         /* first look: passed already? */
@@ -607,7 +719,7 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
             if (s->w.beats <= b1 && b1 > b0) {          /* (FEL_LATE_NOW passed: the first block that moves) */
                 fel_do(s);
                 fel_event(FEL_EV_ACTION, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id, 0.0);
-                s->used = 0;
+                fel_applied(s);                         /* (what it silences: from the next of its steps) */
             }
         } else if (!s->resolved && song.playing) {      /* a step target: its pass, from where the track is */
             const track_t *t = &trk[s->w.track];
@@ -616,6 +728,8 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
             else
                 s->loop = fel_loops[s->w.track] + (s->w.loops ? s->w.loops : s->w.step > t->seq_idx ? 0u : 1u);
             s->resolved = 1;
+            if (fel_silences(s) && s->a.track == s->w.track)   /* (another track's step: from its next, when applied) */
+                fel_silence_from(s, s->loop, s->w.step);
         }
     }
     if (!song.playing)
@@ -664,7 +778,9 @@ static int32_t core_schedule(const fel_when_t *w, const fel_action_t *a, uint32_
     switch (a->kind) {
     case FEL_DO_MARK: break;
     case FEL_DO_HIT: ok &= a->a >= 0 && a->a < NLANE && a->b >= 1 && a->b <= 127; break;
-    case FEL_DO_NOTE: ok &= a->a >= 0 && a->a <= 127 && a->b >= 1 && a->b <= 127 && a->c >= 1 && a->c <= 64; break;
+    case FEL_DO_NOTE:
+    case FEL_DO_NOTE_OVER: ok &= a->a >= 0 && a->a <= 127 && a->b >= 1 && a->b <= 127 && a->c >= 1 && a->c <= 64; break;
+    case FEL_DO_MASK: ok &= a->a >= 1 && a->a <= 4096 && a->b >= FEL_SPAN_STEPS && a->b <= FEL_SPAN_BARS; break;
     case FEL_DO_SET: ok &= core_param_get(a->track, a->a) != FEL_INVALID; break;
     case FEL_DO_GLOBAL: ok &= a->a >= 0 && a->a < G_COUNT && fel_global_writable(a->a); break;
     default: ok = 0;
@@ -675,7 +791,7 @@ static int32_t core_schedule(const fel_when_t *w, const fel_action_t *a, uint32_
         ;
     if (i == FEL_SCHEDULES)
         return 2;
-    fel_sched[i] = (fel_sched_t){*w, *a, id, 0, 1, 0};
+    fel_sched[i] = (fel_sched_t){*w, *a, id, 0, 0, 0, 0, 1, 0, 0};
     return 0;
 }
 
@@ -683,7 +799,7 @@ static void core_cancel(uint32_t id)
 {
     uint32_t i;
     for (i = 0; i < FEL_SCHEDULES; i++)
-        if (!id || fel_sched[i].id == id)
+        if ((!id || fel_sched[i].id == id) && !fel_sched[i].done)   /* (a mask running: to its end) */
             fel_sched[i].used = 0;
 }
 

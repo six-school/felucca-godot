@@ -47,7 +47,7 @@ for rate in 44100 48000; do
     grep -E "^(ok|FAIL|mix rate|m6_test)" build/m6_test_$rate.log || true
     # what it refuses on purpose, each with an error saying why; any other error printed
     n=$(grep -c -E "$REFUSED" build/m6_test_$rate.log || true)
-    [ "$n" = 11 ] && echo "ok   11 refusals, each an error" || { echo "FAIL $n refusals said (11 made)"; fail=1; }
+    [ "$n" = 12 ] && echo "ok   12 refusals, each an error" || { echo "FAIL $n refusals said (12 made)"; fail=1; }
     grep -E "^(ERROR|SCRIPT ERROR)" build/m6_test_$rate.log | grep -v -E "$REFUSED" || true
     for w in "FeluccaConductor: more Felucca sources in range than engines available" \
             "FeluccaConductor: more pinned Felucca sources than engines available" \

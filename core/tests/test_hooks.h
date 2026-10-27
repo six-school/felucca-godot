@@ -4,8 +4,10 @@
 
 typedef struct { uint32_t step, pos, cond_loop, nd_late, nd_early, nd_fired; int32_t pan; } fel_test_track_t;
 typedef struct { uint32_t frame, track, step; } fel_test_entry_t;   /* a step entered: the first frame of its block */
+typedef struct { uint64_t frame; uint32_t track, note, vel; } fel_test_note_t;   /* a note started (render()'s frames;
+                                                                               * every one, before the events' pairing) */
 enum { FEL_TEST_TIMING = 1, FEL_TEST_DELAY, FEL_TEST_DELAY_DRY, FEL_TEST_LOCATE, FEL_TEST_TAILS,
-       FEL_TEST_KNOCK };                        /* setup()'s */
+       FEL_TEST_KNOCK, FEL_TEST_MASK };         /* setup()'s */
 #define FEL_TEST_CUT 107                        /* ANALOG's CUT (E4): a parameter id for param_set */
 #define FEL_TEST_MUTE 40                        /* a part's MUTE */
 
@@ -19,4 +21,5 @@ typedef struct {
     uint32_t (*beat_len)(void);                 /* the beat length in samples (the delay, LFO sync, gates) */
     void (*panic)(void);                        /* every track's notes off in the next block (panic_req: as a project
                                                  * load, MIDI's All Notes Off) */
+    uint32_t (*notes)(fel_test_note_t *out, uint32_t max);   /* notes started since the last call (ring of 4096) */
 } fel_test_t;

@@ -23,6 +23,23 @@ static void fel_measure_block(uint32_t n)
     }
 }
 
+static fel_test_note_t note_ring[TEST_RING];
+static uint32_t note_w, note_r;
+
+static void fel_measure_note(uint32_t k, uint32_t note, uint32_t vel)
+{
+    if (note_w - note_r < TEST_RING)
+        note_ring[note_w++ % TEST_RING] = (fel_test_note_t){fel_blk_frame, k, note, vel};
+}
+
+static uint32_t test_notes(fel_test_note_t *out, uint32_t max)
+{
+    uint32_t n = 0;
+    while (note_r != note_w && n < max)
+        out[n++] = note_ring[note_r++ % TEST_RING];
+    return n;
+}
+
 static void test_restart(void)
 {
     test_r = test_w;
@@ -132,6 +149,33 @@ static void test_setup(int which)
         t->p[P_SDIV] = 2; t->p[P_SLEN] = 16;
         for (i = 1; i < 16; i += 2)
             put_step(t, i, 1, HAT, ST_NOTE, 0);
+    } else if (which == FEL_TEST_MASK) {        /* what replace and mask must silence (and not): a ratchet, nudges late
+                                                 * and early, a part of triplets (a bar is two of its loops), DRUM steps
+                                                 * with lanes as notes and as hits */
+        static const uint8_t KICK_HAT[2] = {36, 42};
+        t = &trk[0];                            /* ANALOG 1/16 x 16: C3 on steps 1 5 9 13, step 5 ratcheted x3 */
+        set_engine_of(t, 0);
+        t->p[P_SDIV] = 2; t->p[P_SLEN] = 16;
+        for (i = 0; i < 16; i += 4)
+            put_step(t, i, 1, C3, ST_NOTE, 0);
+        step_set_ratchet(&t->step[4], 3);
+        t = &trk[1];                            /* ANALOG 1/16 x 16, QUANTIZE OFF: E3 on 3 (late), 7 (early), 11 */
+        set_engine_of(t, 0);
+        t->p[P_SDIV] = 2; t->p[P_SLEN] = 16; t->p[P_SQNT] = 0;
+        put_step(t, 2, 1, E3, ST_NOTE, 0); put_step(t, 6, 1, E3, ST_NOTE, 0); put_step(t, 10, 1, E3, ST_NOTE, 0);
+        step_set_nudge(&t->step[2], 5); step_set_nudge(&t->step[6], -6);
+        t = &trk[2];                            /* ANALOG 1/8T x 6: G3 on every step */
+        set_engine_of(t, 0);
+        t->p[P_SDIV] = 4; t->p[P_SLEN] = 6;
+        for (i = 0; i < 6; i++)
+            put_step(t, i, 1, G3, ST_NOTE, 0);
+        t = &trk[3];                            /* DRUM 1/16 x 16: a closed hat on every odd step (1 3 ..), a kick with
+                                                 * it on 1 and 9 (as notes), a snare on 5 (as a lane hit) */
+        host_drums(t);
+        t->p[P_SDIV] = 2; t->p[P_SLEN] = 16;
+        for (i = 0; i < 16; i += 2)
+            put_step(t, i, i % 8 ? 1 : 2, i % 8 ? HAT : KICK_HAT, ST_NOTE, 0);
+        t->step[4].hit |= 1u << 1;              /* SNARE */
     }
     ui.force = 1;
 }
@@ -143,5 +187,5 @@ static uint32_t test_beat_len(void) { return beat_samples(); }
 static void test_panic(void) { panic_req = (1u << NTRK) - 1u; }
 
 static const fel_test_t FEL_TEST = {&FEL_CORE, test_setup, test_track, test_entries, test_restart, test_frame,
-                                    test_beat_len, test_panic};
+                                    test_beat_len, test_panic, test_notes};
 const fel_test_t *FEL_CAT(fel_test_, FEL_COPY)(void) { return &FEL_TEST; }

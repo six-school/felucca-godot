@@ -12,13 +12,20 @@
  *   D  notes (ABI 8, patch 0005): a DRUM track's hits (its steps', the scheduled ones) reported in their steps' blocks
  *      with their lanes, a synth's note with none, a muted track's nothing; every note on paired with one off: the
  *      sequencer's at their gates' ends and at a stop, held keys (MIDI IN) when released or by a panic (trk_all_off),
- *      not by a stop. */
+ *      not by a stop.
+ *   E  replace and mask (ABI 9, patch 0006), counted on every note started (before the events' pairing): a HIT in
+ *      place of its lane on the step (as a note, as a lane hit; the step's other lanes play), a NOTE in place of the
+ *      step's notes (a ratchet's three too), a layered one over them, a step masked whose note is nudged late or
+ *      early, a loop masked but for a scheduled hit, a bar of a triplet part (two of its loops) against one loop of
+ *      it, a mask from a bar's beat, a mask cancelled before it starts (it never does) and while running (it runs on);
+ *      each against the same step a pass later, as programmed. */
 #include "test_hooks.h"
 #include "drive.h"
 #include "check.h"
 #include <stdlib.h>
 
-const fel_test_t *fel_test_0(void), *fel_test_1(void), *fel_test_2(void), *fel_test_3(void), *fel_test_4(void);
+const fel_test_t *fel_test_0(void), *fel_test_1(void), *fel_test_2(void), *fel_test_3(void), *fel_test_4(void),
+    *fel_test_5(void);
 
 #define EVN 8192u
 static fel_event_t evs[EVN];            /* what a test drained, in order */
@@ -477,11 +484,154 @@ static void test_notes(const fel_test_t *x)
           "%u off without on, %u left on)", doubled, unpaired, left);
 }
 
+/* ---- E: replace and mask */
+#define ONN 8192u
+static fel_test_note_t ons[ONN];
+static uint32_t nons;
+
+static void run_m(const fel_test_t *x, uint32_t frames)
+{
+    uint32_t done, m;
+    for (done = 0; done < frames; done += m) {
+        m = frames - done < 512u ? frames - done : 512u;
+        run(x->core, m, 0);
+        nons += x->notes(ons + nons, ONN - nons);
+    }
+}
+
+/* the frames of step (track, step, loop): from its block to the track's next step's (0: none) */
+static int window(uint32_t track, uint32_t step, uint32_t loop, uint64_t *from, uint64_t *to)
+{
+    uint32_t i;
+    const fel_event_t *e = step_ev(track, step, loop);
+    if (!e)
+        return 0;
+    *from = e->frame;
+    *to = (uint64_t)-1;
+    for (i = (uint32_t)(e - evs) + 1u; i < nev; i++)
+        if (evs[i].kind == FEL_EV_STEP && evs[i].track == track) {
+            *to = evs[i].frame;
+            break;
+        }
+    return 1;
+}
+
+/* notes started on track, note (-1: any), velocity (-1: any) within [from, to) */
+static uint32_t count_ons(uint32_t track, int note, int vel, uint64_t from, uint64_t to)
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < nons; i++)
+        n += ons[i].track == track && (note < 0 || ons[i].note == (uint32_t)note) && (vel < 0 || ons[i].vel == (uint32_t)vel)
+             && ons[i].frame >= from && ons[i].frame < to;
+    return n;
+}
+
+/* .. in step (track, step, loop) */
+static uint32_t in_step(uint32_t track, uint32_t step, uint32_t loop, int note, int vel)
+{
+    uint64_t a, b;
+    return window(track, step, loop, &a, &b) ? count_ons(track, note, vel, a, b) : 9999u;
+}
+
+/* .. in pass loop of track */
+static uint32_t in_pass(uint32_t track, uint32_t loop, int note)
+{
+    uint64_t a, b, c, d;
+    if (!window(track, 0, loop, &a, &b) || !window(track, 0, loop + 1u, &c, &d))
+        return 9999u;
+    return count_ons(track, note, -1, a, c);
+}
+
+static void test_mask(const fel_test_t *x)
+{
+    const fel_core_t *c = x->core;
+    fel_snapshot_t s;
+    uint32_t L, L2, i, ok, k2[5];
+    double origin;
+    fel_when_t w;
+    c->boot();
+    x->setup(FEL_TEST_MASK);
+    c->tempo(120);
+    drive_bpm = 120;
+    run(c, frames_ms(300), 0);
+    origin = drive_timeline + 0.1;
+    c->play(origin);
+    nev = nons = 0;
+    run_m(x, frames_ms(300));
+    c->snapshot(&s);
+    L = s.track[0].loop;                                /* (tracks 1, 2, 4: 1/16 x 16, in step) */
+    L2 = s.track[2].loop;                               /* (track 3: 1/8T x 6, a pass a second) */
+    {
+        fel_action_t kick = {FEL_DO_HIT, 3, 0, 50, 0}, snare = {FEL_DO_HIT, 3, 1, 50, 0},
+                     hi = {FEL_DO_NOTE, 0, 72, 90, 1}, over = {FEL_DO_NOTE_OVER, 0, 72, 90, 1},
+                     one = {FEL_DO_MASK, 1, 1, FEL_SPAN_STEPS, 0}, loop3 = {FEL_DO_MASK, 3, 1, FEL_SPAN_LOOPS, 0},
+                     kick70 = {FEL_DO_HIT, 3, 0, 70, 0}, bar2 = {FEL_DO_MASK, 2, 1, FEL_SPAN_BARS, 0},
+                     loop2 = {FEL_DO_MASK, 2, 1, FEL_SPAN_LOOPS, 0}, step0 = {FEL_DO_MASK, 0, 1, FEL_SPAN_STEPS, 0},
+                     loop0 = {FEL_DO_MASK, 0, 1, FEL_SPAN_LOOPS, 0}, two0 = {FEL_DO_MASK, 0, 2, FEL_SPAN_STEPS, 0};
+        w = at_step(3, 0, 1, FEL_LATE_NEXT); c->schedule(&w, &kick, 1101);      /* E1: kick (with a hat), step 1 */
+        w = at_step(3, 4, 1, FEL_LATE_NEXT); c->schedule(&w, &snare, 1102);     /* E2: snare (a lane hit), step 5 */
+        w = at_step(0, 4, 1, FEL_LATE_NEXT); c->schedule(&w, &hi, 1103);        /* E3: the ratcheted step 5 */
+        w = at_step(0, 8, 1, FEL_LATE_NEXT); c->schedule(&w, &over, 1104);      /* E4: layered on step 9 */
+        w = at_step(1, 6, 1, FEL_LATE_NEXT); c->schedule(&w, &one, 1105);       /* E5: step 7, nudged early */
+        w = at_step(1, 2, 1, FEL_LATE_NEXT); c->schedule(&w, &one, 1106);       /* .. step 3, nudged late */
+        w = at_step(3, 0, 2, FEL_LATE_NEXT); c->schedule(&w, &loop3, 1107);     /* E6: a loop masked */
+        w = at_step(3, 8, 2, FEL_LATE_NEXT); c->schedule(&w, &kick70, 1108);    /* .. but a kick in it */
+        w = at_step(2, 0, 1, FEL_LATE_NEXT); c->schedule(&w, &bar2, 1109);      /* E7: a bar of 1/8T: 2 loops */
+        w = at_step(2, 0, 4, FEL_LATE_NEXT); c->schedule(&w, &loop2, 1110);     /* .. one loop */
+        w = at_step(0, 0, 3, FEL_LATE_NEXT); c->schedule(&w, &step0, 1111);     /* E8: cancelled before */
+        c->cancel(1111);
+        w = at_step(0, 0, 4, FEL_LATE_NEXT); c->schedule(&w, &loop0, 1112);     /* .. cancelled while running */
+        w = at_beats(origin + 4.0 * (L + 5), 0, FEL_LATE_NEXT); c->schedule(&w, &two0, 1113);   /* E9: from a beat */
+    }
+    run_m(x, frames_ms(9100));                          /* (into pass L + 4) */
+    c->cancel(1112);
+    run_m(x, frames_ms(4000));
+    CHECK(in_step(3, 0, L + 1, 36, -1) == 1 && in_step(3, 0, L + 1, 36, 50) == 1 && in_step(3, 0, L + 1, 42, -1) == 1,
+          "E1 a kick hit on a step of a kick and a hat (as notes): one kick, the hit's (velocity 50), the hat plays");
+    CHECK(in_step(3, 4, L + 1, 38, -1) == 1 && in_step(3, 4, L + 1, 38, 50) == 1 && in_step(3, 4, L + 1, 42, -1) == 1,
+          "E2 a snare hit on a step of a snare (a lane hit) and a hat: one snare, the hit's, the hat plays");
+    CHECK(in_step(3, 0, L + 3, 36, -1) == 1 && in_step(3, 0, L + 3, 36, 100) == 1,
+          ".. and when not replaced, its own kick (the step's velocity, 100)");
+    CHECK(in_step(0, 4, L + 1, 48, -1) == 0 && in_step(0, 4, L + 1, 72, -1) == 1 && in_step(0, 4, L + 2, 48, -1) == 3,
+          "E3 a note on a ratcheted step: none of its 3 (%u), the note; a pass later its 3 (%u)", in_step(0, 4, L + 1, 48, -1),
+          in_step(0, 4, L + 2, 48, -1));
+    CHECK(in_step(0, 8, L + 1, 48, -1) == 1 && in_step(0, 8, L + 1, 72, -1) == 1, "E4 a layered note: the step's and the note");
+    {
+        uint64_t a, b, c2, d;
+        ok = window(1, 5, L + 1, &a, &b) && window(1, 7, L + 1, &c2, &d);
+        CHECK(ok && count_ons(1, 52, -1, a, c2) == 0, "E5 a step masked whose note plays early (in the step before): silent");
+        ok = window(1, 5, L + 2, &a, &b) && window(1, 7, L + 2, &c2, &d);
+        CHECK(ok && count_ons(1, 52, -1, a, c2) == 1, ".. a pass later: its early note");
+        CHECK(in_step(1, 2, L + 1, 52, -1) == 0 && in_step(1, 2, L + 2, 52, -1) == 1,
+              ".. one whose note plays late (in its own step): silent, then a pass later its note");
+    }
+    CHECK(in_pass(3, L + 2, -1) == 1 && in_step(3, 8, L + 2, 36, 70) == 1 && in_pass(3, L + 3, -1) == 11,
+          "E6 a loop masked: only the hit scheduled in it (%u notes), a loop later the 11 of its own (%u)",
+          in_pass(3, L + 2, -1), in_pass(3, L + 3, -1));
+    for (i = 0; i < 5; i++)
+        k2[i] = in_pass(2, L2 + 1 + i, 55);
+    CHECK(k2[0] == 0 && k2[1] == 0 && k2[2] == 6 && k2[3] == 0 && k2[4] == 6,
+          "E7 1/8T x 6: a bar masked, two loops silent; one loop masked, one (notes a pass: %u %u %u %u %u)", k2[0], k2[1],
+          k2[2], k2[3], k2[4]);
+    CHECK(in_step(0, 0, L + 3, 48, -1) == 1, "E8 a mask cancelled before it starts: the step plays");
+    CHECK(in_pass(0, L + 4, 48) == 0 && in_pass(0, L + 5, 48) > 0, ".. cancelled while running: the loop silent to its end");
+    CHECK(in_step(0, 0, L + 5, 48, -1) == 0 && in_step(0, 4, L + 5, 48, -1) == 3,
+          "E9 a mask of 2 steps from a bar's beat: from the step that starts there");
+    w = at_step(0, 0, 1, FEL_LATE_NEXT);
+    {
+        fel_action_t none = {FEL_DO_MASK, 0, 0, FEL_SPAN_STEPS, 0}, much = {FEL_DO_MASK, 0, 4097, FEL_SPAN_STEPS, 0},
+                     unit = {FEL_DO_MASK, 0, 1, 3, 0};
+        CHECK(c->schedule(&w, &none, 1) == 1 && c->schedule(&w, &much, 1) == 1 && c->schedule(&w, &unit, 1) == 1,
+              "not masks: 0 steps, 4097, a unit that is none");
+    }
+}
+
 int main(void)
 {
     test_steps(fel_test_0());
     test_knock(fel_test_1());
     test_targets(fel_test_2(), fel_test_3());
     test_notes(fel_test_4());
+    test_mask(fel_test_5());
     return check_done("test_sched");
 }

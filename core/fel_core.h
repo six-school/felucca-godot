@@ -10,9 +10,10 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 8                  /* bump on any change to this file (2: locate, the passes in the snapshot;
+#define FEL_CORE_ABI 9                  /* bump on any change to this file (2: locate, the passes in the snapshot;
                                          * 3: project_info, engine_name; 4: project_info's values; 5: cut;
-                                         * 6: schedule, cancel, events; 7: a step event's length; 8: notes) */
+                                         * 6: schedule, cancel, events; 7: a step event's length; 8: notes;
+                                         * 9: replace, layer, mask) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
@@ -57,15 +58,21 @@ typedef struct {
 } fel_when_t;
 
 /* what it does */
-enum { FEL_DO_MARK, FEL_DO_HIT, FEL_DO_NOTE, FEL_DO_SET, FEL_DO_GLOBAL };
+enum { FEL_DO_MARK, FEL_DO_HIT, FEL_DO_NOTE, FEL_DO_SET, FEL_DO_GLOBAL, FEL_DO_NOTE_OVER, FEL_DO_MASK };
+enum { FEL_SPAN_STEPS, FEL_SPAN_LOOPS, FEL_SPAN_BARS };   /* MASK's count: of the track's steps, its LEN's, 4 beats */
 typedef struct {
     uint8_t kind;                       /* MARK: nothing sounds (the event only) */
     uint8_t track;
     int32_t a, b, c;                    /* HIT: lane (0..7), velocity: the lane's GM note on the track (DRUM strikes
-                                         * the lane, another engine plays the pitch) for a step; NOTE: note, velocity,
-                                         * length in the track's steps (1..64), played as MIDI IN would (arps, chords,
-                                         * scales); SET: param_set(track, a, b) from that step on; GLOBAL:
-                                         * global_set(a, b) */
+                                         * the lane, another engine plays the pitch) for a step, in place of the
+                                         * step's own hit of that lane; NOTE: note, velocity, length in the track's
+                                         * steps (1..64), played as MIDI IN would (arps, chords, scales), in place of
+                                         * the step's own notes (its hits play); NOTE_OVER: the same, over them; SET:
+                                         * param_set(track, a, b) from that step on; GLOBAL: global_set(a, b); MASK:
+                                         * the track's own steps silent (their notes, hits, ratchets, nudged plays)
+                                         * for a (1..4096) of FEL_SPAN_* b from the step. What a HIT, NOTE or MASK
+                                         * silences is the track's step the target is a step of, else the next of its
+                                         * steps to start; the scheduled notes in it play */
 } fel_action_t;
 
 /* what happened (events) */
