@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # The GDExtension (docs/DESIGN.md D4, §4): godot-cpp at the Godot API version below, the C core's pool of renamed
-# Felucca copies (core/build.sh), and extension/src, into demo/bin.
+# Felucca copies (core/build.sh), and extension/src, into the demo's addon (demo/addons/felucca/bin).
 #   python -m SCons [target=template_debug|template_release] [pool=8]   (tools/setup_felucca.sh first)
 #   python -m SCons platform=web [..]     (M7, DESIGN.md §9: tools/setup_web.sh, then emsdk_env.sh sourced; threaded)
 import os
@@ -52,7 +52,7 @@ if env["target"] in ["editor", "template_debug"]:
 if not web:
     env.Append(LINKFLAGS=["-Wl,--version-script=extension/felucca.version", "-Wl,--no-undefined"])
 env.Prepend(LIBS=[core_lib])
-library = env.SharedLibrary("demo/bin/libfelucca{}{}".format(env["suffix"], env["SHLIBSUFFIX"]), source=sources)
+library = env.SharedLibrary("demo/addons/felucca/bin/libfelucca{}{}".format(env["suffix"], env["SHLIBSUFFIX"]), source=sources)
 env.Depends(library, [core_lib, "extension/felucca.version"])
 env.NoCache(library)
 Default(library)

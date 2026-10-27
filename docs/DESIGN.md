@@ -750,7 +750,7 @@ Chromium. Found:
   serves cache-first: after a re-export the browser keeps the old build until the worker is unregistered (DevTools,
   Application; or its "Update on reload"). The preset has it off.
 - The editor's run-in-browser server sends COOP/COEP (in the 4.7.2 binary); an exported folder needs a server that does
-  (`tools/serve_web.py`). The extension's web builds (debug and release) must be in `demo/bin` (built, not in git): an
+  (`tools/serve_web.py`). The extension's web builds (debug and release) must be in `demo/addons/felucca/bin` (built, not in git): an
   export without them fails ("Could not write file").
 - An empty `default_bus_layout.tres` the editor left: a selected-scenes export records the bus layout's UID without
   packing the file ("Unrecognized UID" at start, harmless); the project now names no bus layout.

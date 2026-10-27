@@ -7,7 +7,7 @@
 /third_party/godot-cpp/
 # M7: downloaded (Emscripten 4.0.20 at its emsdk tag)
 /third_party/emsdk/
-/demo/bin/
+/demo/addons/felucca/bin/
 /demo/.godot/
 /demo/override.cfg
 /.sconsign.dblite
