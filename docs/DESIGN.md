@@ -96,7 +96,7 @@ user's device runs 1.6.1, whose project format is the same (FUN10). The maintain
 | D13 | Projects: import plugin turns the web app's `.json` into a `FeluccaProject` resource (validated: format, version, size, CRC-32); loaded with `proj_import` + `project_restore_runtime`. As built (M3): the importer takes **`.felucca`** files (the export renamed: an importer of `.json` would take every JSON file of the game); `FeluccaProject.load_json(path)` reads the `.json` itself at run time; name, BPM and engines from the core's `project_info`. Since M5 the JSON is read with Godot's own `JSON` and `Marshalls` (`FeluccaProject::parse_json` and its helpers, ~110 lines with the strict base64 check, the same messages; `check_json(text)` says why a file does not read), no longer by a JSON reader of ~400 lines in the core; the importer declares `FeluccaProject` (it declared `Resource`: Quick Load and typed fields did not offer the files). | R2; *measured* with the user's export (T11; M3: imported and played in Godot; `project_test`: the export, 5 rewritings of it that read and 21 damaged copies, each named by its first problem, as the core's reader's test did). | backup → flash image (user samples, later) |
 | D14 | **Sources and pool** (R4): `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D` (extend the matching `AudioStreamPlayer*`) hold project, overrides, script-set state and schedules; the conductor binds the sources in range of the listener (at most N, a level-design rule) to instances, joining them at the timeline position (`locate`, §6.4). M3: a source binds a free instance at `play()` (first come); M5: the range pass, lazy eviction (§7). | §7. | restart-on-bar join |
 | D15 | Persistence: none (R13). Flash writes stay in the instance's RAM image and vanish with it; autosave may be switched off to save CPU. | — | — |
-| D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M9) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
+| D16 | **Web: design for it, ship desktop first.** No hard dependency on threads, portable renames (D3), lock-based publication works there too. A web milestone (M7) with an early spike; threaded web builds are the target (audio on its own thread). | §9. | desktop only |
 | D17 | Felucca base: main `63f88ec` + PR 269 (firmware/tests) + patches 0002–0005 (`patches/`; 0005, M6: `FELUCCA_HOST_NOTES`, a hook on every note a track starts and releases and on `trk_all_off`). 0002 asks the board file's `host_clock_units()` on **every** block, playing or not (M1): the board file starts the transport inside the block where the conductor's timeline reaches `play()`'s beat, and stopped blocks move the arps and the beat with the conductor's timeline, as the internal clock does. | Series verified with `git am` on a clean checkout; all prototypes reproduce on it; Felucca's host suite passes on it (2026-10-24: every host test; the device-image tests need the AC79 toolchain). | rebase if PR 269 changes |
 
 ## 4. Architecture
@@ -238,7 +238,7 @@ conductor's bars). A relative target is resolved when the core takes it (under t
 so it follows the instance's own passes through LEN and DIV changes and `locate`. The action applies in the 32-sample
 block in which its step starts, as `play` and `locate` do: a scheduled hit plays exactly where a programmed one would.
 Actions: `hit` (a DRUM lane, i.e. its GM note on any engine, once: the pattern is not changed), `note`, `set` (a
-parameter, from that step on), `mark` (nothing sounds: the event only), `pattern` (part 4 of M6). A target already
+parameter, from that step on), `mark` (nothing sounds: the event only), `pattern` (M9). A target already
 passed when resolved (after a FOLLOW resume, a binding, a bar gone by) follows the action's late policy: the next
 occurrence (the default: on the grid), drop, or now. `cancel(id)`; `cut()` and `stop()` clear them. `events(out,
 max)` drains what happened, each stamped with the frame it sounds on (`render()`'s count) and the conductor's
@@ -364,7 +364,7 @@ loops, bars, beats).
   `LATE_NOW`. (Nothing can be scheduled into audio already rendered: a target within the last few tens of ms before
   it, as heard, may resolve to its next occurrence.)
 - `FeluccaAction`: `hit(part, lane)` (`FeluccaPart.Lane`), `note(part, note, velocity, steps)`, `set_param(part,
-  param, value)`, `mark()`, `pattern(part, FeluccaPattern)` (part 4).
+  param, value)`, `mark()`, `pattern(part, FeluccaPattern)` (M9).
 - An action, when heard (§6.3): its **callback** (called with the `FeluccaEvent`; skipped when its object is gone),
   then its handle's **`triggered(event)`** (`await source.schedule(...).triggered`), then the source's catch-all
   **`schedule_triggered(tag, event)`** (debugging, tests). A dropped action (`LATE_DROP`, or a step past LEN) arrives
@@ -611,7 +611,7 @@ What Godot 4.7.2's source shows (`platform/web/audio_driver_web.cpp`, `scene/aud
   own wasm ran ~60× real time in V8 on a light patch (T10), the heavy song is unmeasured there.
 
 Plan: desktop first; a web spike after M2 (build the extension for the web, one instance, threads on) decides whether
-M9 happens.
+M7 happens.
 
 ## 10. Evidence
 
@@ -760,10 +760,10 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M3 | GDExtension skeleton (godot-cpp 10.0.0, api 4.7): `FeluccaStream`/playback, `ClockEffect`, conductor autoload (timeline, tempo, lock-published commands, atomic pause), `FeluccaSource*`, `FeluccaProject` importer; demo scene with the user's project | two sources in sync; T12/T13 equivalents pass with Felucca sources. **Done** (2026-10-24): `extension/run_tests.sh` |
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
 | M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | with N = 8: a walk, a teleport, 9 sources in range; a reused copy carries no tail (`core/tests/test_cut.c`). Tested headless in a **simple 2D scene like `demo/main.tscn`** (a scripted listener; `m5_scene_test`, its sources differ by project, `demo/music`'s four: the demo's projects do not use all four parts), not a replay of §1's cellar/hallway/bedroom scenario (the user's decision, 2026-10-26: the pass's behaviour matters, overflow first); `demo/pool.tscn` is the same layout to try by hand. No 3D scene (the user's decisions: 2026-10-25, 3D is too involved to drive in a test; 2026-10-26, the 2D scene is proof enough for M5, a 3D listening scene skipped for now; the 3D listener lookup is not tested). **Done** (2026-10-26): `extension/run_tests.sh` |
-| M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `scheduled` / `bound` / `unbound`; (3) `step` / `loop` / `beat` signals and a heard-time snapshot; (4) `FeluccaPattern` from a part of a project made on the device, and the `pattern` action (its automation later: §13.6); (5) the knock-and-door scene, a demo | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
-| M7 | Patterns built in code and in the Godot editor (the user's wish, 2026-10-26: after M6): `FeluccaPattern` steps, notes and hits set from scripts; an inspector for a pattern's steps | — |
+| M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6), **done** (727a3ba); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `bound` / `unbound`, **done** (89d8ea0); (3) heard time: the conductor's `playhead`, `bar` / `beat`, `on_beat`, a part's `on_step` / `on_loop`, the snapshot as heard, callbacks (ABI 7), **done** (f7852d6); (4) a part's notes: `on_note`, `on_hit`, `on_noteoff` (patch 0005, ABI 8), **done** (daf6cf9); (5) a `Param` enum on each engine view, so `set_param` schedules an engine's parameters (ANALOG's CUT ..); (6) the knock-and-door scene, a demo. Patterns from the device moved to M9 (the user's decision, 2026-10-27) | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
+| M7 | Web (if the spike after M2/M3 says yes): next after M6 (the user's decision, 2026-10-27: it was M9) | demo scene in a browser, threads on |
 | M8 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
-| M9 | Web (if the spike after M2/M3 says yes) | demo scene in a browser, threads on |
+| M9 | Patterns (the user's decisions: moved here, 2026-10-27, M6's from the device and M7's built by hand): `FeluccaPattern` from a part of a project made on the device and the `pattern` action (its automation later: §13.6); patterns built in code and in the Godot editor (the user's wish, 2026-10-26): steps, notes and hits set from scripts; an inspector for a pattern's steps | — |
 
 ## 15. References
 
