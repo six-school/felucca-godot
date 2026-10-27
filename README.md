@@ -8,7 +8,7 @@ Godot 4.7+ as a native extension. You can load projects you made on your real ha
 
 ## Install
 
-1. Download the addon zip from the Releases page and unzip it into your project's folder. You should end up with an `addons` folder with `felucca` inside it.
+1. Download the addon zip from the [Releases page](https://github.com/six-school/felucca-godot/releases) and unzip it into your project's folder. You should end up with an `addons` folder with `felucca` inside it.
 2. Go to `Project > Project Settings > Globals > Autoload > Select Script/Scene` and choose `addons/felucca/felucca.tscn`.
 3. You might need to restart the editor.
 
@@ -59,71 +59,31 @@ This controls the global beat for all the synth instances. You probably won't ne
 - `get_snapshot()`: the state of Felucca instance at that point in time
 - `pinned`: there's a limit to how many instances can be running at once, and if there's too many normally the quietest/furthest get the boot. You shouldn't need to touch this, but if you need to keep a source audible you can set this and it'll never give up its spot. Incidentally, `is_bound()` and the signals `bound` and `unbound` are for whether a source has a spot and to listen for when a source gets or loses a spot, respectively.
 
----
-
-Beyond here be slop docs
-
-### Parameters
-
-`part_1` .. `part_4` (also `parts`) are the project's four parts, `FeluccaPart`s; `song` (`FeluccaSong`) holds its
-global settings. Each parameter of the device is a property of the part, and each engine's own are on the part's view
-of that engine (`analog`, `drum`, `fm6`, ..: `null` while the part plays another engine). A value set before the source
-has an instance is applied when it gets one.
-
-```gdscript
-var bass := cellar.part_1
-bass.arp_rate = FeluccaPart.ArpRate.ARP_RATE_1_16
-bass.send_reverb = 40
-var synth := bass.analog    # FeluccaAnalog, or null
-if synth:
-  create_tween().tween_method(func(v: int) -> void: synth.cutoff = v, 30, 127, 0.8)
-```
-
-`engine` switches a part's engine (`FeluccaPart.Engine.ENGINE_ANALOG`, ..), loading its first preset as the device
-does.
-
-### Signals as heard
-
-A part's signals come when the listener hears the sound, not when it is computed: `on_step(step, loop)`,
-`on_loop(loop)`, `on_note(note, velocity)`, `on_hit(lane, velocity)` (a DRUM part) and `on_noteoff(note)`.
-
-### Scheduling
-
-`schedule(when, action, callback)` on a source holds an action until its moment in the music, and calls `callback`
-when it is heard:
-
-```gdscript
-var drums := cellar.part_4
-cellar.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.mask_loops(drums, 1))    # its own hits silent
-for step in [1, 5, 9, 13]:
-  cellar.schedule(FeluccaWhen.next_loop(drums, step), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_SNARE, 100))
-cellar.schedule(FeluccaWhen.loops_ahead(drums, 2, 1), FeluccaAction.mark(), open_door)   # a loop later
-```
-
-- When: `FeluccaWhen.next_step(part, step)`, `next_loop(part, step)`, `loops_ahead(part, loops, step)`,
-  `next_bar(beat)`. If the moment has passed by the time the source plays it: `LATE_NEXT` (the next one, the default),
-  `LATE_DROP` or `LATE_NOW`.
-- What: `FeluccaAction.hit(part, lane, velocity)` (in place of the step's own hit), `note(part, note, velocity, steps)`
-  (in place of the step's notes), `note_layered(..)` (over them), `set_param(part, param, value)`,
-  `mask_steps(part, n)`, `mask_loops(..)`, `mask_bars(..)` (the part's own steps silent), `mark()` (nothing sounds:
-  only the callback).
-- `schedule()` returns a `FeluccaSchedule`: its signal `triggered(event)`, `pending`, `dropped`, `cancel()`.
-  `schedule_with_tag(when, action, tag)` and the source's `cancel(tag)` handle a group. A source with actions pending
-  keeps its synth instance.
+There's more APIs available, docs coming soon! For now, you can look at the [Godot demo project](demo) for examples.
 
 ## Building from source
 
-On Linux, with git, clang, g++ and Python 3:
+If the pre-built extension on the [Releases page](https://github.com/six-school/felucca-godot/releases) doesn't work or you want to change the code, you'll need to build from source.
+
+The build process has only been tested on Linux. You'll need git, clang, gcc/g++ and Python 3 installed. Then run:
 
 ```sh
-tools/setup_felucca.sh    # Felucca at the pinned commit, with this project's patches
-tools/setup_godot.sh      # Godot 4.7.2, godot-cpp, SCons
-third_party/.felucca-venv/bin/python -m SCons target=template_debug     # and target=template_release
+tools/setup_felucca.sh  # pull Felucca repo, apply patches, prepare for build.
+tools/setup_godot.sh    # install Godot and the GDExtension native SDK.
+
+# then build!
+third_party/.felucca-venv/bin/python -m SCons target=template_debug # or target=template_release
 ```
 
-The libraries go to `demo/addons/felucca/bin/`; `demo/` is a Godot project with the demos. For the web:
-`tools/setup_web.sh`, then the same SCons command with `platform=web`, with Emscripten's environment
-(`third_party/emsdk/emsdk_env.sh`) sourced in bash.
+The built extension will be output to `demo/addons/felucca/bin/`.
+
+To make a web build:
+
+```sh
+tools/setup_web.sh  # set up the web toolchain (emscripten and godot templates)
+source third_party/emsdk/emsdk_env.sh
+third_party/.felucca-venv/bin/python -m SCons platform=web target=template_debug # or target=template_release
+```
 
 ## Licence
 
