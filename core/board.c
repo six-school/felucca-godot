@@ -608,6 +608,12 @@ static void fel_silence_next(fel_sched_t *s)
     fel_silence_from(s, fel_pass_now(s->a.track) + (idx == 0u), idx);
 }
 
+/* a SET for an engine the track no longer plays (asked for: eng_req): dropped, not applied to another's parameter */
+static int fel_stale(const fel_sched_t *s)
+{
+    return s->a.kind == FEL_DO_SET && s->a.c >= 0 && trk[s->a.track].eng_req != (uint32_t)s->a.c;
+}
+
 /* applied: kept while it silences, else gone */
 static void fel_applied(fel_sched_t *s)
 {
@@ -678,6 +684,11 @@ static void fel_sched_step(uint32_t k, uint32_t idx, uint32_t loop, uint32_t len
             if (s->span && s->a.track == k)             /* (FEL_LATE_NOW: here, this step) */
                 fel_silence_from(s, loop, idx);
         }
+        if (fel_stale(s)) {
+            fel_event(FEL_EV_DROPPED, k, idx, loop, s->id, 0.0);
+            s->used = 0;
+            continue;
+        }
         fel_do(s);
         fel_event(FEL_EV_ACTION, k, idx, loop, s->id, 0.0);
         fel_applied(s);
@@ -716,7 +727,10 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
                     continue;
                 }
             }
-            if (s->w.beats <= b1 && b1 > b0) {          /* (FEL_LATE_NOW passed: the first block that moves) */
+            if (s->w.beats <= b1 && b1 > b0 && fel_stale(s)) {
+                fel_event(FEL_EV_DROPPED, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id, 0.0);
+                s->used = 0;
+            } else if (s->w.beats <= b1 && b1 > b0) {   /* (FEL_LATE_NOW passed: the first block that moves) */
                 fel_do(s);
                 fel_event(FEL_EV_ACTION, s->a.track, trk[s->a.track].seq_idx, fel_loops[s->a.track], s->id, 0.0);
                 fel_applied(s);                         /* (what it silences: from the next of its steps) */
@@ -781,7 +795,7 @@ static int32_t core_schedule(const fel_when_t *w, const fel_action_t *a, uint32_
     case FEL_DO_NOTE:
     case FEL_DO_NOTE_OVER: ok &= a->a >= 0 && a->a <= 127 && a->b >= 1 && a->b <= 127 && a->c >= 1 && a->c <= 64; break;
     case FEL_DO_MASK: ok &= a->a >= 1 && a->a <= 4096 && a->b >= FEL_SPAN_STEPS && a->b <= FEL_SPAN_BARS; break;
-    case FEL_DO_SET: ok &= core_param_get(a->track, a->a) != FEL_INVALID; break;
+    case FEL_DO_SET: ok &= core_param_get(a->track, a->a) != FEL_INVALID && a->c >= -1 && a->c < NENGINES; break;
     case FEL_DO_GLOBAL: ok &= a->a >= 0 && a->a < G_COUNT && fel_global_writable(a->a); break;
     default: ok = 0;
     }

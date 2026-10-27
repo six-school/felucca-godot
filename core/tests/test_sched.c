@@ -18,14 +18,16 @@
  *      step's notes (a ratchet's three too), a layered one over them, a step masked whose note is nudged late or
  *      early, a loop masked but for a scheduled hit, a bar of a triplet part (two of its loops) against one loop of
  *      it, a mask from a bar's beat, a mask cancelled before it starts (it never does) and while running (it runs on);
- *      each against the same step a pass later, as programmed. */
+ *      each against the same step a pass later, as programmed.
+ *   F  a SET for an engine (ABI 10): applied while the track plays it; for another engine, or one the track has left
+ *      before the step comes, dropped (an engine's parameter id is every engine's: it would move another's). */
 #include "test_hooks.h"
 #include "drive.h"
 #include "check.h"
 #include <stdlib.h>
 
 const fel_test_t *fel_test_0(void), *fel_test_1(void), *fel_test_2(void), *fel_test_3(void), *fel_test_4(void),
-    *fel_test_5(void);
+    *fel_test_5(void), *fel_test_6(void);
 
 #define EVN 8192u
 static fel_event_t evs[EVN];            /* what a test drained, in order */
@@ -186,7 +188,7 @@ static void test_knock(const fel_test_t *x)
     }
     {
         fel_when_t w = at_step(3, 0, 2, FEL_LATE_NEXT);
-        fel_action_t cut = {FEL_DO_SET, 0, FEL_TEST_CUT, 127, 0};
+        fel_action_t cut = {FEL_DO_SET, 0, FEL_TEST_CUT, 127, 0};   /* (for engine 0, ANALOG: track 1's) */
         CHECK(c->schedule(&w, &MARK, 200) == 0 && c->schedule(&w, &cut, 201) == 0, "schedule the door");
     }
     nev = 0;
@@ -626,6 +628,35 @@ static void test_mask(const fel_test_t *x)
     }
 }
 
+/* ---- F: a SET for an engine */
+static void test_engine_set(const fel_test_t *x)
+{
+    const fel_core_t *c = x->core;
+    fel_when_t w;
+    fel_action_t analog = {FEL_DO_SET, 0, FEL_TEST_CUT, 120, 0}, other = {FEL_DO_SET, 0, FEL_TEST_CUT, 30, 1},
+                 left = {FEL_DO_SET, 0, FEL_TEST_CUT, 40, 0}, bad = {FEL_DO_SET, 0, FEL_TEST_CUT, 40, 99};
+    c->boot();
+    x->setup(FEL_TEST_KNOCK);                           /* (track 1: ANALOG, engine 0) */
+    c->tempo(120);
+    run(c, frames_ms(300), 0);
+    c->play(drive_timeline + 0.1);
+    run(c, frames_ms(300), 0);
+    w = at_step(3, 0, 1, FEL_LATE_NEXT);
+    c->schedule(&w, &analog, 1201);
+    c->schedule(&w, &other, 1202);
+    nev = 0;
+    run(c, frames_ms(2500), 0);
+    CHECK(find(FEL_EV_ACTION, 1201) && c->param_get(0, FEL_TEST_CUT) == 120, "a SET for ANALOG on an ANALOG track: applied");
+    CHECK(find(FEL_EV_DROPPED, 1202) && !find(FEL_EV_ACTION, 1202), "one for another engine: dropped");
+    w = at_step(3, 0, 1, FEL_LATE_NEXT);
+    c->schedule(&w, &left, 1203);
+    c->engine_set(0, 1);                                /* (the track leaves ANALOG before the step) */
+    nev = 0;
+    run(c, frames_ms(2500), 0);
+    CHECK(find(FEL_EV_DROPPED, 1203) && !find(FEL_EV_ACTION, 1203), "one for the engine the track has since left: dropped");
+    CHECK(c->schedule(&w, &bad, 1) == 1, "one for an engine that is none: not an action");
+}
+
 int main(void)
 {
     test_steps(fel_test_0());
@@ -633,5 +664,6 @@ int main(void)
     test_targets(fel_test_2(), fel_test_3());
     test_notes(fel_test_4());
     test_mask(fel_test_5());
+    test_engine_set(fel_test_6());
     return check_done("test_sched");
 }

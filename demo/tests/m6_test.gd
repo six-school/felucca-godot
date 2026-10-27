@@ -7,7 +7,8 @@
 # (never back), bar / beat and on_beat; a part's on_step / on_loop; the snapshot as heard; callbacks, in their order
 # with the signals; a part's notes: on_note / on_noteoff in pairs, a DRUM part's on_hit, the warning for on_hit on
 # another; replace and mask: a note in place of a step's own, one layered over it, a loop masked but for a scheduled
-# kick, a mask of 0 refused. (The knock and the door
+# kick, a mask of 0 refused; set_param for an engine's parameter: applied and kept, refused on another engine's part,
+# dropped when its part leaves the engine before the step. (The knock and the door
 # together are the demo's; the core's timing: core/tests/test_sched.c.)
 extends Node
 
@@ -90,6 +91,7 @@ func _ready() -> void:
 	await callbacks()
 	await notes()
 	await replace_mask()
+	await engine_params()
 	await stop_all()
 	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every engine free")
 	print("m6_test: %d failed" % fails)
@@ -527,4 +529,27 @@ func replace_mask() -> void:
 	check(masked == [Vector2i(36, 77)], "mask_loops(drums, 1): its own hits silent, the kick scheduled in it heard (%s)" % [masked])
 	check(after.size() >= 2 and after.any(func(v: Vector2i) -> bool: return v.y != 77), "the loop after: its own hits (%d)" % after.size())
 	check(FeluccaAction.mask_loops(drums, 0) == null, "mask_loops(drums, 0): refused")
+	await stop_all()
+
+# ---- set_param for an engine's parameter (an engine view's Param, tagged with its engine: every engine numbers its
+# eight alike): applied on its step and kept for the next binding; for a part playing another engine, refused; its
+# part having left that engine by the step, dropped
+func engine_params() -> void:
+	var a := await started("Engine")
+	var synth := a.part_1               # (test-4's: ANALOG)
+	check(FeluccaAnalog.Param.PARAM_CUTOFF == 256 + 107, "FeluccaAnalog.Param.PARAM_CUTOFF: ANALOG's E4, tagged (%d)" %
+		FeluccaAnalog.Param.PARAM_CUTOFF)
+	var h := a.schedule(FeluccaWhen.next_loop(a.part_4, 1), FeluccaAction.set_param(synth, FeluccaAnalog.Param.PARAM_CUTOFF, 127))
+	var e: FeluccaEvent = await h.triggered
+	check(not e.dropped and synth.analog.cutoff == 127, "set_param(part 1, ANALOG's cutoff, 127): applied (%d)" % synth.analog.cutoff)
+	a.stop()
+	await until(func() -> bool: return not a.is_bound(), 2.0)
+	a.play()
+	await until(func() -> bool: return a.is_bound(), 2.0)
+	check(synth.analog.cutoff == 127, ".. and kept for the next binding (%d)" % synth.analog.cutoff)
+	check(FeluccaAction.set_param(a.part_4, FeluccaAnalog.Param.PARAM_CUTOFF, 1) == null, "ANALOG's cutoff on the DRUM part: refused")
+	var d := a.schedule(FeluccaWhen.next_loop(a.part_4, 1), FeluccaAction.set_param(synth, FeluccaAnalog.Param.PARAM_RESONANCE, 50))
+	synth.engine = FeluccaPart.Engine.ENGINE_PHASE
+	var e2: FeluccaEvent = await d.triggered
+	check(e2.dropped, "its part switched to PHASE before the step: dropped")
 	await stop_all()

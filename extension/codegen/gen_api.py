@@ -135,6 +135,11 @@ def build(d, names):
                 ei = len(v["enums"])
                 v["enums"].append(enum_of(camel(name), q))
             v["props"].append(prop(name, g, q, ei, f"{e['name']} E{k}"))
+        # the engine's parameters by name (FeluccaAction.set_param), tagged with the engine, (engine + 1) x 256 + id:
+        # every engine numbers its eight alike, and a part's own are below 256; a parameter of another engine is refused
+        v["enums"].append({"name": "Param", "values": [
+            ("PARAM_" + p["name"].upper(), (e["index"] + 1) * 256 + p["id"],
+             f"The parameter [member {p['name']}], tagged with its engine (FeluccaAction.set_param).") for p in v["props"]]})
         views.append(v)
     for c in [part, song] + views:
         primary = [p["name"] for p in c["props"]]

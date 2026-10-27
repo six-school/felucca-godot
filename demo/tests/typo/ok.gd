@@ -11,4 +11,5 @@ func _init() -> void:
 		synth.wave = FeluccaAnalog.Wave.WAVE_SAW
 	s.song.delay_mix = 40
 	s.part_2.arp_swing = 10
+	var _a := FeluccaAction.set_param(bass, FeluccaAnalog.Param.PARAM_CUTOFF, 127)
 	quit()

@@ -8,7 +8,8 @@
 # and greys once the part's notes are all released (on_noteoff). Number keys schedule on the Cellar: 1 snares on the
 # next bar's four beats, 2 a fill on the drums' last four steps, 3 three notes up the major scale from a random root
 # (C3 .. C4) on part 3 on the next bar's first beats, 4 the same layered, 5 a random note (C3 .. C4) on part 1 two
-# steps on; with Shift each also masks what it plays over (the bar, the fill's steps, the notes' steps).
+# steps on; with Shift each also masks what it plays over (the bar, the fill's steps, the notes' steps). 6 tunes part 2
+# (SAMPLE's tune) a semitone a step for four steps, two steps on (up, or down near the top), and back on the fifth.
 extends Node2D
 
 @onready var cellar: FeluccaSource2D = $Cellar
@@ -17,7 +18,7 @@ extends Node2D
 var sources: Array[FeluccaSource2D] = []
 var hud: Label
 
-const HELP := "1 snares on the next bar   2 a fill at the drums' loop's end   3 three notes up the major scale on part 3   4 the same, layered   5 a note on part 1   (Shift: also mask)"
+const HELP := "1 snares on the next bar   2 a fill at the drums' loop's end   3 three notes up the major scale on part 3   4 the same, layered   5 a note on part 1   (Shift: also mask)   6 part 2 up a semitone a step for four steps, back on the fifth"
 const MAJOR: Array[int] = [0, 2, 4]          # three steps up the major scale
 const DIV_BEATS: Array[float] = [1.0, 0.5, 0.25, 0.125, 1.0 / 3.0, 1.0 / 6.0, 2.0, 4.0, 8.0, 16.0]   # SeqDivision, in beats
 const NAMES: Array[String] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
@@ -112,7 +113,7 @@ func _unhandled_input(e: InputEvent) -> void:
 	if e.is_action_pressed("ui_accept"):
 		get_tree().paused = not get_tree().paused
 		queue_redraw()
-	elif key and key.pressed and not key.echo and key.physical_keycode >= KEY_1 and key.physical_keycode <= KEY_5:
+	elif key and key.pressed and not key.echo and key.physical_keycode >= KEY_1 and key.physical_keycode <= KEY_6:
 		_cellar_key(key.physical_keycode - KEY_1 + 1, key.shift_pressed)
 
 # the number keys: schedules on the Cellar (with Shift, a mask over what each plays)
@@ -160,6 +161,24 @@ func _cellar_key(n: int, masked: bool) -> void:
 			if masked:
 				cellar.schedule(FeluccaWhen.next_step(part, step), FeluccaAction.mask_steps(part, 1))
 			said = "%s on part 1, step %d" % [_name(note), step]
+		6:
+			var part := cellar.part_2
+			var view := part.sample                   # (null unless part 2's engine is SAMPLE)
+			if view == null:
+				said = "part 2 does not play SAMPLE"
+			else:
+				var original := view.tune                 # (semitones, -24 .. 24)
+				var way := 1 if original + 4 <= 24 else -1
+				var heard := cellar.get_snapshot()
+				var first := (heard.steps[1] + 1) % part.seq_length + 1 if heard.bound else 1   # (two steps on)
+				for i in 5:                           # a semitone a step for four steps, the fifth back where it was
+					var step := (first - 1 + i) % part.seq_length + 1
+					var value := original + way * (i + 1) if i < 4 else original
+					cellar.schedule(FeluccaWhen.next_step(part, step),
+						FeluccaAction.set_param(part, FeluccaSample.Param.PARAM_TUNE, value))
+				said = "part 2 tuned %+d to %+d a semitone a step (from step %d), back to %+d on the fifth" % [original + way,
+					original + 4 * way, first, original]
+			masked = false                            # (nothing to mask)
 	said = "Cellar: " + said + (" (masked)" if masked else "")
 	print(said)
 	hud.text = HELP + "\n" + said

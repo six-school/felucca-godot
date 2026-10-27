@@ -10,10 +10,10 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 9                  /* bump on any change to this file (2: locate, the passes in the snapshot;
+#define FEL_CORE_ABI 10                 /* bump on any change to this file (2: locate, the passes in the snapshot;
                                          * 3: project_info, engine_name; 4: project_info's values; 5: cut;
                                          * 6: schedule, cancel, events; 7: a step event's length; 8: notes;
-                                         * 9: replace, layer, mask) */
+                                         * 9: replace, layer, mask; 10: SET for an engine) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
@@ -68,7 +68,9 @@ typedef struct {
                                          * step's own hit of that lane; NOTE: note, velocity, length in the track's
                                          * steps (1..64), played as MIDI IN would (arps, chords, scales), in place of
                                          * the step's own notes (its hits play); NOTE_OVER: the same, over them; SET:
-                                         * param_set(track, a, b) from that step on; GLOBAL: global_set(a, b); MASK:
+                                         * param_set(track, a, b) from that step on, if the track's engine is c then
+                                         * (-1: any), else dropped (an engine's parameter id is every engine's: it
+                                         * would move another); GLOBAL: global_set(a, b); MASK:
                                          * the track's own steps silent (their notes, hits, ratchets, nudged plays)
                                          * for a (1..4096) of FEL_SPAN_* b from the step. What a HIT, NOTE or MASK
                                          * silences is the track's step the target is a step of, else the next of its
