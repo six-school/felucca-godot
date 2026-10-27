@@ -33,9 +33,9 @@ extends Node2D
 @onready var song: FeluccaSource2D = $CoolSong
 
 func _ready() -> void:
-	FeluccaConductor.tempo = song.project.bpm
-	FeluccaConductor.play()
-	song.play()
+  FeluccaConductor.tempo = song.project.bpm
+  FeluccaConductor.play()
+  song.play() # or set the source to autoplay in the editor
 ```
 
 ## API overview
@@ -45,8 +45,9 @@ func _ready() -> void:
 This controls the global beat for all the synth instances. You probably won't need to touch this much after setting it off, other than to change tempo.
 
 - Get or set `FeluccaConductor.tempo` (you can use Godot's [tweens](https://docs.godotengine.org/en/stable/classes/class_tween.html) to change it over time too!)
+- `play()`, `stop()`, and `running` do what you'd expect.
 - Subscribe to global beats with the `on_beat` signal.
-- Some other stuff: `play()`, `stop()`, `running`, `playhead` (beats since playback started), `bar`, `beat`
+- Some other stuff: `playhead` (beats since playback started), `bar`, `beat`.
 
 ### `FeluccaSource`, `FeluccaSource2D`, `FeluccaSource3D`
 
@@ -75,7 +76,7 @@ bass.arp_rate = FeluccaPart.ArpRate.ARP_RATE_1_16
 bass.send_reverb = 40
 var synth := bass.analog    # FeluccaAnalog, or null
 if synth:
-	create_tween().tween_method(func(v: int) -> void: synth.cutoff = v, 30, 127, 0.8)
+  create_tween().tween_method(func(v: int) -> void: synth.cutoff = v, 30, 127, 0.8)
 ```
 
 `engine` switches a part's engine (`FeluccaPart.Engine.ENGINE_ANALOG`, ..), loading its first preset as the device
@@ -95,7 +96,7 @@ when it is heard:
 var drums := cellar.part_4
 cellar.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.mask_loops(drums, 1))    # its own hits silent
 for step in [1, 5, 9, 13]:
-	cellar.schedule(FeluccaWhen.next_loop(drums, step), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_SNARE, 100))
+  cellar.schedule(FeluccaWhen.next_loop(drums, step), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_SNARE, 100))
 cellar.schedule(FeluccaWhen.loops_ahead(drums, 2, 1), FeluccaAction.mark(), open_door)   # a loop later
 ```
 
@@ -126,5 +127,4 @@ The libraries go to `demo/addons/felucca/bin/`; `demo/` is a Godot project with 
 
 ## Licence
 
-GPL-3.0-only (`LICENSE`), as Felucca is. Felucca is by Hügelton Instruments (Leo Kuroshita); some of its parts keep
-their own licences, listed in its `LICENSING.md`. godot-cpp is under the MIT licence.
+[GPL-3.0-only](LICENSE). Felucca was created by Hügelton Instruments (Leo Kuroshita) and is also GPL-3.0, but some parts of it retain their own licences. Check [Felucca](https://github.com/hugelton/Felucca) for details.
