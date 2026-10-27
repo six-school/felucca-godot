@@ -69,15 +69,16 @@ The build process has only been tested on Linux. You'll need git, clang, gcc/g++
 
 ```sh
 tools/setup_felucca.sh  # pull Felucca repo, apply patches, prepare for build.
-tools/setup_godot.sh    # install Godot and the GDExtension native SDK.
+tools/setup_godot.sh    # install Godot, the GDExtension native SDK, and SCons.
 
-# then build!
-third_party/.felucca-venv/bin/python -m SCons target=template_debug # or target=template_release
+# then build! you'll probably want to build both targets if you're developing.
+third_party/.felucca-venv/bin/python -m SCons target=template_debug
+third_party/.felucca-venv/bin/python -m SCons target=template_release
 ```
 
 The built extension will be output to `demo/addons/felucca/bin/`.
 
-To make a web build:
+To make a web build there's a few extra steps:
 
 ```sh
 tools/setup_web.sh  # set up the web toolchain (emscripten and godot templates)
