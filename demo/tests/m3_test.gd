@@ -249,6 +249,15 @@ func _ready() -> void:
 	await wait(0.3)
 	check(FeluccaConductor.get_bound_count() == bound - 1, "stop: its instance back in the pool (%d -> %d bound)" % [bound, FeluccaConductor.get_bound_count()])
 
+	# ---- (M7) the mix runs off the main thread (the desktop's: its driver's thread; a threaded web build's: its audio
+	# thread, not the browser's main one): mix steps go on while the main thread is busy for half a second
+	var before := FeluccaConductor._get_mix_steps()
+	var busy := Time.get_ticks_usec()
+	while Time.get_ticks_usec() - busy < 500000:
+		pass
+	var during := FeluccaConductor._get_mix_steps() - before
+	check(during >= 10, "the mix runs off the main thread: %d mix steps while it was busy for 0.5 s" % during)
+
 	print("m3_test: %d failed" % fails)
 	for s in sources:
 		s.stop()

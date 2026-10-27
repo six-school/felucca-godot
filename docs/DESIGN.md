@@ -650,7 +650,49 @@ What Godot 4.7.2's source shows (`platform/web/audio_driver_web.cpp`, `scene/aud
   own wasm ran ~60× real time in V8 on a light patch (T10), the heavy song is unmeasured there.
 
 Plan: desktop first; a web spike after M2 (build the extension for the web, one instance, threads on) decides whether
-M7 happens.
+M7 happens. It did not run before M6: M7 starts with it.
+
+**M7 plan** (2026-10-27; the user's decisions: threads only, Chromium only, local only, the pool stays 8). Found while
+planning:
+- Godot 4.7.2's release templates (godot-build-scripts `build-web/build.sh`) are wasm32 (`detect.py`'s default arch),
+  threaded and not, each with a `dlink` variant (GDExtension support), built with **Emscripten 4.0.20**
+  (build-containers, branch 4.7, `Dockerfile.web`). CI's threaded wasm64 job is a compile check, not a template.
+  godot-cpp `507ed9d` builds wasm32 side modules only: they should pair, the spike checks it.
+- A pool copy has ≈ 1.6 MB of static memory (its 1 MiB `nor` image the most), 13 MB for 8: linear memory, not
+  download. Native code for 8 copies and godot-cpp: 7.4 MB.
+- Chromium 156 (Debian) runs headless here; Node 24 drives it over the DevTools protocol (its own WebSocket, no npm).
+
+Parts: (1) the toolchain and the spike, go/no-go: `tools/setup_web.sh` (emsdk 4.0.20, pinned; the 4.7.2 export
+templates, SHA-512 checked, the web `dlink` ones kept), the SConstruct's web target (the core's copies built with emcc
+and `-pthread`, the same renames), the `.gdextension`'s web entries, a Web export preset (extensions on, threads on),
+our players' `playback_type = STREAM`, a local server sending COOP/COEP; go if `m3_test` passes in headless Chromium,
+its mix off the main thread. (2) The tests in the browser (`extension/run_web_tests.sh`: m3, m4, m5, m5_scene, m6 at
+the browser's rate; results read from the console, as `quit()` closes nothing there), those that cannot run there
+listed. (3) Measured: CPU per instance (the heavy song; 1 and 8) against the audio thread's budget, the pool's boot,
+the download (compressed), the output latency the web driver reports (heard time, §6.3); if 8 do not fit, compiler
+flags first (the pool stays 8). (4) The demos (main, pool, knock) exported and played locally through the server. Not
+in M7: a build without threads (every instance on the game's main thread), Firefox and Safari, hosting (COOP/COEP on
+a host, Godot's PWA headers option, itch.io's SharedArrayBuffer setting).
+
+**Part 1, done: go.** `tools/setup_web.sh` (emsdk at tag 4.0.20; the web `dlink` templates into Godot's templates
+folder), `python -m SCons platform=web` (emsdk_env.sh sourced: the core's copies with godot-cpp's web flags,
+`-sUSE_PTHREADS=1 -sSIDE_MODULE=1 -sSUPPORT_LONGJMP=wasm`; no version script there), the `.gdextension`'s
+`web.*.threads.wasm32`, `demo/export_presets.cfg` ("Web"; "Web tests"), `tools/serve_web.py` (COOP/COEP),
+`tools/web_run.mjs` (headless Chromium over the DevTools protocol: the page's and its workers' console, until a line
+matches), our sources' `playback_type` set to STREAM when they enter the tree. Found:
+- The template's main module (`godot.wasm`, 1.6 MB) imports **shared, wasm32** memory (not memory64), 32 MB to 2 GB;
+  the engine is a 42.6 MB side module (`godot.side.wasm`). Ours: 9.4 MB (debug, 8 copies, godot-cpp); emcc warns that
+  dynamic linking with threads is experimental (as for Godot's own `dlink` templates). The renames' check passes on
+  the wasm objects (56 globals a copy, as natively).
+- Release templates take no scene on the command line (built without path overrides; Godot aborts). The "Web tests"
+  preset has the custom feature `web_tests`, for which `project.godot`'s main scene is `tests/web_tests.tscn`: it
+  runs the test the page's `?scene=` names. (The first run, aborted that way, ended in "memory access out of bounds"
+  in `godot_web_main`: after the abort only, not seen since.)
+- Headless Chromium 156 here: isolated, WebGL 2 (SwiftShader: `--enable-unsafe-swiftshader`), an AudioContext at
+  44.1 kHz running in real time (base latency 10 ms, output 32 ms).
+*Measured:* `m3_test` in headless Chromium: 0 failed at 44.1 kHz (T12; T13's 300 pause cycles, 0 out of step; sync;
+own pause; the pool). New in it (M7, desktop too): mix steps while the main thread is busy for 0.5 s: 43 in Chromium
+(43.07 at 512 frames), 40 / 46 on the desktop's Dummy driver at 44.1 / 48 kHz: the mix is off the main thread.
 
 ## 10. Evidence
 
@@ -800,7 +842,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
 | M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | with N = 8: a walk, a teleport, 9 sources in range; a reused copy carries no tail (`core/tests/test_cut.c`). Tested headless in a **simple 2D scene like `demo/main.tscn`** (a scripted listener; `m5_scene_test`, its sources differ by project, `demo/music`'s four: the demo's projects do not use all four parts), not a replay of §1's cellar/hallway/bedroom scenario (the user's decision, 2026-10-26: the pass's behaviour matters, overflow first); `demo/pool.tscn` is the same layout to try by hand. No 3D scene (the user's decisions: 2026-10-25, 3D is too involved to drive in a test; 2026-10-26, the 2D scene is proof enough for M5, a 3D listening scene skipped for now; the 3D listener lookup is not tested). **Done** (2026-10-26): `extension/run_tests.sh` |
 | M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6), **done** (727a3ba); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `bound` / `unbound`, **done** (89d8ea0); (3) heard time: the conductor's `playhead`, `bar` / `beat`, `on_beat`, a part's `on_step` / `on_loop`, the snapshot as heard, callbacks (ABI 7), **done** (f7852d6); (4) a part's notes: `on_note`, `on_hit`, `on_noteoff` (patch 0005, ABI 8), **done** (daf6cf9); (5) replace and mask (the user's decisions, 2026-10-27; patch 0006: a hook that silences a step's own notes, its ratchets and nudged notes too; ABI 9): `hit` replaces its own lane on the step, `note` the step's own notes, `note_layered` plays over them; `mask_steps` / `mask_loops` / `mask_bars(part, count)` silence the part's own steps for a span, **done**; (6) a `Param` enum on each engine view, so `set_param` schedules an engine's parameters (ANALOG's CUT ..), tagged with its engine (ABI 10), **done**; (7) the knock-and-door scene, a demo, **done** (`demo/knock.tscn`: test-4 behind a door, its synths' cutoff low; K masks the drums' next loop but four snares on its beats, dust off the door on each as heard; on the next loop's first step `set_param` lifts the cutoff exactly and a tween sweeps it open over a bar as the door opens; F knocks fast, a snare on each of the next beat's four steps, those masked, the door on the step after (a press late in the step before a beat takes the beat after: that beat's first step may be mixed already); R opens the door at once or closes it; Space pauses. Driven headless: K's four hits alone in that loop, the cutoff 45 on the door's step, then 61, 78, 95 at the bar's quarters; paused while waiting, the knocks still came on the next loop; F six times at random moments: four snares from a beat's first step each time, none of the drums' own hits in them, the door and the cutoff 45 on the step after). Patterns from the device moved to M9 (the user's decision, 2026-10-27) | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
-| M7 | Web (if the spike after M2/M3 says yes): next after M6 (the user's decision, 2026-10-27: it was M9) | demo scene in a browser, threads on |
+| M7 | Web: next after M6 (the user's decision, 2026-10-27: it was M9); planned 2026-10-27 (§9): (1) the toolchain and the spike, go/no-go, **done: go**; (2) the tests in headless Chromium; (3) CPU, download, boot and latency measured; (4) the demos in a browser. Threads only, Chromium only, local only, the pool stays 8 | demo scene in a browser, threads on |
 | M8 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M9 | Patterns (the user's decisions: moved here, 2026-10-27, M6's from the device and M7's built by hand): `FeluccaPattern` from a part of a project made on the device and the `pattern` action (its automation later: §13.6); patterns built in code and in the Godot editor (the user's wish, 2026-10-26): steps, notes and hits set from scripts; an inspector for a pattern's steps. To explore here or after (the user, 2026-10-27): ramps, a parameter moved by the core every block along the conductor's timeline (`ramp_param(part, param, to, steps)`: sample-exact, in beats, stopped by a pause), where a script's tween (works today, measured: `tween_method` on `analog.cutoff`, one write a frame) is in seconds and heard a mix step and the output latency after it starts | — |
 

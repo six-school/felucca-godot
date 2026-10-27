@@ -2,18 +2,20 @@
 # The core (docs/DESIGN.md §4, D3): N copies of the board file (core/board.c), each with every global the firmware
 # defines renamed fel<n>_*, checked, into build/core/libfelucca_core.a; L2 takes copy n from fel_pool_core(n)
 # (fel_pool.h). Needs a Felucca tree made by tools/setup_felucca.sh, clang, nm, Python 3.
-#   core/build.sh [N]          (default 8; env FELUCCA: the tree, OUT: the build directory, CC: the compiler)
+#   core/build.sh [N]          (default 8; env FELUCCA: the tree, OUT: the build directory, CC: the compiler, AR: the
+#                               archiver, NM: renames.py's nm, CFLAGS_EXTRA: flags added, as the web's side module's)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 N=${1:-8}
 F=${FELUCCA:-$HERE/../third_party/felucca}
 OUT=${OUT:-$HERE/../build/core}
 CC=${CC:-clang}
+AR=${AR:-ar}
 mkdir -p "$OUT"
 V=$(sed -n 's/^#define FELUCCA_VERSION "\([^"]*\)".*/\1/p' "$F/firmware/src/felucca.c" | head -n 1)
 # Felucca's host build: C99 (gnu99), no FMA contraction (its renders are bit-exact across machines); -w: the
 # firmware's own warnings are not ours to fix
-CF="-O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$F -I$F/build/gen -I$F/firmware/src"
+CF="-O2 -ffp-contract=off -std=gnu99 -w -fPIC -I$F -I$F/build/gen -I$F/firmware/src $CFLAGS_EXTRA"
 # shellcheck disable=SC2086
 copy() { c=$1; shift; "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" "-DFEL_COPY=$c" "$@"; }
 
@@ -47,11 +49,12 @@ done
     echo "int fel_pool_size(void) { return $N; }"
     echo "const fel_core_t *fel_pool_core(int n) { return n >= 0 && n < $N ? CORES[n]() : 0; }"
 } > "$OUT/fel_pool.c"
-"$CC" -O2 -std=gnu99 -Wall -Wextra -Werror -fPIC -I"$HERE" -c -o "$OUT/fel_pool.o" "$OUT/fel_pool.c"
+# shellcheck disable=SC2086
+"$CC" -O2 -std=gnu99 -Wall -Wextra -Werror -fPIC $CFLAGS_EXTRA -I"$HERE" -c -o "$OUT/fel_pool.o" "$OUT/fel_pool.c"
 
 rm -f "$OUT/libfelucca_core.a"
 n=0; objs=""
 while [ "$n" -lt "$N" ]; do objs="$objs $OUT/core_$n.o"; n=$((n + 1)); done
 # shellcheck disable=SC2086
-ar rcs "$OUT/libfelucca_core.a" $objs "$OUT/fel_pool.o"
+"$AR" rcs "$OUT/libfelucca_core.a" $objs "$OUT/fel_pool.o"
 echo "core: $N copies of Felucca $V ($(wc -l < "$OUT/renames.txt" | tr -d ' ') globals renamed each) -> $OUT/libfelucca_core.a"

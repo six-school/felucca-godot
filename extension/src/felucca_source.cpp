@@ -28,6 +28,10 @@ void FelSource::update(Node *p_owner) {
 	stream->values = values;
 	stream->quantize = quantize;
 	stream->join = join;
+	// (the web plays a player as a Web Audio sample by default, outside Godot's mix: ours is rendered in the mix)
+	if (int(p_owner->get("playback_type")) != AudioServer::PLAYBACK_TYPE_STREAM) {
+		p_owner->set("playback_type", AudioServer::PLAYBACK_TYPE_STREAM);
+	}
 	if (Object::cast_to<FeluccaStream>(p_owner->call("get_stream")) != stream.ptr()) {
 		p_owner->call("set_stream", stream);
 	}
