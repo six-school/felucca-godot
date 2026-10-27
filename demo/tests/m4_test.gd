@@ -14,6 +14,13 @@ func check(ok: bool, what: String) -> void:
 func wait(seconds: float) -> void:
 	await get_tree().create_timer(seconds, true, false, true).timeout
 
+# after play(): until it is bound, at most 2 s (a copy is given at a frame's end: a browser's first frames, its renderer
+# starting, can take longer than a fixed wait)
+func bound(s: FeluccaSource) -> void:
+	var t0 := Time.get_ticks_msec()
+	while not s.is_bound() and Time.get_ticks_msec() - t0 < 2000:
+		await get_tree().process_frame
+
 func mute_entry(part: int) -> FeluccaOverride:
 	var m := FeluccaOverride.new()
 	m.part = part
@@ -75,7 +82,7 @@ func _ready() -> void:
 
 	# ---- bound: applied at binding, then live
 	a.play()
-	await wait(0.2)
+	await bound(a)
 	check(a.is_bound() and p1.arp_rate == FeluccaPart.ArpRate.ARP_RATE_1_16 and p1.arp_swing == 100 and a.song.delay_mix == 17
 		and a.part_2.engine == FeluccaPart.Engine.ENGINE_ANALOG and a.part_2.analog.cutoff == 33 and p1.seq_length == 32,
 		"binding: what was set is the instance's (ARP RATE %d, SWG %d, delay MIX %d, part 2 ANALOG CUT %d), the rest the project's"
@@ -104,7 +111,7 @@ func _ready() -> void:
 	check(b.part_1.seq_length == 8 and b.part_4.mute == 1 and b.part_2.seq_length == 16,
 		"overrides, unbound: part 1 LEN %d, part 4 muted %d" % [b.part_1.seq_length, b.part_4.mute])
 	b.play()
-	await wait(0.2)
+	await bound(b)
 	check(b.is_bound() and b.part_1.seq_length == 8 and b.part_4.mute == 1, "overrides, bound: the instance's (LEN %d, MUTE %d)"
 		% [b.part_1.seq_length, b.part_4.mute])
 
@@ -144,7 +151,7 @@ func _ready() -> void:
 	plain.muted_parts = 0b0010
 	check(plain.part_2.mute == 1 and plain.part_1.mute == mutes[0], "muted_parts, unbound: read as muted (part 2 %d)" % plain.part_2.mute)
 	plain.play()
-	await wait(0.2)
+	await bound(plain)
 	check(plain.is_bound() and plain.part_2.mute == 1 and plain.part_4.mute == 1, ".. and so at binding (part 2 %d, part 4 by its overrides %d)"
 		% [plain.part_2.mute, plain.part_4.mute])
 	plain.stop()
@@ -154,7 +161,7 @@ func _ready() -> void:
 	await wait(0.3)
 	check(not a.is_bound() and p1.arp_rate == FeluccaPart.ArpRate.ARP_RATE_1_16 and a.part_4.level == 50, "stopped: the values stay on the source")
 	a.play()
-	await wait(0.2)
+	await bound(a)
 	check(a.is_bound() and p1.arp_rate == FeluccaPart.ArpRate.ARP_RATE_1_16 and a.part_4.level == 50 and a.part_2.analog != null
 		and a.part_2.analog.cutoff == 127, "played again, another instance: the same values (ARP RATE, LVL, part 2 ANALOG CUT 127)")
 
