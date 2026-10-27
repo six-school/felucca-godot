@@ -11,9 +11,10 @@ config_version=5
 [application]
 
 config/name="Felucca demo"
-run/main_scene="res://main.tscn"
+run/main_scene="res://picker.tscn"
 config/features=PackedStringArray("4.7")
 run/main_scene.web_tests="res://tests/web_tests.tscn"
+run/main_scene.web="res://picker.tscn"
 
 [autoload]
 
