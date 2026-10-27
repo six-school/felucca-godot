@@ -57,6 +57,8 @@ void FeluccaConductor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_get_booted_count"), &FeluccaConductor::get_booted_count);
 	ClassDB::bind_method(D_METHOD("_get_mix_steps"), &FeluccaConductor::get_mix_steps);
 	ClassDB::bind_method(D_METHOD("_get_paused_mix_steps"), &FeluccaConductor::get_paused_mix_steps);
+	ClassDB::bind_method(D_METHOD("_get_mix_usec"), &FeluccaConductor::get_mix_usec);
+	ClassDB::bind_method(D_METHOD("_get_boot_usec"), &FeluccaConductor::get_boot_usec);
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "tempo", PROPERTY_HINT_RANGE, "1,999,0.001,or_greater"), "set_tempo", "get_tempo");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "running", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "is_running");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "playhead", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_playhead");
@@ -202,6 +204,16 @@ int64_t FeluccaConductor::get_mix_steps() const {
 
 int64_t FeluccaConductor::get_paused_mix_steps() const {
 	return int64_t(felucca::Engine::get().paused_steps.load());
+}
+
+// the time our playbacks' mixes have taken on the audio thread, added up
+int64_t FeluccaConductor::get_mix_usec() const {
+	return int64_t(felucca::Engine::get().mix_ns.load() / 1000);
+}
+
+// the time the pool's copies took to boot, added up
+int64_t FeluccaConductor::get_boot_usec() const {
+	return felucca::Engine::get().boot_us;
 }
 
 void FeluccaConductor::ensure_node() {

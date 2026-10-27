@@ -1,0 +1,15 @@
+[remap]
+
+importer="felucca.project"
+importer_version=2
+type="FeluccaProject"
+uid="uid://d3aakh3arvnu0"
+path="res://.godot/imported/heavy.felucca-7349224a972ae6fa1fcbeba1d40d6f4c.res"
+
+[deps]
+
+source_file="res://tests/heavy.felucca"
+dest_files=["res://.godot/imported/heavy.felucca-7349224a972ae6fa1fcbeba1d40d6f4c.res"]
+
+[params]
+

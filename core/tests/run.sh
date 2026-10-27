@@ -2,7 +2,7 @@
 # The core's checks (docs/DESIGN.md §14): the core built as the pool (core/build.sh); M1: T1 T2 T3 T4 T8 T11 as C
 # tests, and the 2-copy link test (a global left out of the renames must be caught); M2: T5, T6 and locate, M5: the cut,
 # M6: the scheduler, on test copies (core/tests/test_hooks.c: the board file with white-box accessors, renamed as the
-# pool).
+# pool); M7: the heavy song as a project file (demo/tests/heavy.felucca, for the demo's measures).
 #   core/tests/run.sh          (env FELUCCA: the Felucca tree, OUT: the build directory, CC: the compiler)
 HERE=$(cd "$(dirname "$0")" && pwd)
 CORE=$(cd "$HERE/.." && pwd)
@@ -34,6 +34,7 @@ W="-O2 -std=gnu99 -Wall -Wextra -Werror -I$CORE"
     "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" -o "$OUT/test_project" "$HERE/test_project.c" -lm &
     "$CC" $CF "-DFELUCCA_VERSION=\"$V\"" -o "$OUT/test_cpu" "$HERE/test_cpu.c" -lm &
     "$CC" $W -o "$OUT/test_pool" "$HERE/test_pool.c" "$OUT/libfelucca_core.a" -lm &
+    "$CC" $W -I"$HERE" -o "$OUT/test_heavy" "$HERE/test_heavy.c" "$OUT/libfelucca_core.a" -lm &
     n=0
     while [ $n -lt 8 ]; do                              # the test copies
         "$CC" $CF -fPIC "-DFELUCCA_VERSION=\"$V\"" "-DFEL_COPY=$n" -include "$OUT/renames_$n.h" -I"$HERE" \
@@ -58,6 +59,23 @@ run "T1 T2: CUT and ARP RATE from code" "$OUT/test_params"
 run "T3 T11: projects, the user's export" "$OUT/test_project" "$FIXB"
 run "T4: CPU of the heavy song" "$OUT/test_cpu"
 run "T8: the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIXB"
+run "the heavy song as a project file (M7's measures)" "$OUT/test_heavy" "$OUT/heavy.bin"
+# ... as the web app exports it, for the demo's measures (demo/tests/heavy.felucca): rewritten only when it changes
+python3 - "$OUT/heavy.bin" "$ROOT/demo/tests/heavy.felucca" "FELUCCA $V" <<'PY' || fail=1
+import base64, json, sys, zlib
+b = open(sys.argv[1], "rb").read()
+f = {"format": "felucca-project", "version": 1, "firmware": sys.argv[3],
+     "object": {"size": len(b), "crc": zlib.crc32(b), "data": base64.b64encode(b).decode()}}
+try:
+    same = json.load(open(sys.argv[2])) == f
+except (OSError, ValueError):
+    same = False
+if not same:
+    with open(sys.argv[2], "w") as out:
+        json.dump(f, out, indent=1)
+        out.write("\n")
+    print("  wrote " + sys.argv[2])
+PY
 run "T5: step timing on the conductor's timeline, tempo tweened (int, float), paused" "$OUT/test_timing"
 run "T6: no clicks in the delay when the tempo moves it" "$OUT/test_delay"
 run "locate: an instance that joins = one that played since the origin" "$OUT/test_locate"

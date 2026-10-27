@@ -647,7 +647,7 @@ What Godot 4.7.2's source shows (`platform/web/audio_driver_web.cpp`, `scene/aud
   #105717, 4.4). Not verified for 4.7.
 - Our parts: renames (D3) instead of objcopy; no worker thread (§4.2); the browser's mix rate (often 48 kHz)
   goes through the resampler; download size grows ≈ 1 MB per pool copy (fold read-only data); wasm speed: Felucca's
-  own wasm ran ~60× real time in V8 on a light patch (T10), the heavy song is unmeasured there.
+  own wasm ran ~60× real time in V8 on a light patch (T10), the heavy song is unmeasured there (since: M7 part 3).
 
 Plan: desktop first; a web spike after M2 (build the extension for the web, one instance, threads on) decides whether
 M7 happens. It did not run before M6: M7 starts with it.
@@ -704,6 +704,34 @@ thread is busy for 0.5 s: 43 and 47; every warning once; 13 refusals, each an er
 4 min 41 s. One test changed: m4_test checked a source bound a fixed 0.2 s after `play()`; a copy is given at a
 frame's end, and the browser's first frames (its renderer starting) ran at about one a second there (0.26 s to
 bound): it now waits until bound, 2 s at most.
+
+**Part 3, done.** `core/tests/test_heavy.c` (in `core/tests/run.sh`): the heavy test song (T4's) made in copy 6,
+exported, imported into copy 7: the same audio for 16 s; its bytes, as the web app exports them, in
+`demo/tests/heavy.felucca` (rewritten only when they change). Two hidden counters: `FeluccaConductor._get_mix_usec()`
+(our playbacks' mixes timed on the audio thread and added up: a steady clock read twice a playback a mix step) and
+`_get_boot_usec()` (the copies' boots). `demo/tests/m7_bench` measures with them; `extension/run_web_bench.sh` runs it
+from release builds in headless Chromium and on the desktop (Dummy driver), at 44.1 and 48 kHz, then lists the "Web"
+export's files. *Measured* (i5-1240P; Chromium 156; release):
+
+| | Chromium 44.1 kHz | Chromium 48 kHz | desktop 44.1 kHz | desktop 48 kHz |
+|---|---|---|---|---|
+| 1 heavy: share of the audio thread | 4.1 % (0.47 ms a step) | 4.3 % (0.46 ms) | 2.6 % (0.31 ms) | 2.6 % (0.29 ms) |
+| 8 heavy | 25.6 % (2.98 ms a step of 11.61) | 26.7 % (2.85 of 10.67) | 9.7 % (1.26 ms) | 10.3 % (1.22 ms) |
+| the pool's boot, 8 copies | 184 ms (23 ms each) | 183 ms | 21 ms | 23 ms |
+| output latency (Godot's) | 88.4 ms | 84.7 ms | 0 (Dummy) | 0 (Dummy) |
+
+- 8 fit: a quarter of the audio thread in wasm, 2.4 times the desktop's, and the mix keeps up with real time (10.01 s
+  mixed in 10.02 s): no compiler flags needed, the pool stays 8. The first instance costs more than each next one, on
+  both (likely caches and clocks gone cold while the thread waits between steps). The desktop's Dummy driver sleeps
+  between steps (about 9 s mixed in 10): no measure of keeping up there.
+- The boot is the main thread's, when the game starts: one frame of 184 ms in the browser.
+- Godot's web latency is the AudioContext's base and output latency (10 + 32 ms here, as a context of the page's own
+  reports them) and its ring buffer, `audio/driver/output_latency.web` (50 ms) as a power of two of frames, 2048 (46.4
+  ms at 44.1 kHz, 42.7 at 48): 88.4 and 84.7 exactly. Heard time adds it (§6.3); that the sound comes out then is not
+  measured (headless: nothing to record).
+- The download (release, the "Web" preset): 57.4 MB, 15.3 MB with gzip -9. Godot's engine (`index.side.wasm`) 43.3 /
+  10.5 MB, its main module 1.6 / 0.6, `index.js` 3.0 / 0.4; ours 9.4 / 3.7 MB (8 copies and godot-cpp: a quarter of
+  the compressed download); the pack 0.16 MB.
 
 ## 10. Evidence
 
@@ -853,7 +881,7 @@ bar plays on the others' bars; a source's own pause survives the tree's unpause,
 | M4 | Codegen: registry dump, generator, typed `FeluccaPart`/engine views/enums, `FeluccaOverrides`, docs XML, alias file | a typo in a demo script is a parse error. **Done** (2026-10-24): `extension/run_tests.sh` (m4_test, typo/) |
 | M5 | Pool (§7): synchronous boot at game start, a range pass every frame, lazy eviction (on overflow the farthest in range gives way, with a warning), the cut (`fel_core_t.cut`, ABI 5), fades | with N = 8: a walk, a teleport, 9 sources in range; a reused copy carries no tail (`core/tests/test_cut.c`). Tested headless in a **simple 2D scene like `demo/main.tscn`** (a scripted listener; `m5_scene_test`, its sources differ by project, `demo/music`'s four: the demo's projects do not use all four parts), not a replay of §1's cellar/hallway/bedroom scenario (the user's decision, 2026-10-26: the pass's behaviour matters, overflow first); `demo/pool.tscn` is the same layout to try by hand. No 3D scene (the user's decisions: 2026-10-25, 3D is too involved to drive in a test; 2026-10-26, the 2D scene is proof enough for M5, a 3D listening scene skipped for now; the 3D listener lookup is not tested). **Done** (2026-10-26): `extension/run_tests.sh` |
 | M6 | Scheduler + events + heard-time signals (§5.1, §5.2, §6.3), pinning (§7), in parts: (1) the core's `schedule` / `cancel` / `events` (ABI 6), **done** (727a3ba); (2) `schedule()`, `FeluccaWhen` / `FeluccaAction` / `FeluccaEvent` / `FeluccaSchedule`, pinning, the event path and heard time, `bound` / `unbound`, **done** (89d8ea0); (3) heard time: the conductor's `playhead`, `bar` / `beat`, `on_beat`, a part's `on_step` / `on_loop`, the snapshot as heard, callbacks (ABI 7), **done** (f7852d6); (4) a part's notes: `on_note`, `on_hit`, `on_noteoff` (patch 0005, ABI 8), **done** (daf6cf9); (5) replace and mask (the user's decisions, 2026-10-27; patch 0006: a hook that silences a step's own notes, its ratchets and nudged notes too; ABI 9): `hit` replaces its own lane on the step, `note` the step's own notes, `note_layered` plays over them; `mask_steps` / `mask_loops` / `mask_bars(part, count)` silence the part's own steps for a span, **done**; (6) a `Param` enum on each engine view, so `set_param` schedules an engine's parameters (ANALOG's CUT ..), tagged with its engine (ABI 10), **done**; (7) the knock-and-door scene, a demo, **done** (`demo/knock.tscn`: test-4 behind a door, its synths' cutoff low; K masks the drums' next loop but four snares on its beats, dust off the door on each as heard; on the next loop's first step `set_param` lifts the cutoff exactly and a tween sweeps it open over a bar as the door opens; F knocks fast, a snare on each of the next beat's four steps, those masked, the door on the step after (a press late in the step before a beat takes the beat after: that beat's first step may be mixed already); R opens the door at once or closes it; Space pauses. Driven headless: K's four hits alone in that loop, the cutoff 45 on the door's step, then 61, 78, 95 at the bar's quarters; paused while waiting, the knocks still came on the next loop; F six times at random moments: four snares from a beat's first step each time, none of the drums' own hits in them, the door and the cutoff 45 on the step after). Patterns from the device moved to M9 (the user's decision, 2026-10-27) | each part's pieces tested on their own (the core: a C test as T9; Godot: `m6_test`); the knock-and-door scene plays, as a demo, not an automated test (the user's decision, 2026-10-26) |
-| M7 | Web: next after M6 (the user's decision, 2026-10-27: it was M9); planned 2026-10-27 (§9): (1) the toolchain and the spike, go/no-go, **done: go**; (2) the tests in headless Chromium, **done**; (3) CPU, download, boot and latency measured; (4) the demos in a browser. Threads only, Chromium only, local only, the pool stays 8 | demo scene in a browser, threads on |
+| M7 | Web: next after M6 (the user's decision, 2026-10-27: it was M9); planned 2026-10-27 (§9): (1) the toolchain and the spike, go/no-go, **done: go**; (2) the tests in headless Chromium, **done**; (3) CPU, download, boot and latency measured, **done** (8 heavy: 26 % of the audio thread in wasm; 15.3 MB gzip); (4) the demos in a browser. Threads only, Chromium only, local only, the pool stays 8 | demo scene in a browser, threads on |
 | M8 | Optional: debug screen view (RGB565 → `Image.FORMAT_RGB565` after a byte swap; input), Windows/macOS builds | — |
 | M9 | Patterns (the user's decisions: moved here, 2026-10-27, M6's from the device and M7's built by hand): `FeluccaPattern` from a part of a project made on the device and the `pattern` action (its automation later: §13.6); patterns built in code and in the Godot editor (the user's wish, 2026-10-26): steps, notes and hits set from scripts; an inspector for a pattern's steps. To explore here or after (the user, 2026-10-27): ramps, a parameter moved by the core every block along the conductor's timeline (`ramp_param(part, param, to, steps)`: sample-exact, in beats, stopped by a pause), where a script's tween (works today, measured: `tween_method` on `analog.cutoff`, one write a frame) is in seconds and heard a mix step and the output latency after it starts | — |
 

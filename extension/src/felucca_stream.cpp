@@ -177,7 +177,18 @@ double FeluccaPlayback::_get_playback_position() const {
 	return double(mixed) / felucca::Engine::get().mix_rate;
 }
 
+// a playback's mix, timed: added to Engine::mix_ns when it returns (the measures': the audio thread's share)
+namespace {
+struct MixTimer {
+	int64_t t0 = felucca::Engine::now_ns();
+	~MixTimer() {
+		felucca::Engine::get().mix_ns.fetch_add(uint64_t(felucca::Engine::now_ns() - t0), std::memory_order_relaxed);
+	}
+};
+} // namespace
+
 int32_t FeluccaPlayback::_mix(AudioFrame *p_buffer, float p_rate_scale, int32_t p_frames) {
+	MixTimer timer;
 	const felucca::Plan &p = felucca::Engine::get().plan;
 	bool start = false, relocate = false;
 	mixed += uint64_t(p_frames);

@@ -30,6 +30,10 @@ int64_t Engine::now_us() {
 	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
+int64_t Engine::now_ns() {
+	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 void Engine::audio_step(uint32_t p_frames) {
 	const uint64_t k = steps.load(std::memory_order_relaxed);
 	mixed_at_us = std::max(now_us(), mixed_at_us + int64_t(p_frames * 1e6 / mix_rate));
@@ -56,7 +60,9 @@ int Engine::acquire() {
 			continue;
 		}
 		if (!s.booted) {
+			const int64_t t0 = now_us();
 			s.core->boot(); // (~1.5 s of device time, 5-6 ms here; boot_all has done it at the game's start)
+			boot_us += now_us() - t0;
 			s.booted = true;
 		}
 		s.used = true;
@@ -68,7 +74,9 @@ int Engine::acquire() {
 void Engine::boot_all() {
 	for (Slot &s : slots) {
 		if (!s.booted && !s.used) {
+			const int64_t t0 = now_us();
 			s.core->boot();
+			boot_us += now_us() - t0;
 			s.booted = true;
 		}
 	}

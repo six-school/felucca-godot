@@ -113,6 +113,8 @@ public:
 	int get_booted_count() const; // (these three hidden: the tests')
 	int64_t get_mix_steps() const;
 	int64_t get_paused_mix_steps() const;
+	int64_t get_mix_usec() const;
+	int64_t get_boot_usec() const;
 
 	// the extension's own
 	void ensure_node(); // (a source entering the tree, or a call above, at run time)

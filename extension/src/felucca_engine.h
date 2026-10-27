@@ -32,6 +32,8 @@ public:
 
 	// audio thread counts, main thread reads
 	std::atomic<uint64_t> steps{ 0 }, paused_steps{ 0 };
+	std::atomic<uint64_t> mix_ns{ 0 }; // the playbacks' mixes, timed and added up (FeluccaConductor._get_mix_usec)
+	int64_t boot_us = 0; // (main thread) the copies' boots, added up (FeluccaConductor._get_boot_usec)
 
 	// each mix step as mixed (audio_step, at its end; the main thread reads them under the lock): the conductor's
 	// timeline over it and when it was mixed, spaced a step's length at least as they are heard (a driver that mixes
@@ -45,6 +47,7 @@ public:
 	static constexpr uint32_t MIXES = 256;
 	Mix mixes[MIXES];
 	static int64_t now_us(); // a steady clock, the same on every thread
+	static int64_t now_ns();
 
 	// the clock effect, at the end of each mix step: the conductor's timeline moved over it; the next step's plan
 	void audio_step(uint32_t p_frames);
