@@ -1,0 +1,88 @@
+# On every push to main and every pull request: the core's C tests, and the extension built for Linux and the web
+# (debug and release). A tag v* also publishes a release: the addon as a zip (tools/package_release.sh), its SOURCE.md
+# as the release's notes. The Godot tests (extension/run_tests.sh) run in real time: on shared runners they would be
+# flaky, so they are run by hand before a release. Linux builds and the core's tests on Ubuntu 22.04: the library then
+# loads with its glibc (2.35) and newer, and the core tested is the one shipped.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: tools/setup_felucca.sh
+      - run: core/tests/run.sh
+
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: tools/setup_felucca.sh
+      - run: tools/setup_godot.sh --no-godot
+      - name: Build
+        run: |
+          for target in template_debug template_release; do
+            third_party/.felucca-venv/bin/python -m SCons -j"$(nproc)" target=$target
+          done
+      - name: Check the glibc it needs (at most Ubuntu 22.04's, 2.35)
+        run: |
+          v=$(objdump -T demo/addons/felucca/bin/*.so | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -n 1)
+          echo "needs $v"
+          [ "$(printf '%s\nGLIBC_2.35\n' "$v" | sort -V | tail -n 1)" = GLIBC_2.35 ]
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: demo/addons/felucca/bin/*.so
+          if-no-files-found: error
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - run: tools/setup_felucca.sh
+      - run: tools/setup_godot.sh --no-godot
+      - run: tools/setup_web.sh --no-templates
+      - name: Build
+        run: |
+          . third_party/emsdk/emsdk_env.sh
+          for target in template_debug template_release; do
+            third_party/.felucca-venv/bin/python -m SCons -j"$(nproc)" platform=web target=$target
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: web
+          path: demo/addons/felucca/bin/*.wasm
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [core-tests, linux, web]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - run: tools/setup_felucca.sh
+      - run: tools/setup_godot.sh --no-godot
+      - uses: actions/download-artifact@v8
+        with:
+          path: demo/addons/felucca/bin
+          merge-multiple: true
+      - run: tools/package_release.sh "$GITHUB_REF_NAME"
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+      - name: Publish
+        run: >-
+          gh release create "$GITHUB_REF_NAME" "build/release/felucca-$GITHUB_REF_NAME.zip"
+          --verify-tag --title "$GITHUB_REF_NAME" --notes-file build/release/SOURCE.md
+        env:
+          GH_TOKEN: ${{ github.token }}

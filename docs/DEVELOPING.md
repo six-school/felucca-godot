@@ -5,14 +5,14 @@ The README's "Building from source" section gets you a build. This page covers t
 ## Setup
 
 - `tools/setup_felucca.sh` checks out Felucca at `63f88ec`, applies `patches/` and generates Felucca's headers, all in `third_party/felucca` (gitignored).
-- `tools/setup_godot.sh` downloads Godot 4.7.2 (the release zip, SHA-512 pinned) and godot-cpp `507ed9d` (10.0.0-stable), and installs SCons 4.9.1 into the venv. Run SCons as `third_party/.felucca-venv/bin/python -m SCons` rather than through the venv's `scons` script, which may point at a different Python. Builds go to `demo/addons/felucca/bin/`.
+- `tools/setup_godot.sh` downloads Godot 4.7.2 (the release zip, SHA-512 pinned) and godot-cpp `507ed9d` (10.0.0-stable), and installs SCons 4.9.1 into the venv. Run SCons as `third_party/.felucca-venv/bin/python -m SCons` rather than through the venv's `scons` script, which may point at a different Python. Builds go to `demo/addons/felucca/bin/`. If you only build, pass `--no-godot` to skip the Godot binary, which only the tests and the editor need.
 - For web builds, run `tools/setup_web.sh` after `setup_godot.sh`. It installs Emscripten 4.0.20 (the version Godot 4.7.2's web templates are built with) into `third_party/emsdk`, and puts Godot 4.7.2's `web_dlink_*` export templates (SHA-512 checked) into Godot's templates folder. `emsdk_env.sh` only works in bash, so from another shell, run:
 
   ```sh
   bash -c '. third_party/emsdk/emsdk_env.sh && third_party/.felucca-venv/bin/python -m SCons platform=web target=template_debug'
   ```
 
-  You need both the debug and the release web builds to export.
+  You need both the debug and the release web builds to export. If you only build, pass `--no-templates` to skip the export templates (a 1.3 GB download).
 
 So far everything has been built with clang (the core), g++ (the extension: godot-cpp's default), Python 3 (with Pillow, fontTools and SCons in the venv) and Godot 4.7.2, plus Emscripten 4.0.20, headless Chromium 156 and Node 24 for the web.
 
@@ -26,6 +26,12 @@ So far everything has been built with clang (the core), g++ (the extension: godo
 - Felucca's own suite (`third_party/felucca/tests/run_tests.sh`) needs the device image, built with the AC79 toolchain, for a few of its tests. Its ASan builds have crashed at random on Linux 6.8 with gcc 12's runtime (`AddressSanitizer:DEADLYSIGNAL` loops, on unpatched Felucca too), and one loop wrote 15 GB of output, so run it with a timeout and cap the output (`| head -c`).
 
 The C prototypes and the Godot spike that first measured the design were removed in 6d13c9a. To get them back, run `git checkout 6d13c9a^ -- prototypes spikes tests`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request. It runs the core's C tests and builds the extension for Linux and the web, in debug and release. The Linux library is built on Ubuntu 22.04 so that it runs on any Linux with glibc 2.35 (22.04's version) or later. A build step checks this: it fails if the library requires a glibc version above 2.35. The Godot tests don't run there: they run in real time and would be flaky on shared runners, so run `extension/run_tests.sh` yourself before a release.
+
+To publish a release, push a tag named `v` followed by the version, for example `v0.1.0`. CI then also runs `tools/package_release.sh`, which zips `addons/felucca/` with the four libraries, the licences and `SOURCE.md`, and publishes the zip as a GitHub release. `SOURCE.md` says where the source of those libraries is, as the GPL requires next to the binaries, and also becomes the release's notes. You can run the script yourself once all four libraries are built.
 
 ## Demos
 

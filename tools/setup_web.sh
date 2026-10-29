@@ -3,8 +3,9 @@
 # built with (godotengine/build-containers, branch 4.7, Dockerfile.web), at its emsdk tag's commit; and Godot 4.7.2's
 # export templates (the release's .tpz, the SHA-512 below as its SHA512-SUMS.txt gives it), of which only the threaded
 # web templates with GDExtension support (web_dlink_*.zip) are kept, where Godot's template manager puts them.
-#   tools/setup_web.sh        (after tools/setup_godot.sh; into third_party/emsdk, gitignored, and
+#   tools/setup_web.sh [--no-templates]   (after tools/setup_godot.sh; into third_party/emsdk, gitignored, and
 #                              $XDG_DATA_HOME/godot/export_templates/4.7.2.stable; the .tpz, 1.3 GB, is deleted after)
+# --no-templates: Emscripten only, all a build needs (CI's); the templates are for exporting
 set -e
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 T=$HERE/third_party
@@ -21,6 +22,10 @@ fi
 if [ ! -x "$T/emsdk/upstream/emscripten/emcc" ]; then
     "$T/emsdk/emsdk" install "$EM" > /dev/null
     "$T/emsdk/emsdk" activate "$EM" > /dev/null
+fi
+if [ "$1" = --no-templates ]; then
+    echo "emsdk: $("$T/emsdk/upstream/emscripten/emcc" --version | head -n 1); templates not fetched (--no-templates)"
+    exit 0
 fi
 if [ ! -f "$TPL/web_dlink_debug.zip" ] || [ ! -f "$TPL/web_dlink_release.zip" ]; then
     mkdir -p "$T/godot/dl" "$TPL"
