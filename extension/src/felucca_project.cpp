@@ -101,7 +101,7 @@ void FeluccaProject::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_INT32_ARRAY, "song_values", PROPERTY_HINT_NONE, "", st), "set_song_values", "get_song_values");
 }
 
-// the web app's export (D13), Godot's JSON reading it:
+// the web app's export, Godot's JSON reading it:
 //   {"format": "felucca-project", "version": 1, "firmware": "FELUCCA v1.6.1", "slot": 3,
 //    "object": {"size": 3840, "crc": <CRC-32 (zlib) of the bytes>, "data": "<base64 of the bytes>"}}
 // checked as the web app writes it; whether the bytes are a project is the firmware's to say (project_info)

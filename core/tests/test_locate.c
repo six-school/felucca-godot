@@ -1,4 +1,4 @@
-/* M2's locate (docs/DESIGN.md §6.4) on test copies (core/tests/test_hooks.c) sharing one timeline (the conductor's),
+/* locate (fel_core.h) on test copies (core/tests/test_hooks.c) sharing one timeline (the conductor's),
  * all rendering the same chunks from boot (so their blocks fall alike): an instance that joins by locate(origin) must
  * from then on be where one that played continuously since origin is. Compared every chunk of 32 frames, on every
  * track: the step, the samples into it, the passes through LEN (snapshot); the conditions' loop, the nudge latches, an
@@ -155,5 +155,5 @@ int main(void)
     CHECK(quiet_end > quiet_from && peak_quiet == 0.0, "locate: nothing of the step it lands in sounds (peak %.6f)",
           peak_quiet);
     CHECK(loud && peak_of(out1 + loud, frames_ms(300)) > 0.01, "locate: the next steps play");
-    return check_done("M2 locate (core/tests/test_locate.c)");
+    return check_done("locate (core/tests/test_locate.c)");
 }

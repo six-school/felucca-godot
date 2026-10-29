@@ -1,25 +1,26 @@
-/* M6's scheduler (docs/DESIGN.md §5.1) on test copies (core/tests/test_hooks.c), one timeline (the conductor's):
+/* The scheduler (fel_core.h: schedule, cancel, events) on test copies (core/tests/test_hooks.c), one timeline (the
+ * conductor's):
  *   A  the steps it works out ahead of the sequencer are the steps the sequencer enters: every FEL_EV_STEP against
  *      patch 0004's hook (the block each track entered a step in), on FEL_TEST_LOCATE's pattern (odd LENs, swing,
  *      1/8T with nudges, conditions), 24 s with the tempo tweened (int, then float), a pause and a locate. Exact. And
- *      each step's length in beats (ABI 7): swung, a long step and the short one after it make two of its DIV's.
- *   B  the knock (T9 on the core, after sched.c): KICK hits on steps 1 5 9 13 of the DRUM track's next pass, a
- *      mark and ANALOG's CUT one pass later: each applied in the block its step starts in (that step's own event), the
+ *      each step's length in beats: swung, a long step and the short one after it make two of its DIV's.
+ *   B  the knock (demo/knock.gd's idea): KICK hits on steps 1 5 9 13 of the DRUM track's next pass, a mark and
+ *      ANALOG's CUT one pass later: each applied in the block its step starts in (that step's own event), the
  *      kicks heard there (the low band's onsets) and nowhere else, the CUT set from there.
  *   C  targets and late policies: the next start of a step (this pass, the next), before step 1, the conductor's
  *      beats; targets a locate jumps past (NEXT: the step's next start, DROP, NOW), a beat target passed (NEXT by its
  *      period, DROP, NOW), a step past LEN; cancel, stop and cut forget; a full table, actions that are not.
- *   D  notes (ABI 8, patch 0005): a DRUM track's hits (its steps', the scheduled ones) reported in their steps' blocks
+ *   D  notes (patch 0005): a DRUM track's hits (its steps', the scheduled ones) reported in their steps' blocks
  *      with their lanes, a synth's note with none, a muted track's nothing; every note on paired with one off: the
  *      sequencer's at their gates' ends and at a stop, held keys (MIDI IN) when released or by a panic (trk_all_off),
  *      not by a stop.
- *   E  replace and mask (ABI 9, patch 0006), counted on every note started (before the events' pairing): a HIT in
+ *   E  replace and mask (patch 0006), counted on every note started (before the events' pairing): a HIT in
  *      place of its lane on the step (as a note, as a lane hit; the step's other lanes play), a NOTE in place of the
  *      step's notes (a ratchet's three too), a layered one over them, a step masked whose note is nudged late or
  *      early, a loop masked but for a scheduled hit, a bar of a triplet part (two of its loops) against one loop of
  *      it, a mask from a bar's beat, a mask cancelled before it starts (it never does) and while running (it runs on);
  *      each against the same step a pass later, as programmed.
- *   F  a SET for an engine (ABI 10): applied while the track plays it; for another engine, or one the track has left
+ *   F  a SET for an engine: applied while the track plays it; for another engine, or one the track has left
  *      before the step comes, dropped (an engine's parameter id is every engine's: it would move another's). */
 #include "test_hooks.h"
 #include "drive.h"

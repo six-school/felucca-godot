@@ -1,5 +1,5 @@
-// Audio out (D5): a FeluccaSource's stream and its playback; the playback plays a pool instance while it is bound to one
-// (D3, D14: the conductor binds and unbinds them, DESIGN.md §7), and keeps its place in the music without one. It is an
+// Audio out: a FeluccaSource's stream and its playback; the playback plays a pool instance while it is bound to one
+// (the conductor binds and unbinds them), and keeps its place in the music without one. It is an
 // AudioStreamPlayback of its own rather than an AudioStreamPlaybackResampled: Godot calls _mix once a mix step with
 // that step's frames, so they map exactly onto the step's plan (the conductor's timeline from b0 to b1); the resampled
 // base would ask for 128-frame chunks at a phase of each player's own, putting instances up to 2.9 ms apart. At a mix
@@ -21,7 +21,7 @@
 
 namespace godot {
 
-// where a source's music is (FeluccaSource.get_snapshot), as heard: the conductor's playhead as heard (§6.3), the
+// where a source's music is (FeluccaSource.get_snapshot), as heard: the conductor's playhead as heard, the
 // parts' steps as their starts have been heard. The hidden _get_rendered_snapshot gives the instance's own, as rendered
 // (tests, debugging: up to a mix step and the output latency ahead), with the internal fields too
 class FeluccaSnapshot : public RefCounted {
@@ -68,7 +68,7 @@ public:
 	bool _is_monophonic() const override { return true; }
 };
 
-// an instance's event, with the mix step it was rendered in (DESIGN.md §6.3: when it is heard)
+// an instance's event, with the mix step it was rendered in (to know when it is heard)
 struct FelHeard {
 	fel_event_t e;
 	uint64_t step;
@@ -109,7 +109,7 @@ public:
 	int slot = -1; // the copy it is bound to, -1 none
 	uint64_t seq = 0; // the order of the play()s (the first come binds first while copies are free)
 	bool refused = false; // its project did not import: it never binds
-	int pins = 0; // its actions pending (scheduled, not heard yet): it keeps an instance (DESIGN.md §7)
+	int pins = 0; // its actions pending (scheduled, not heard yet): it keeps an instance (never evicted)
 	bool timed = false; // its play() resolved to an origin
 	// each part's step as heard (1-based, 0 none yet), its start on the conductor's timeline and its length in beats;
 	// the moments rendered, still to be heard (the conductor's: the heard snapshot, the parts' signals): a step (step,
@@ -162,8 +162,8 @@ public:
 	bool bind(int p_slot);
 	// main thread: back to playing nothing, under the lock; the copy is cut and freed
 	void unbind();
-	// main thread: evicted (DESIGN.md §7): its copy fades out over the next mix step; the conductor's pass unbinds it
-	// once that is done
+	// main thread: evicted (a source nearer the listener needs its copy): the copy fades out over the next mix step;
+	// the conductor's pass unbinds it once that is done
 	void leave();
 	Ref<FeluccaSnapshot> rendered_snapshot() const; // the instance's, as rendered (main thread: takes the lock)
 	void take_events(std::vector<FelHeard> &r_out); // main thread, under the lock: the ring's, in order

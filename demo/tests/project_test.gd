@@ -1,6 +1,7 @@
 # The project file's checks in Godot 4.7.2 (extension/run_tests.sh): the web app's export read with Godot's own JSON
-# (FeluccaProject.parse_json, through check_json), on the user's export (res://tests/project.json, the C tests' fixture)
-# and on damaged copies of it: each damage is named by the first problem in it, as the importer would report it.
+# (FeluccaProject.parse_json, through check_json), on a test project (res://tests/project.json, the C tests' fixture
+# too) and on damaged copies of it: each damage is named by the first problem in it, as the importer would report
+# it.
 extends Node
 
 const M_JSON := "not JSON"
@@ -41,7 +42,7 @@ func crc32(b: PackedByteArray) -> int:
 
 func _ready() -> void:
 	text = FileAccess.get_file_as_string("res://tests/project.json")
-	expect(text, "", "the user's export")
+	expect(text, "", "the test project")
 	expect("".join(Array(text.split("\n")).map(func(l: String) -> String: return l.strip_edges())), "", "on one line")
 	expect(text.replace("/", "\\/"), "", "every / escaped as \\/")
 	expect(edit("\"slot\"", "\"extra\": {\"a\": [1, -2.5e3, true, null, \"x\\u00e9\"]}, \"slot\""), "",

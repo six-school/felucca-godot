@@ -82,12 +82,12 @@ static void test_setup(int which)
     track_t *t;
     uint32_t i;
     test_empty();
-    if (which == FEL_TEST_TIMING) {             /* T5's three tracks (tempo.c): a 4/4 bar each */
+    if (which == FEL_TEST_TIMING) {             /* test_timing's three tracks: a 4/4 bar each */
         trk[0].p[P_SDIV] = 2; trk[0].p[P_SLEN] = 16;   /* 1/16 x 16 */
         trk[1].p[P_SDIV] = 0; trk[1].p[P_SLEN] = 4;    /* 1/4 x 4 */
         trk[2].p[P_SDIV] = 4; trk[2].p[P_SLEN] = 12;   /* 1/8T x 12 */
         trk[3].p[P_SDIV] = 2; trk[3].p[P_SLEN] = 16;
-    } else if (which == FEL_TEST_DELAY || which == FEL_TEST_DELAY_DRY) {   /* T6 (clicks.c): a held sine through a
+    } else if (which == FEL_TEST_DELAY || which == FEL_TEST_DELAY_DRY) {   /* test_delay's: a held sine through a
                                                                          * 1/4 delay (DRY: its MIX 0), nothing else */
         set_engine_of(&trk[0], 0);              /* ANALOG */
         trk[0].p[P_E0] = 3;                     /* its WAVE (E0, not the LFO's WAVE): SIN */
@@ -136,7 +136,7 @@ static void test_setup(int which)
         song.g[G_DTIME] = 0; song.g[G_DFDBK] = 120; song.g[G_DMIX] = 127;   /* a delay fed back past 100 %: it never
                                                                              * dies out on its own */
         song.g[G_RTYPE] = 2; song.g[G_RSIZE] = 127; song.g[G_RDAMP] = 0;   /* HALL, its longest */
-    } else if (which == FEL_TEST_KNOCK) {       /* the knock (T9's sched.c): DRUM 1/16 x 16 on track 4, closed
+    } else if (which == FEL_TEST_KNOCK) {       /* test_sched's knock: DRUM 1/16 x 16 on track 4, closed
                                                  * hats on the off-beats only (every kick heard is a scheduled hit's);
                                                  * ANALOG on track 1, no notes, its CUT half way */
         set_engine_of(&trk[0], 0);

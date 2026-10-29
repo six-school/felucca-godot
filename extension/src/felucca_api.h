@@ -1,9 +1,9 @@
-// The typed API (D10, §5.2, §8): FeluccaPart (a source's part: every track parameter, its engine and engine views),
+// The typed API: FeluccaPart (a source's part: every track parameter, its engine and engine views),
 // FeluccaSong (its sound's globals), one FeluccaEngineView an engine (FeluccaAnalog ..), FeluccaOverrides. The
 // properties come from tables extension/codegen/gen_api.py makes of the firmware's own (felucca_api.gen.cpp): each
 // is a real ClassDB property, so GDScript's analyzer knows it, its type and its enum (a typo is a parse error).
 //
-// Values (§4.2): what a source's scripts set is kept on the source (FelValues), applied at once to the instance that
+// Values: what a source's scripts set is kept on the source (FelValues), applied at once to the instance that
 // plays it (under AudioServer::lock(), as the audio thread is then not mixing) and at binding to the next one; read
 // back, a bound part gives what sounds (recorded automation included), an unbound one what was set, else what its
 // overrides and its project say. A part's value: its project's, under its overrides' (FeluccaOverrides, live: a
@@ -175,7 +175,7 @@ public:
 };
 
 
-// one override (D14, §5.2): a part's parameter set to a value over its project's, at binding and live (a source hears its
+// one override: a part's parameter set to a value over its project's, at binding and live (a source hears its
 // overrides' changes); to mute parts, a source's muted_parts
 class FeluccaOverride : public Resource {
 	GDCLASS(FeluccaOverride, Resource);

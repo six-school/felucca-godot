@@ -1,7 +1,7 @@
-// Sources (D14): FeluccaSource, FeluccaSource2D, FeluccaSource3D are the AudioStreamPlayer* nodes that play a
+// Sources: FeluccaSource, FeluccaSource2D, FeluccaSource3D are the AudioStreamPlayer* nodes that play a
 // project. Their own play() / stop() / stream_paused as for any player; the stream is theirs (made from project,
 // quantize, join at run time), each playback one pool instance while it is in range of the listener (the conductor's
-// binding pass, DESIGN.md §7).
+// binding pass).
 #pragma once
 
 #include "felucca_api.h"
@@ -28,7 +28,7 @@ struct FelSource {
 	std::shared_ptr<FelValues> values = std::make_shared<FelValues>(); // (its parts', its song's, its playbacks')
 	Ref<FeluccaPart> parts[FEL_TRACKS];
 	Ref<FeluccaSong> song;
-	bool pinned = false; // it always has an instance while it plays (DESIGN.md §7), as with actions pending
+	bool pinned = false; // it always has an instance while it plays, as with actions pending
 	bool reported = false; // bound, as its last bound / unbound signal said (the conductor's)
 
 	Ref<FeluccaPart> part(int p_index);
@@ -46,7 +46,7 @@ struct FelSource {
 	static String ignored(const Node *p_owner); // "" none, else what it ignores
 	Ref<FeluccaSnapshot> snapshot(Node *p_owner) const;
 	bool bound(Node *p_owner) const;
-	// M6: an action held until its target, on the source while it plays (FeluccaConductor::schedule), -> its handle,
+	// an action held until its target, on the source while it plays (FeluccaConductor::schedule), -> its handle,
 	// or null (an error said why); cancel: the pending ones with that tag
 	Ref<FeluccaSchedule> schedule(Node *p_owner, const Ref<FeluccaWhen> &p_when, const Ref<FeluccaAction> &p_action,
 			const StringName &p_tag, const Callable &p_callback);

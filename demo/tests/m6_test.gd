@@ -1,5 +1,5 @@
-# M6's checks in Godot 4.7.2 (extension/run_tests.sh), parts 2 and 3: scheduling from scripts, the signals and the
-# snapshot as heard (DESIGN.md §5.2, §6.3, §7), each piece on its own: what schedule() and the targets and actions take and refuse; a mark on the next loop and its
+# Checks in Godot 4.7.2 (extension/run_tests.sh): scheduling from scripts, the signals and the snapshot as heard,
+# each piece on its own: what schedule() and the targets and actions take and refuse; a mark on the next loop and its
 # event, heard (on the handle too); four hits, heard a step's length apart as they play; next_step in this pass or the
 # next; the conductor's next bar; cancel(tag), a handle's cancel(), stop(); the late policies after a FOLLOW resume
 # (NEXT, DROP: dropped at once, NOW); set_param kept for the next binding; pinning (actions pending, pinned = true,
@@ -141,7 +141,7 @@ func mark_next_loop() -> void:
 	a.stop()
 	check(await until(func() -> bool: return unbound_n[a] == 1, 2.0), "stopped: unbound, once")
 
-# ---- four hits: heard a step's length apart as they play (each part the time it is heard: §6.3)
+# ---- four hits: heard a step's length apart as they play (each part the time it is heard)
 func knock() -> void:
 	var a := await started("Knock")
 	var from := got.size()

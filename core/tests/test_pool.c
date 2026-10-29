@@ -1,10 +1,10 @@
-/* T8 (docs/DESIGN.md §10) on the pool as L2 gets it: libfelucca_core.a, every copy renamed (core/build.sh), only
+/* The pool's copies as the extension gets them: libfelucca_core.a, every copy renamed (core/build.sh), only
  * fel_core_t in use (plus each copy's renamed test hook for the heavy song). Black-box: ids are the firmware's
  * numbers (build/gen_api/params.json, Felucca 1.6.1).
- *   isolation  copies 0 and 1, different values and notes: each hears only its own
- *   T11        the user's project in copies 2 and 3 on the same timeline: the same audio, sample for sample
- *   T8         the heavy song in copies 4 and 5 on the same timeline for 10 minutes: the same positions and audio
- *              throughout
+ *   isolation    copies 0 and 1, different values and notes: each hears only its own
+ *   test export  a test project in copies 2 and 3 on the same timeline: the same audio, sample for sample
+ *   lock step    the heavy song in copies 4 and 5 on the same timeline for 10 minutes: the same positions and audio
+ *                throughout
  * (each pair fresh and treated alike: an import does not reset an instance's FX tails or noise, as on the device)
  *   test_pool build/core/fixture.bin */
 #include "fel_pool.h"
@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     cs[0]->note(0, 48, 0);
     cs[1]->note(0, 48, 0);
 
-    /* ---- T11 twice: the user's project in both, on the same timeline ---- */
+    /* ---- the test export twice, on the same timeline ---- */
     if (argc < 2 || fixture_read(argv[1], &file_)) {
         printf("test_pool FIXTURE.bin\n");
         return 2;
@@ -65,16 +65,16 @@ int main(int argc, char **argv)
     cs[0]->boot();
     cs[1]->boot();
     CHECK(!cs[0]->project_import(file_.data, file_.size) &&
-          !cs[1]->project_import(file_.data, file_.size), "T11: the user's project into both");
+          !cs[1]->project_import(file_.data, file_.size), "test export: into both");
     drive_bpm = 68;
     cs[0]->tempo(drive_bpm);
     cs[1]->tempo(drive_bpm);
     cs[0]->play(drive_timeline);
     cs[1]->play(drive_timeline);
     drive(cs, 2, 16 * FEL_RATE, ls);
-    CHECK(rms_of(la, 16 * FEL_RATE) > 0.02 && !memcmp(la, lb, sizeof la), "T11: 16 s, the same audio in both");
+    CHECK(rms_of(la, 16 * FEL_RATE) > 0.02 && !memcmp(la, lb, sizeof la), "test export: 16 s, the same audio in both");
 
-    /* ---- T8: the heavy song, 10 minutes, the same timeline ---- */
+    /* ---- lock step: the heavy song, 10 minutes, the same timeline ---- */
     {
         uint64_t blocks = 0, diff = 0, k, total = 600ull * FEL_RATE;
         fel_snapshot_t sa, sb;
@@ -97,14 +97,14 @@ int main(int argc, char **argv)
         }
         cs[0]->snapshot(&sa);
         cs[1]->snapshot(&sb);
-        printf("  T8 10 min: copy 0 at %.4f beats, step %u + %u; copy 1 at %.4f, step %u + %u; %llu of %llu mix steps"
-               " differ\n", sa.beats, sa.track[0].step, sa.track[0].pos, sb.beats, sb.track[0].step, sb.track[0].pos,
-               (unsigned long long)diff, (unsigned long long)blocks);
+        printf("  lock step, 10 min: copy 0 at %.4f beats, step %u + %u; copy 1 at %.4f, step %u + %u; %llu of %llu "
+               "mix steps differ\n", sa.beats, sa.track[0].step, sa.track[0].pos, sb.beats, sb.track[0].step,
+               sb.track[0].pos, (unsigned long long)diff, (unsigned long long)blocks);
         CHECK(snap_same(&sa, &sb) && sa.playing && sa.beats > drive_timeline - b0 - 1.0 / 24000 &&
-              sa.beats < drive_timeline - b0 + 128.0 * 2 / FEL_RATE, "T8: the same positions after 10 min, on the"
-              " timeline (%.4f beats, it moved %.4f: within a clock unit behind, one half ahead)", sa.beats,
+              sa.beats < drive_timeline - b0 + 128.0 * 2 / FEL_RATE, "lock step: the same positions after 10 min, on"
+              " the timeline (%.4f beats, it moved %.4f: within a clock unit behind, one half ahead)", sa.beats,
               drive_timeline - b0);
-        CHECK(diff == 0, "T8: the same audio throughout");
+        CHECK(diff == 0, "lock step: the same audio throughout");
     }
-    return check_done("T8 pool (core/tests/test_pool.c)");
+    return check_done("pool (core/tests/test_pool.c)");
 }

@@ -1,4 +1,4 @@
-# The demo: the user's own project ("SOLAR SIGNAL", made on an FM-1, Felucca 1.6.1) in two sources, the cellar on the
+# The demo: a project made on an FM-1 ("SOLAR SIGNAL", Felucca 1.6.1) in two sources, the cellar on the
 # left and the hallway on the right, at the project's own tempo; the tempo eases to 80 BPM and back. Space pauses the
 # game (and all of its music, at once); headless, it prints where both sources are. Each source is drawn with its range
 # and a ring: green while it has an engine, orange in range without one, grey playing out of range, dark stopped; its

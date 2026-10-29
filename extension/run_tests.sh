@@ -65,7 +65,7 @@ echo "== demo/tests/project_test.tscn: the project file, read with Godot's JSON"
 timeout 60 "$G" --headless --path demo res://tests/project_test.tscn > build/project_test.log 2>&1 || fail=1
 grep -E "^(ok|FAIL|project_test)" build/project_test.log || true
 grep -E "^(ERROR|SCRIPT ERROR)" build/project_test.log || true
-# M4 done when a typo is a parse error: the typed API spelled right parses, each script with one typo does not
+# the typed API makes a typo a parse error: spelled right it parses, each script with one typo does not
 echo "== demo/tests/typo: the typed API checked by GDScript's analyzer"
 for f in demo/tests/typo/*.gd; do
     n=$(basename "$f")

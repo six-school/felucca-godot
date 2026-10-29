@@ -1,5 +1,5 @@
 #!/bin/sh
-# M7's measures (docs/DESIGN.md §9, part 3) from release builds: demo/tests/m7_bench in headless Chromium (the "Web
+# Benchmarks (boot, CPU, latency, download size) from release builds: demo/tests/m7_bench in headless Chromium (the "Web
 # tests" export, as extension/run_web_tests.sh serves and runs it) at the browser's 44.1 kHz and at 48 kHz, then on the
 # desktop (Dummy driver) at both; then the "Web" export's files, as downloaded (each, and gzip -9: what a server
 # compressing them sends).

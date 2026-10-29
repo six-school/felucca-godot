@@ -1,10 +1,10 @@
-/* The board file (docs/DESIGN.md D2): Felucca's browser build, web/emu/felucca_web.c, included as it is and driven
+/* The board file: Felucca's browser build, web/emu/felucca_web.c, included as it is and driven
  * headless by a game engine. On top of it this file owns the render loop around web_ms() (one device millisecond),
  * feeds PR 269's external-clock grid from the conductor's timeline (FELUCCA_HOST_CLOCK, patch 0002), and offers
  * the firmware's state as the table of core/fel_core.h.
  *
  * One compiled copy of this file is one instance. core/build.sh compiles it N times with every global the firmware
- * defines renamed (D3); the copy's own export is fel_core_<FEL_COPY>() and nothing else.
+ * defines renamed; the copy's own export is fel_core_<FEL_COPY>() and nothing else.
  *
  * Timing: the firmware renders I2S halves of 128 frames, each as four 32-sample blocks; events_block runs once per
  * block and asks host_clock_units() (below) how far the music moved in it. Frames rendered ahead (at most 127) wait
@@ -15,7 +15,7 @@
 #define FEL_COPY 0
 #endif
 #define FELUCCA_HOST_CLOCK 1
-#define FELUCCA_DELAY_GLIDE 1           /* patch 0003: a new delay TIME (the tempo moved) glides there, no click (D9) */
+#define FELUCCA_DELAY_GLIDE 1           /* patch 0003: a new delay TIME (the tempo moved) glides there, no click */
 #define FELUCCA_HOST_NOTES 1            /* patch 0005: every note a track starts and releases (the events' NOTE) */
 #define FELUCCA_HOST_STEPS 1            /* patch 0006: a step's own notes left out (replace, mask: host_step_skip) */
 #include "web/emu/felucca_web.c"
@@ -24,8 +24,7 @@
 _Static_assert(PROJ_STORE_SIZE == FEL_PROJECT_SIZE && NTRK == FEL_TRACKS && FS == FEL_RATE && P_COUNT <= FEL_PARAMS &&
                G_COUNT <= FEL_GLOBALS, "fel_core.h's constants");
 
-#define FEL_BOOT_MS 1500u               /* device time run at boot: past the splash (430 ms) and the LED sweep, as every
-                                         * prototype measured */
+#define FEL_BOOT_MS 1500u               /* device time run at boot: past the splash (430 ms) and the LED sweep */
 
 /* ------------------------------------------------------------ the host clock --- */
 static uint32_t hclk_f0;                /* the ring index render()'s b0 belongs to (its first frame) */
@@ -114,9 +113,11 @@ static uint32_t host_clock_units(uint32_t n)
                                                     * until it is reached again. (NaN, infinite: hold) */
         return fel_sched_block(0, blk, start, b);
     total = (uint64_t)floor(due + 1e-9) - hclk_fed;
-    n = total > MIDI_CLOCK_GRID / 2u ? MIDI_CLOCK_GRID / 2u : (uint32_t)total;   /* (midi_grid_advance's bound; a
-                                                                                  * jump in the conductor's timeline:
-                                                                                  * M2's locate) */
+    n = total > MIDI_CLOCK_GRID / 2u ? MIDI_CLOCK_GRID / 2u : (uint32_t)total;   /* (midi_grid_advance's bound: a
+                                                                                  * jump in the conductor's timeline
+                                                                                  * plays as a fast-forward, half a
+                                                                                  * beat a block, unless the
+                                                                                  * extension calls locate, below) */
     hclk_fed += n;
     return fel_sched_block(n, blk, start, b);
 }
@@ -131,7 +132,7 @@ static void fel_ms(void)
     web_ms();
 }
 
-/* ------------------------------------------------------------ locate (DESIGN.md §6.4) --- */
+/* ------------------------------------------------------------ locate: joining a timeline in progress --- */
 /* NUDGE and the matrix's TIME of the step t lands in, pos samples into it, as seq_nd_start / seq_play_on latched them
  * when continuous play entered it: a late play still to come is latched again (it sounds, as it would have); one due
  * already is gone (no missed step sounds late); the next step's early play, latched, or marked played (nd_fired) when
@@ -263,7 +264,7 @@ static void core_boot(void)
 {
     if (web_booted)
         return;
-    web_nor_erase();                    /* nothing persists (R13): an erased flash, settings and slots at defaults */
+    web_nor_erase();                    /* nothing persists between sessions: an erased flash, settings and slots at defaults */
     web_master(1023);                   /* MASTER at its top (unity): the level is the caller's */
     web_boot();
     song.g[G_CLOCK] = 1;                /* an external clock (USB's): PR 269's grid, which host_clock_units feeds */
@@ -440,7 +441,7 @@ static int32_t core_project_info(const uint8_t *b, uint32_t n, fel_project_info_
 
 static const char *core_engine_name(int engine) { return engine >= 0 && engine < NENGINES ? ENGINES[engine]->name : 0; }
 
-/* ------------------------------------------------------------ scheduling (DESIGN.md §5.1) --- */
+/* ------------------------------------------------------------ scheduling --- */
 /* Actions held until their target, and what happened, out. host_clock_units runs before the block's sequencer ticks:
  * from the units it gives the block, fel_sched_block works out which steps start in it (seq_tick's own arithmetic, on
  * a copy of each track's grid: midi_seq_preview) and applies what is due there first, so a hit sounds from the block
@@ -837,7 +838,7 @@ static void core_play(double at_beats)
 static int32_t core_locate(double origin_beats)
 {
     if (!(origin_beats > -1e15 && origin_beats < 1e15) || chain.running || chain.armed)
-        return 1;                                       /* (a SONG chain: not yet, DESIGN.md §6.4) */
+        return 1;                                       /* (a SONG chain: not yet implemented) */
     hclk_origin = origin_beats;
     hclk_armed = 0;
     hclk_locate = 1;

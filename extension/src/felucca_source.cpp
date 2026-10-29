@@ -239,7 +239,7 @@ void FelSource::bind() {
 			"get_quantize");
 	ClassDB::add_property(c, PropertyInfo(Variant::INT, "join", PROPERTY_HINT_ENUM, "Follow,Hold"), "set_join", "get_join");
 	ClassDB::add_property(c, PropertyInfo(Variant::BOOL, "pinned"), "set_pinned", "is_pinned");
-	// (M6, DESIGN.md §5.2) an action, when heard (every one: the callbacks' and handles' too); the source got / lost an
+	// an action, when heard (every one: the callbacks' and handles' too); the source got / lost an
 	// instance
 	ClassDB::add_signal(c, MethodInfo("schedule_triggered", PropertyInfo(Variant::STRING_NAME, "tag"),
 								   PropertyInfo(Variant::OBJECT, "event", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "FeluccaEvent")));

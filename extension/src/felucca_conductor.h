@@ -1,4 +1,4 @@
-// The conductor (D6, D7, §5.2): FeluccaConductor, an engine singleton as Input is (FeluccaConductor.tempo = 140.0),
+// The conductor: FeluccaConductor, an engine singleton as Input is (FeluccaConductor.tempo = 140.0),
 // owns the timeline, its tempo and transport and the pool's playbacks. Its node, FeluccaConductorNode, is the project's
 // autoload (addons/felucca/felucca.tscn): Godot tells a pause to the root's children in the order they were added
 // (Node::_propagate_pause_notification walks data.children, not the child index), and autoloads are added before the
@@ -50,7 +50,7 @@ class FeluccaConductor : public Object {
 	std::vector<Rank> waiting, holders;
 	bool overflow_warned = false, pinned_warned = false;
 
-	// M6 (DESIGN.md §5.2, §6.3): the actions pending on the sources playing, until heard (or dropped, cancelled)
+	// scheduling: the actions pending on the sources playing, until heard (or dropped, cancelled)
 	struct Pending {
 		uint32_t id;
 		FeluccaPlayback *p; // the playback it was scheduled on (it goes with it: stopped, freed)
@@ -122,11 +122,11 @@ public:
 	void add_playback(FeluccaPlayback *p_playback);
 	void remove_playback(FeluccaPlayback *p_playback);
 	void resolve_pending(); // the node, last in each frame's process: this frame's play()s to their origin,
-	void binding_pass(); // .. then copies to the sources pinned, in range, and to the others while some are free (§7)
+	void binding_pass(); // .. then copies to the sources pinned, in range, and to the others while some are free
 	void deliver(); // .. then bound / unbound, the stopped sources' actions cancelled, and what has been heard
 
-	// M6: FelSource's schedule / cancel; a playback's, binding (its actions into the instance, before it is mixed),
-	// its instance coming or going; FeluccaSchedule.cancel
+	// scheduling: FelSource's schedule / cancel; a playback's, binding (its actions into the instance, before it is
+	// mixed), its instance coming or going; FeluccaSchedule.cancel
 	Ref<FeluccaSchedule> schedule(Node *p_source, FeluccaPlayback *p_playback, const Ref<FeluccaWhen> &p_when,
 			const Ref<FeluccaAction> &p_action, const StringName &p_tag, const Callable &p_callback);
 	Ref<FeluccaSnapshot> heard_snapshot(FeluccaPlayback *p_playback); // FeluccaSource.get_snapshot

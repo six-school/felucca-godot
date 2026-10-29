@@ -65,7 +65,7 @@ void FeluccaConductor::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "bar", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_bar");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "beat", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_beat");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "pool_size", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_pool_size");
-	// each whole beat of the playhead, when heard (DESIGN.md §5.2)
+	// each whole beat of the playhead, when heard
 	ADD_SIGNAL(MethodInfo("on_beat", PropertyInfo(Variant::INT, "bar"), PropertyInfo(Variant::INT, "beat")));
 }
 
@@ -142,7 +142,7 @@ void FeluccaConductor::refresh_latency(int64_t p_now) {
 	}
 }
 
-// the timeline as heard at p_now (DESIGN.md §6.3): the newest mix step whose start has been heard (its time in
+// the timeline as heard at p_now: the newest mix step whose start has been heard (its time in
 // Engine::mixes plus the output latency), and the way into it; before any is, the oldest one's start. Never back (the
 // latency figure is asked again now and then)
 double FeluccaConductor::heard_locked(int64_t p_now) {
@@ -312,7 +312,7 @@ const FeluccaConductor::Ear *FeluccaConductor::ear(Viewport *p_viewport) {
 	return &ears.back();
 }
 
-// how far into its range a source is (DESIGN.md §7): its distance to the listener over its max_distance, in range up
+// how far into its range a source is: its distance to the listener over its max_distance, in range up
 // to 1 (Godot mixes it at all: its gain reaches 0 at max_distance). 0 always for a non-positional source, and for a 3D
 // one without a max_distance (no limit); infinite when Godot does not mix it (no listener, or paused by its own
 // stream_paused: r_paused). Godot takes the loudest over every listening viewport of the world (split screens); this
@@ -344,7 +344,7 @@ double FeluccaConductor::reach(Node *p_node, bool &r_paused) {
 	return INFINITY;
 }
 
-// the binding pass (DESIGN.md §7): copies to the sources pinned (actions pending, or pinned: whatever their range,
+// the binding pass: copies to the sources pinned (actions pending, or pinned: whatever their range,
 // never evicted; more than copies: the farthest wait, a warning once), then to the sources in range of the listener,
 // the nearest first, and to the others while some are free (lazy: a source walking into range is bound already). A source in range with none free
 // takes the copy of the bound source farthest out of range; with every bound source in range (more sources in range
@@ -433,7 +433,7 @@ void FeluccaConductor::binding_pass() {
 	}
 }
 
-// ---------------------------------------------------------------- scheduling (M6, DESIGN.md §5.2, §6.3) ---
+// ---------------------------------------------------------------- scheduling ---
 
 Ref<FeluccaSchedule> FeluccaConductor::schedule(Node *p_source, FeluccaPlayback *p_playback, const Ref<FeluccaWhen> &p_when,
 		const Ref<FeluccaAction> &p_action, const StringName &p_tag, const Callable &p_callback) {
@@ -824,11 +824,11 @@ void FeluccaConductor::deliver() {
 	}
 }
 
-// D7: one lock for the conductor's timeline and every bound source, whatever its process mode (a source left playing
-// would only ring on, its music standing with the timeline; DESIGN.md §13.13: its own time while the timeline stands is
-// for later). A source its own stream_paused had paused already is noted and left paused; one Godot will unpause (it is
-// told the pause: it cannot process while the tree is paused) is kept so through that (godot #65743) by its own
-// UNPAUSED (FeluccaSource)
+// the tree's pause: one lock for the conductor's timeline and every bound source, whatever its process mode (a source
+// left playing would only ring on, its music standing with the timeline; a source keeping time of its own while the
+// timeline stands, pause-menu music, is for later). A source its own stream_paused had paused already is noted and left
+// paused; one Godot will unpause (it is told the pause: it cannot process while the tree is paused) is kept so through
+// that (godot #65743) by its own UNPAUSED (FeluccaSource)
 void FeluccaConductor::tree_paused(bool p_paused) {
 	const int64_t now = felucca::Engine::now_us();
 	if (p_paused) {

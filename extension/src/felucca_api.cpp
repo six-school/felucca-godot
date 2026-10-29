@@ -337,7 +337,7 @@ void FeluccaPart::_bind_methods() {
 													  PROPERTY_USAGE_NONE, #m_class),                      \
 			"", "get_" #m_access);
 	FELUCCA_ENGINE_VIEWS(FELUCCA_BIND_VIEW)
-	// (M6, DESIGN.md §5.2) each step the part starts, each pass, when heard; 1-based
+	// each step the part starts, each pass, when heard; 1-based
 	ADD_SIGNAL(MethodInfo("on_step", PropertyInfo(Variant::INT, "step"), PropertyInfo(Variant::INT, "loop")));
 	ADD_SIGNAL(MethodInfo("on_loop", PropertyInfo(Variant::INT, "loop")));
 	// .. each note it starts (on_hit: a DRUM part's, as its lane), each it releases (gate released: a hit rings on), in

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A local server for the web export (docs/DESIGN.md §9, M7): the cross-origin isolation headers a threaded Godot web
+"""A local server for the web export: the cross-origin isolation headers a threaded Godot web
 build needs (COOP and COEP: its threads share memory through SharedArrayBuffer), nothing cached. (The "Web tests"
 export runs the test its page's ?scene= names: demo/tests/web_tests.gd.)
 

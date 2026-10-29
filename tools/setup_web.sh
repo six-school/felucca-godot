@@ -1,5 +1,5 @@
 #!/bin/sh
-# What the web build needs (docs/DESIGN.md §9, M7): Emscripten 4.0.20, the version Godot 4.7's release templates are
+# What the web build needs: Emscripten 4.0.20, the version Godot 4.7's release templates are
 # built with (godotengine/build-containers, branch 4.7, Dockerfile.web), at its emsdk tag's commit; and Godot 4.7.2's
 # export templates (the release's .tpz, the SHA-512 below as its SHA512-SUMS.txt gives it), of which only the threaded
 # web templates with GDExtension support (web_dlink_*.zip) are kept, where Godot's template manager puts them.

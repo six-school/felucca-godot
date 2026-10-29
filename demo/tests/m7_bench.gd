@@ -1,7 +1,7 @@
-# M7's measures (DESIGN.md §9, part 3), on the desktop and in a browser (extension/run_web_bench.sh): the pool's boot
-# when the game starts; Felucca's heavy test song (heavy.felucca, as core/tests/test_heavy.c makes it: T4's) in 1, then
+# Benchmarks, on the desktop and in a browser (extension/run_web_bench.sh): the pool's boot
+# when the game starts; Felucca's heavy test song (heavy.felucca, as core/tests/test_heavy.c makes it) in 1, then
 # 8 instances: the share of the audio thread their mixes take, and whether the mix keeps up with real time; the output
-# latency the audio driver reports (the conductor's heard time adds it, §6.3), and in a browser what an AudioContext of
+# latency the audio driver reports (the conductor's heard time adds it), and in a browser what an AudioContext of
 # its own says. It measures; it checks only that every instance is bound, and in a browser that the mix keeps up and
 # that there is a latency figure.
 extends Node

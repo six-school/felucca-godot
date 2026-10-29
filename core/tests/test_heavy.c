@@ -1,5 +1,5 @@
-/* The heavy test song (felucca_web.c web_test_heavy: T4's and T8's) as a project file, for what M7 measures in Godot
- * (docs/DESIGN.md §9: the CPU of 1 and 8 instances in a browser and on the desktop, demo/tests/m7_bench). Copy 6
+/* The heavy test song (felucca_web.c web_test_heavy: test_cpu's and test_pool's) as a project file, for what
+ * demo/tests/m7_bench measures in Godot (the CPU of 1 and 8 instances in a browser and on the desktop). Copy 6
  * makes the song and exports it; copy 7 imports the bytes; both play on the same timeline for 16 s and must sound
  * the same (the project holds the whole song: its presets, voices, chords and drums). The bytes go to the path given;
  * core/tests/run.sh wraps them as the web app's export does (demo/tests/heavy.felucca).

@@ -1,8 +1,8 @@
 #!/bin/sh
-# The core's checks (docs/DESIGN.md §14): the core built as the pool (core/build.sh); M1: T1 T2 T3 T4 T8 T11 as C
-# tests, and the 2-copy link test (a global left out of the renames must be caught); M2: T5, T6 and locate, M5: the cut,
-# M6: the scheduler, on test copies (core/tests/test_hooks.c: the board file with white-box accessors, renamed as the
-# pool); M7: the heavy song as a project file (demo/tests/heavy.felucca, for the demo's measures).
+# The core's checks: the core built as the pool (core/build.sh); parameters, projects, CPU and the pool's copies as C
+# tests, and the 2-copy link test (a global left out of the renames must be caught); step timing, the delay's glide,
+# locate, the cut and the scheduler on test copies (core/tests/test_hooks.c: the board file with white-box accessors,
+# renamed as the pool); the heavy song as a project file (demo/tests/heavy.felucca, for m7_bench's measures).
 #   core/tests/run.sh          (env FELUCCA: the Felucca tree, OUT: the build directory, CC: the compiler)
 HERE=$(cd "$(dirname "$0")" && pwd)
 CORE=$(cd "$HERE/.." && pwd)
@@ -14,8 +14,8 @@ FIX=$ROOT/demo/tests/project.json
 export FELUCCA="$F" OUT CC
 set -e
 "$CORE/build.sh"
-# the user's export as the core takes it: its store object's bytes (the .json is the extension's to read, with Godot's
-# JSON: FeluccaProject::parse_json; here only what the tests need, and that the file is whole)
+# An exported Felucca project as the core takes it: its store object's bytes (the .json is the extension's
+# to read, with Godot's JSON: FeluccaProject::parse_json; here only what the tests need, and that the file is whole)
 python3 - "$FIX" "$OUT/fixture.bin" <<'PY'
 import base64, json, sys, zlib
 f = json.load(open(sys.argv[1]))
@@ -55,11 +55,11 @@ W="-O2 -std=gnu99 -Wall -Wextra -Werror -I$CORE"
 set +e
 fail=0
 run() { echo "== $1"; shift; "$@" || fail=1; }
-run "T1 T2: CUT and ARP RATE from code" "$OUT/test_params"
-run "T3 T11: projects, the user's export" "$OUT/test_project" "$FIXB"
-run "T4: CPU of the heavy song" "$OUT/test_cpu"
-run "T8: the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIXB"
-run "the heavy song as a project file (M7's measures)" "$OUT/test_heavy" "$OUT/heavy.bin"
+run "parameters: CUT and ARP RATE from code" "$OUT/test_params"
+run "projects: a round trip, a test export" "$OUT/test_project" "$FIXB"
+run "CPU of the heavy song" "$OUT/test_cpu"
+run "the pool's copies isolated, in lock step" "$OUT/test_pool" "$FIXB"
+run "the heavy song as a project file (m7_bench's measures)" "$OUT/test_heavy" "$OUT/heavy.bin"
 # ... as the web app exports it, for the demo's measures (demo/tests/heavy.felucca): rewritten only when it changes
 python3 - "$OUT/heavy.bin" "$ROOT/demo/tests/heavy.felucca" "FELUCCA $V" <<'PY' || fail=1
 import base64, json, sys, zlib
@@ -76,8 +76,8 @@ if not same:
         out.write("\n")
     print("  wrote " + sys.argv[2])
 PY
-run "T5: step timing on the conductor's timeline, tempo tweened (int, float), paused" "$OUT/test_timing"
-run "T6: no clicks in the delay when the tempo moves it" "$OUT/test_delay"
+run "step timing on the conductor's timeline, tempo tweened (int, float), paused" "$OUT/test_timing"
+run "no clicks in the delay when the tempo moves it" "$OUT/test_delay"
 run "locate: an instance that joins = one that played since the origin" "$OUT/test_locate"
 run "cut: a reused copy carries no tail" "$OUT/test_cut" "$FIXB"
 run "the scheduler: steps worked out ahead, the knock, targets and late policies" "$OUT/test_sched"

@@ -1,4 +1,4 @@
-// The editor side (D13): .felucca files (a web app export, renamed from .json so Godot's own JSON loader keeps the
+// The editor side: .felucca files (a web app export, renamed from .json so Godot's own JSON loader keeps the
 // project's other .json files) import as FeluccaProject resources.
 #pragma once
 

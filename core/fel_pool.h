@@ -1,4 +1,4 @@
-/* The pool's copies of the core (core/build.sh: N compiled at build time, D3): copy n's table, n < fel_pool_size().
+/* The pool's copies of the core (core/build.sh: N compiled at build time): copy n's table, n < fel_pool_size().
  * Each copy is one instance for the life of the process (fel_core_t.boot is once per copy). */
 #ifndef FEL_POOL_H
 #define FEL_POOL_H

@@ -1,5 +1,5 @@
 #!/bin/sh
-# What the extension builds and runs with (docs/DESIGN.md D4, M3): Godot 4.7.2's Linux binary (its release zip, the
+# What the extension builds and runs with: Godot 4.7.2's Linux binary (its release zip, the
 # SHA-512 below as its SHA512-SUMS.txt gives it), godot-cpp at 10.0.0-stable, SCons in the venv setup_felucca.sh made.
 #   tools/setup_godot.sh                (into third_party/godot, third_party/godot-cpp; both gitignored)
 set -e

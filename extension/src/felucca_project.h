@@ -1,4 +1,4 @@
-// A project made on the FM-1, as the Felucca web app exports it (D13): its store object, checked (parse_json, with
+// A project made on the FM-1, as the Felucca web app exports it: its store object, checked (parse_json, with
 // Godot's JSON: format, version, size, base64, CRC-32; then the firmware's own reading, project_info), and what it
 // holds. The importer makes one of a .felucca file (the web app's .json, renamed); load_json reads one at run time.
 #pragma once

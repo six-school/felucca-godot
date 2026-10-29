@@ -2,10 +2,10 @@
 /third_party/felucca/
 /third_party/.felucca-venv/
 /build/
-# M3: downloaded (Godot 4.7.2 from its release, SHA-512 checked; godot-cpp at 10.0.0-stable)
+# downloaded by tools/setup_godot.sh (Godot 4.7.2 from its release, SHA-512 checked; godot-cpp at 10.0.0-stable)
 /third_party/godot/
 /third_party/godot-cpp/
-# M7: downloaded (Emscripten 4.0.20 at its emsdk tag)
+# downloaded by tools/setup_web.sh (Emscripten 4.0.20 at its emsdk tag)
 /third_party/emsdk/
 /demo/addons/felucca/bin/
 /demo/.godot/

@@ -1,4 +1,4 @@
-# M5's scene test (extension/run_tests.sh): the binding pass in a 2D scene like demo/main.tscn. Seventeen sources of
+# The pool in a scene (extension/run_tests.sh): the binding pass in a 2D scene like demo/main.tscn. Seventeen sources of
 # range 600 px (the demo's four projects), twelve playing from the start, five more started later; the listener is a
 # Camera2D (no AudioListener2D: the screen's centre) the script moves: a walk, a teleport, more sources in range than
 # copies, a reshuffle among them, and a teleport back. At each stop, once settled, what Godot's own 2D players hear

@@ -1,4 +1,4 @@
-# M5's checks in Godot 4.7.2 (extension/run_tests.sh), the pool (DESIGN.md §7): every copy boots when the game starts;
+# Checks in Godot 4.7.2 (extension/run_tests.sh), the pool: every copy boots when the game starts;
 # a playing source keeps its place in the music without a copy and gets one when one is free, joining the music where
 # it is; a source deleted frees its copy; a source's own pause while it waits for one. Then the binding pass: a source
 # is in range within its max_distance of the listener; copies go to sources out of range while some are free and are
@@ -235,7 +235,7 @@ func in_time(s: FeluccaSource2D) -> bool:
 func bound(a: Array[FeluccaSource2D]) -> String:   # which of them have a copy: "1101.."
 	return "".join(PackedStringArray(a.map(func(s: FeluccaSource2D) -> String: return "1" if s.is_bound() else "0")))
 
-# the binding pass (DESIGN.md §7), with 2D sources of range 100 px (the listener an AudioListener2D at 0, 0, then the
+# the binding pass, with 2D sources of range 100 px (the listener an AudioListener2D at 0, 0, then the
 # screen's centre)
 func range_pass(n: int) -> void:
 	var ear := AudioListener2D.new()

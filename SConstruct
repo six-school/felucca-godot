@@ -1,13 +1,13 @@
 #!/usr/bin/env python
-# The GDExtension (docs/DESIGN.md D4, §4): godot-cpp at the Godot API version below, the C core's pool of renamed
+# The GDExtension: godot-cpp at the Godot API version below, the C core's pool of renamed
 # Felucca copies (core/build.sh), and extension/src, into the demo's addon (demo/addons/felucca/bin).
 #   python -m SCons [target=template_debug|template_release] [pool=8]   (tools/setup_felucca.sh first)
-#   python -m SCons platform=web [..]     (M7, DESIGN.md §9: tools/setup_web.sh, then emsdk_env.sh sourced; threaded)
+#   python -m SCons platform=web [..]     (tools/setup_web.sh, then emsdk_env.sh sourced; threaded)
 import os
 from SCons.Util import WhereIs
 
-GODOT_API = "4.7"                       # the version seam (§4.1): the oldest Godot this build loads in
-POOL = int(ARGUMENTS.get("pool", 8))    # pool slots: copies of the core compiled in (D3, §13.7)
+GODOT_API = "4.7"                       # the oldest Godot this build loads in
+POOL = int(ARGUMENTS.get("pool", 8))    # pool slots: copies of the core compiled in
 
 env = SConscript("third_party/godot-cpp/SConstruct", {"api_version": GODOT_API})
 
@@ -24,7 +24,7 @@ core_lib = env.Command(
     "%sOUT=%s core/build.sh %d" % (core_with, core_dir, POOL),
 )
 
-# the typed API (D10, §8): the firmware's tables (core/tools/dump_params.c) -> extension/codegen/gen_api.py -> C++ tables
+# the typed API: the firmware's tables (core/tools/dump_params.c) -> extension/codegen/gen_api.py -> C++ tables
 # and the class reference
 felucca = "third_party/felucca"
 version = open(felucca + "/firmware/src/felucca.c").read().split('#define FELUCCA_VERSION "', 1)[1].split('"', 1)[0]

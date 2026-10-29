@@ -1,4 +1,4 @@
-# The knock and the door (DESIGN.md §1's scenario, M6's demo: listened to, not an automated test). Behind a door a room
+# The knock and the door (a demo: listened to, not an automated test). Behind a door a room
 # plays test-4 ("BLUE DRIFT"), its two synth parts' filters low, as heard through a door; its drums are 16 steps of
 # 1/16, a bar, four to a beat. K knocks: on the drums' next loop their own hits are masked and four snares play on its
 # beats (steps 1 5 9 13), dust flying off the door on each as it is heard (each snare's callback); one loop later, on

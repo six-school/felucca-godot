@@ -1,5 +1,5 @@
 #!/bin/sh
-# The extension's checks in a browser (docs/DESIGN.md §9, M7): built for the web (SCons platform=web: tools/setup_web.sh
+# The extension's checks in a browser: built for the web (SCons platform=web: tools/setup_web.sh
 # first), the "Web tests" export served with COOP/COEP (tools/serve_web.py), each test run in headless Chromium
 # (tools/web_run.mjs; demo/tests/web_tests.gd runs the one the page's ?scene= names): m3_test, m5_test, m5_scene_test
 # and m6_test at the browser's 44.1 kHz and at 48 kHz (res://override.cfg in the export: audio/driver/mix_rate.web),

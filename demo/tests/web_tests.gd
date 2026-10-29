@@ -1,4 +1,4 @@
-# The web tests' main scene (the "Web tests" export's, its custom feature web_tests; docs/DESIGN.md §9, M7): a release
+# The web tests' main scene (the "Web tests" export's, its custom feature web_tests): a release
 # web template takes no scene on its command line (built without path overrides), so ?scene=m3_test on the page's URL
 # names the one under res://tests/ to run (tools/web_run.mjs, through tools/serve_web.py)
 extends Node

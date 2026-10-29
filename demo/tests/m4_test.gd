@@ -1,6 +1,6 @@
-# M4's checks in Godot 4.7.2 (extension/run_tests.sh): the typed API (FeluccaPart, its engine views, FeluccaSong,
-# FeluccaOverrides), generated from the firmware's tables, on the user's project ("SOLAR SIGNAL": PHASE, PHASE, LOFI,
-# DRUM; part 1 LEN 32). Values set unbound are applied at binding; bound, they reach the instance at once.
+# Checks in Godot 4.7.2 (extension/run_tests.sh): the typed API (FeluccaPart, its engine views, FeluccaSong,
+# FeluccaOverrides), generated from the firmware's tables, on a test project (PHASE, PHASE, LOFI, DRUM; part 1
+# LEN 32). Values set unbound are applied at binding; bound, they reach the instance at once.
 extends Node
 
 var fails := 0

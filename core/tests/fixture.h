@@ -1,5 +1,6 @@
-/* The user's export as the core takes it: its store object's bytes. core/tests/run.sh takes them out of the web app's
- * .json (reading that file is the extension's job, with Godot's own JSON: FeluccaProject::parse_json). */
+/* An exported Felucca project as the core takes it: its store object's bytes. core/tests/run.sh takes them
+ * out of the web app's .json (reading that file is the extension's job, with Godot's own JSON:
+ * FeluccaProject::parse_json). */
 #include "fel_core.h"
 #include <stdio.h>
 

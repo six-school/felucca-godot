@@ -1,6 +1,6 @@
-/* The core seam (docs/DESIGN.md §4.1, §5.1): one Felucca instance as a table of entry points. Every compiled copy of
- * the firmware (core/board.c, renamed per copy: D3) exports exactly one symbol, fel_core_<n>(), so N copies link into
- * one binary as N independent instruments. Nothing above this table sees a firmware symbol.
+/* The core's interface: one Felucca instance as a table of entry points. Every compiled copy of the firmware
+ * (core/board.c, renamed per copy) exports exactly one symbol, fel_core_<n>(), so N copies link into one binary as N
+ * independent instruments. Nothing above this table sees a firmware symbol.
  *
  * Threads: every call for one instance comes from one thread at a time (the audio thread once it is bound; a worker
  * before that). Nothing here allocates, locks or logs.
@@ -132,14 +132,14 @@ typedef struct {
     /* transport: step 1 of every track starts in the block in which the conductor's timeline reaches at_beats (now if
      * it has); the steps after it from at_beats exactly (each in the block its time falls in) */
     void (*play)(double at_beats);
-    /* join a timeline in progress (DESIGN.md §6.4): from the next block, every track where continuous play since step
+    /* join a timeline in progress: from the next block, every track where continuous play since step
      * 1 at origin_beats would have it at the current tempo and patterns (step, position, its passes and conditions,
      * automation, nudges; the metronome, the FX layer, SLICER, a synced LFO 2 in phase), without what it would have
      * played on the way: the step it lands in does not sound (a nudged play of it still to come does). origin ahead of
      * the conductor's timeline: as play(). -> 0, or 1 while a SONG chain plays (not yet) */
     int32_t (*locate)(double origin_beats);
     void (*stop)(void);
-    /* back to silence at once, for the copy's next source (DESIGN.md §7, §13.9): the transport stopped, every note
+    /* back to silence at once, for the copy's next source: the transport stopped, every note
      * forgotten and every voice stopped without its release, every line that rings zeroed (the delay, the chorus,
      * the reverb's three models, each part's DIST, INSERT and SLICER, the FX layer's flanger), the master's filters
      * and limiter at rest, and the frames already rendered ahead zeroed: render() gives exact zeros until a note or a
@@ -150,7 +150,7 @@ typedef struct {
     /* a note on a track now (in the next block): vel 0 = off. Played as MIDI IN would (arps, chords, scales) */
     void (*note)(int track, int note, int vel);
     void (*snapshot)(fel_snapshot_t *s);
-    /* hold an action until its target (DESIGN.md §5.1): it applies in the block in which its step starts (or the
+    /* hold an action until its target: it applies in the block in which its step starts (or the
      * conductor's timeline reaches its beats), before the step's own notes, as a programmed step's would. A step
      * target is resolved in the first block rendered while the transport plays (play() and locate() have taken
      * effect there). -> 0, 1 not valid (an id 0, a track, step, lane, note, velocity or parameter that is not one),

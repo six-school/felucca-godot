@@ -1,15 +1,15 @@
-# M3's checks in Godot 4.7.2 (extension/run_tests.sh: headless, the Dummy audio driver, which mixes on a thread of its
+# Checks in Godot 4.7.2 (extension/run_tests.sh: headless, the Dummy audio driver, which mixes on a thread of its
 # own under the driver lock, as the real drivers do):
-#   T12  the clock effect runs once a mix step on its muted bus, during a tree pause too, with the conductor's timeline
-#        standing still
-#   T13  7 sources, 4000 nodes between each, started in one frame (one of them PROCESS_MODE_ALWAYS: paused all the
-#        same, DESIGN.md D7): through 300 tree pause / unpause cycles, each pause stops every source before any scene
-#        node hears it (the Felucca autoload hears it first), each unpause starts every one again, their music stays
-#        at one position and their players' mixed frames keep their spacing
+#   clock  the clock effect runs once a mix step on its muted bus, during a tree pause too, with the conductor's
+#        timeline standing still
+#   pause  7 sources, 4000 nodes between each, started in one frame (one of them PROCESS_MODE_ALWAYS: paused all the
+#        same): through 300 tree pause / unpause cycles, each pause stops every source before any scene node hears it
+#        (the Felucca autoload hears it first), each unpause starts every one again, their music stays at one position
+#        and their players' mixed frames keep their spacing
 #   sync a source started later, quantize BAR, plays on the others' bars
 #   own pause  stream_paused on a source holds through the tree's pause and unpause (godot #65743); FOLLOW resumes
 #        where the music is, HOLD from where it stopped
-#   import  the .felucca imports as the user's project; load_json reads the web app's .json at run time
+#   import  the .felucca imports as the test project; load_json reads the web app's .json at run time
 # Positions are the instances' own, as rendered: at 44.1 kHz every mix step renders whole halves, so they agree exactly;
 # at another rate (the playback resamples) what an instance has rendered ahead of what was heard, up to a half (128
 # frames), differs between instances started at different times, and their blocks fall unlike: within a half and a
@@ -97,20 +97,20 @@ func _ready() -> void:
 	# ---- import
 	check(project.project_name == "SOLAR SIGNAL" and project.bpm == 68 and project.firmware == "FELUCCA v1.6.1"
 		and project.engines == PackedStringArray(["PHASE", "PHASE", "LOFI", "DRUM"]) and project.data.size() == 3840,
-		"import: the .felucca is the user's project (\"%s\", %d BPM, %s)" % [project.project_name, project.bpm,
+		"import: the .felucca is the test project (\"%s\", %d BPM, %s)" % [project.project_name, project.bpm,
 		", ".join(project.engines)])
 	var j := FeluccaProject.load_json("res://tests/project.json")
 	check(j != null and j.data == project.data, "load_json: the web app's .json at run time, the same bytes")
 	check(FeluccaProject.from_json("{\"format\": \"something else\"}") == null, "from_json: not a project -> null (its error above)")
 
-	# ---- T12
+	# ---- the clock
 	var b0 := FeluccaConductor._get_rendered_playhead()
 	var s0 := FeluccaConductor._get_mix_steps()
 	await wait(2.0)
 	var steps := FeluccaConductor._get_mix_steps() - s0
 	var moved := FeluccaConductor._get_rendered_playhead() - b0
 	check(steps > 100 and abs(moved - 2.0 * 68 / 60) < 0.2,
-		"T12 the clock: %d mix steps in 2 s, the conductor's timeline moved %.3f beats (%.3f at 68 BPM)"
+		"clock: %d mix steps in 2 s, the conductor's timeline moved %.3f beats (%.3f at 68 BPM)"
 		% [steps, moved, 2.0 * 68 / 60])
 	get_tree().paused = true
 	var p0 := FeluccaConductor._get_paused_mix_steps()
@@ -118,11 +118,11 @@ func _ready() -> void:
 	await wait(1.0)
 	var ps := FeluccaConductor._get_paused_mix_steps() - p0
 	check(ps > 50 and FeluccaConductor._get_rendered_playhead() == bp,
-		"T12 paused: the clock ran (%d mix steps), the conductor's timeline stood (%.6f)"
+		"clock, paused: the clock ran (%d mix steps), the conductor's timeline stood (%.6f)"
 		% [ps, FeluccaConductor._get_rendered_playhead() - bp])
 	get_tree().paused = false
 
-	# ---- T13
+	# ---- the pause
 	for i in N:
 		var holder := Node.new()
 		holder.process_mode = Node.PROCESS_MODE_ALWAYS if i == 6 else Node.PROCESS_MODE_PAUSABLE
@@ -144,9 +144,9 @@ func _ready() -> void:
 	await wait(0.5)
 	var start := positions()
 	var seven := range(7)
-	check(all_same(start, seven) and fmod(start[0].origin, 4.0) == 0.0, "T13 7 sources started in one frame: one position (beats %.4f, origin %.1f, on a bar)"
+	check(all_same(start, seven) and fmod(start[0].origin, 4.0) == 0.0, "pause: 7 sources started in one frame: one position (beats %.4f, origin %.1f, on a bar)"
 		% [start[0].playhead, start[0].origin])
-	check(AudioServer.get_bus_peak_volume_left_db(0, 0) > -60.0, "T13 they sound (Master peak %.1f dB)" % AudioServer.get_bus_peak_volume_left_db(0, 0))
+	check(AudioServer.get_bus_peak_volume_left_db(0, 0) > -60.0, "pause: they sound (Master peak %.1f dB)" % AudioServer.get_bus_peak_volume_left_db(0, 0))
 	var m0 := mixed()
 	var out_of_step := 0
 	var stuck := 0                 # cycles after which a source's music did not move on
@@ -173,15 +173,15 @@ func _ready() -> void:
 		if not all_same(after, seven):
 			out_of_step += 1
 	var m1 := mixed()
-	check(told == 600 and told_late == 0, "T13 the pause reached every source before the scene's nodes (%d of %d told late)" % [told_late, told])
-	check(running == 0 and stuck == 0, "T13 every pause stopped every source (the ALWAYS one too) and every unpause started it again (%d, %d not)"
+	check(told == 600 and told_late == 0, "pause: the pause reached every source before the scene's nodes (%d of %d told late)" % [told_late, told])
+	check(running == 0 and stuck == 0, "pause: every pause stopped every source (the ALWAYS one too) and every unpause started it again (%d, %d not)"
 		% [running, stuck])
 	var spacing := 0
 	for i in 7:
 		spacing = max(spacing, abs((m1[i] - m1[0]) - (m0[i] - m0[0])))
 	var p := positions()
 	check(out_of_step == 0 and spacing == 0 and p[0].playhead > start[0].playhead,
-		"T13 300 tree pause / unpause cycles: %d checks out of step; the players' spacing moved %d frames (music at %.3f beats)"
+		"pause: 300 tree pause / unpause cycles: %d checks out of step; the players' spacing moved %d frames (music at %.3f beats)"
 		% [out_of_step, spacing, p[0].playhead])
 
 	# ---- a source started later, on the bar
@@ -249,7 +249,7 @@ func _ready() -> void:
 	await wait(0.3)
 	check(FeluccaConductor.get_bound_count() == bound - 1, "stop: its instance back in the pool (%d -> %d bound)" % [bound, FeluccaConductor.get_bound_count()])
 
-	# ---- (M7) the mix runs off the main thread (the desktop's: its driver's thread; a threaded web build's: its audio
+	# ---- the mix runs off the main thread (the desktop's: its driver's thread; a threaded web build's: its audio
 	# thread, not the browser's main one): mix steps go on while the main thread is busy for half a second
 	var before := FeluccaConductor._get_mix_steps()
 	var busy := Time.get_ticks_usec()

@@ -1,6 +1,6 @@
 #!/bin/sh
-# The core (docs/DESIGN.md §4, D3): N copies of the board file (core/board.c), each with every global the firmware
-# defines renamed fel<n>_*, checked, into build/core/libfelucca_core.a; L2 takes copy n from fel_pool_core(n)
+# The core: N copies of the board file (core/board.c), each with every global the firmware
+# defines renamed fel<n>_*, checked, into build/core/libfelucca_core.a; the extension takes copy n from fel_pool_core(n)
 # (fel_pool.h). Needs a Felucca tree made by tools/setup_felucca.sh, clang, nm, Python 3.
 #   core/build.sh [N]          (default 8; env FELUCCA: the tree, OUT: the build directory, CC: the compiler, AR: the
 #                               archiver, NM: renames.py's nm, CFLAGS_EXTRA: flags added, as the web's side module's)

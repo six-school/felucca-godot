@@ -1,11 +1,11 @@
-/* T6 (docs/DESIGN.md §10) on the core: the delay does not click when the tempo moves its TIME (patch 0003, the
- * glide, D9). A held sine through a 1/4 delay (clicks.c), 20 s, in two test copies alike but for the delay's MIX (127,
- * 0): their difference is the delay's output alone. A jump of its read point shows as a spike of the second
- * difference far above a smooth delayed sine's (wet.py: over 6x its 99th percentile).
+/* The delay does not click when the tempo moves its TIME (patch 0003, the glide). A held sine through a 1/4 delay,
+ * 20 s, in two test copies alike but for the delay's MIX (127, 0): their difference is the delay's output alone. A
+ * jump of its read point shows as a spike of the second difference far above a smooth delayed sine's (over 6x its
+ * 99th percentile).
  *   constant  128 BPM
- *   int       128, then 120 -> 140 in whole BPM over 2 s (clicks.c's tween), then 140
+ *   int       128, then 120 -> 140 in whole BPM over 2 s, then 140
  *   float     128 +- 12, a sine of 5 s, set every mix step
- * Without the glide (T6's clicks.c) the host clock gives 62 jumps in the int tween. */
+ * Without the glide, the same analysis finds jumps in both tweens. */
 #include "test_hooks.h"
 #include "drive.h"
 #include "check.h"
@@ -78,11 +78,11 @@ static void scenario(const char *name, int prog, const fel_test_t *on, const fel
             i += 300;
         }
     }
-    printf("  T6 %-8s: wet rms %.3f; beat length changes after 5 s: %3u; jumps: %u; largest %.0fx its 99th percentile\n",
+    printf("  delay %-8s: wet rms %.3f; beat length changes after 5 s: %3u; jumps: %u; largest %.0fx its 99th percentile\n",
            name, r, changes, jumps, p99 > 0 ? big / p99 : 0.0);
-    CHECK(r > 0.01, "T6 %s: the delay sounds (wet rms %.4f)", name, r);
-    CHECK(prog == 0 ? changes == 0 : changes > 10, "T6 %s: the tempo moved the delay's TIME (%u changes)", name, changes);
-    CHECK(jumps == 0, "T6 %s: no jump in the echoes (%u)", name, jumps);
+    CHECK(r > 0.01, "delay %s: the delay sounds (wet rms %.4f)", name, r);
+    CHECK(prog == 0 ? changes == 0 : changes > 10, "delay %s: the tempo moved the delay's TIME (%u changes)", name, changes);
+    CHECK(jumps == 0, "delay %s: no jump in the echoes (%u)", name, jumps);
 }
 
 int main(void)
@@ -90,5 +90,5 @@ int main(void)
     scenario("constant", 0, fel_test_1(), fel_test_2());
     scenario("int", 1, fel_test_3(), fel_test_4());
     scenario("float", 2, fel_test_5(), fel_test_6());
-    return check_done("T6 delay glide (core/tests/test_delay.c)");
+    return check_done("delay glide (core/tests/test_delay.c)");
 }

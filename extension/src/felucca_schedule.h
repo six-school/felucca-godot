@@ -1,4 +1,4 @@
-// Scheduling (DESIGN.md §5.2, M6): what a script schedules on a playing source and what it hears back. FeluccaWhen (a
+// Scheduling: what a script schedules on a playing source and what it hears back. FeluccaWhen (a
 // step of one of the source's parts, n passes on, or the conductor's next bar), FeluccaAction (a hit, a note, a
 // parameter, a mark), FeluccaSchedule (what FeluccaSource.schedule() returns: its own heard signal), FeluccaEvent (what
 // the signals carry). The conductor keeps the pending actions (FeluccaConductor::schedule) and hands them to the

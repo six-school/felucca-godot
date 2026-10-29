@@ -1,4 +1,4 @@
-/* The firmware's own parameter tables as JSON (docs/DESIGN.md §8, D10): what extension/codegen/gen_api.py makes the
+/* The firmware's own parameter tables as JSON: what extension/codegen/gen_api.py makes the
  * typed API of. White-box (board.c compiled in): every track parameter by id (TP, as the editor protocol's
  * param_desc_of reads it), every global with whether the core takes a write of it, the pages (their ids in order),
  * each engine's eight (edit[]).

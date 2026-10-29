@@ -1,10 +1,10 @@
-"""The typed API (docs/DESIGN.md D10, §8) from the firmware's own tables: params.json (core/tools/dump_params.c) and the
+"""The typed API from the firmware's own tables: params.json (core/tools/dump_params.c) and the
 hand-kept names (names.json) -> C++ tables for extension/src/felucca_api.cpp and Godot class-reference XML.
 
     gen_api.py params.json names.json OUT_DIR [GODOT_CPP]   -> OUT_DIR/felucca_api.gen.h, felucca_api.gen.cpp,
                                                                doc_classes/*.xml (and with godot-cpp, doc_data.gen.cpp)
 
-Rules (§8): one property per parameter id, named after the page it is first on (page + label) or, on no page, its
+Rules: one property per parameter id, named after the page it is first on (page + label) or, on no page, its
 label; names.json renames one by id, checked against the label it must still have (a Felucca update that relabels or
 moves it fails here, not silently in a game); the generated name stays as a hidden fallback. FeluccaPart: the track
 parameters below the engine's eight; FeluccaSong: the globals the core lets code write; one view an engine (its eight,
@@ -218,7 +218,7 @@ def main(argv):
     sc = emit_class(cpp, "SONG", song)
     vcs = [emit_class(cpp, f"V{k}", v) for k, v in enumerate(views)]
     cpp.append(f"static const ApiConst ENGINES_E[] = {{" + ", ".join(f"{{{cstr(n)}, {v}}}" for n, v, _ in part["engine_enum"]) + "};")
-    # the part's parameters by name, typed (FeluccaOverride.param, M6's actions): PARAM_SEQ_LENGTH = its id
+    # the part's parameters by name, typed (FeluccaOverride.param, FeluccaAction.set_param): PARAM_SEQ_LENGTH = its id
     part["param_enum"] = [("PARAM_" + p["name"].upper(), p["id"], p["name"]) for p in part["props"]]
     cpp.append(f"static const ApiConst PARAMS_E[] = {{" + ", ".join(f"{{{cstr(n)}, {v}}}" for n, v, _ in part["param_enum"]) + "};")
     # the DRUM grid's lanes (FeluccaAction.hit): named as the LANES pages name their levels (KICK .. BELL), in order

@@ -1,8 +1,8 @@
-/* The cut (fel_core.h, DESIGN.md §7, §13.9) on test copies (core/tests/test_hooks.c) sharing one timeline, all rendering
+/* The cut (fel_core.h) on test copies (core/tests/test_hooks.c) sharing one timeline, all rendering
  * the same chunks from boot (so their blocks fall alike). FEL_TEST_TAILS rings on after its notes: PHYS SYMP (strings
  * of up to 11 s) through a full-feedback INSERT flanger and a SLICER STUT, an ANALOG pad of the longest release, both
  * into the chorus, a delay fed back past 100 % and the longest HALL.
- *   C1  copy 1 cut while its notes ring, then given the user's project: exact zeros (both channels) for 10 s; copy 0,
+ *   C1  copy 1 cut while its notes ring, then given a test project: exact zeros (both channels) for 10 s; copy 0,
  *       given the project the way a copy was reused before (an import alone: the notes released), still rings
  *   C2  then copy 1 and a fresh copy 2, both playing the project from one origin: the same positions every chunk, the
  *       first sound in the same frame, the level close (not the same samples: noise seeds and phases carry over)

@@ -1,7 +1,8 @@
-// L2 (docs/DESIGN.md §4): the conductor's timeline, the plan of each mix step, the pool of cores. The clock effect
-// writes the plan at the end of each mix step and the playbacks render the next step against it, both on Godot's audio
-// thread. What the main thread changes (tempo, running, paused) it writes only under AudioServer::lock(), which the
-// audio driver holds for every mix: a mix step sees all of a change or none of it, and every instance sees the same.
+// The engine, between the Godot classes and the C core: the conductor's timeline, the plan of each mix step, the pool
+// of cores. The clock effect writes the plan at the end of each mix step and the playbacks render the next step against
+// it, both on Godot's audio thread. What the main thread changes (tempo, running, paused) it writes only under
+// AudioServer::lock(), which the audio driver holds for every mix: a mix step sees all of a change or none of it, and
+// every instance sees the same.
 #pragma once
 
 #include "fel_core.h"
@@ -27,7 +28,7 @@ public:
 	Plan plan;
 	double tempo = 120.0;
 	bool running = false; // the conductor's timeline moves (FeluccaConductor.play / stop)
-	bool paused = false; // the tree is paused (FeluccaConductor's node, D7)
+	bool paused = false; // the tree is paused (set by FeluccaConductor's node)
 	double mix_rate = 44100.0;
 
 	// audio thread counts, main thread reads
@@ -37,7 +38,7 @@ public:
 
 	// each mix step as mixed (audio_step, at its end; the main thread reads them under the lock): the conductor's
 	// timeline over it and when it was mixed, spaced a step's length at least as they are heard (a driver that mixes
-	// several steps at once plays them one after another). Events map onto them (M6, DESIGN.md §6.3)
+	// several steps at once plays them one after another). Events are mapped onto them to find when they are heard
 	struct Mix {
 		uint64_t step = UINT64_MAX;
 		int64_t at_us = 0; // (now_us's clock)

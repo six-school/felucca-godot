@@ -1,5 +1,5 @@
 // A page in headless Chromium, its console printed (the page's and its workers': a threaded Godot's threads are
-// workers) until a line matches --until or --timeout seconds pass (docs/DESIGN.md §9, M7: the tests in the browser).
+// workers) until a line matches --until or --timeout seconds pass (extension/run_web_tests.sh runs the tests with it).
 // Node's own WebSocket speaks the DevTools protocol: no npm packages.
 //   node tools/web_run.mjs URL [--until REGEX] [--timeout S] [--chromium PATH]
 //   exit 0: --until matched (or, without it, the timeout reached); 1: a timeout before --until, or the page crashed

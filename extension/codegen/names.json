@@ -1,6 +1,6 @@
 {
   "_": [
-    "The typed API's readable names (docs/DESIGN.md §8), kept by hand. gen_api.py names each parameter after the page",
+    "The typed API's readable names, kept by hand. gen_api.py names each parameter after the page",
     "it is first on (page + label: arp_rate) or, on no page, its label; an entry here renames one, keyed by its id with",
     "the label it must still have, so a Felucca update that moves or relabels it fails the build instead of renaming",
     "the API. The generated name stays as a hidden fallback. skip: ids not made properties (P_ED_FX: unused)."
