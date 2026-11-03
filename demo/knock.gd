@@ -78,10 +78,10 @@ func _knock(what: String, hits: Array[FeluccaWhen], mask: FeluccaAction, door_at
 	var drums := room.part_4
 	room.schedule(hits[0], mask)
 	for when in hits:
-		room.schedule(when, FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_SNARE, 120),
+		room.schedule(when, FeluccaAction.hit(drums, FeluccaLane.SNARE, 120),
 			func(_e: FeluccaEvent) -> void: _knocked())
 	for part: FeluccaPart in [room.part_1, room.part_2]:   # (the lift lands on the door's step exactly)
-		if part.engine == FeluccaPart.Engine.ENGINE_ANALOG:
+		if part.engine == FeluccaEngine.ANALOG:
 			room.schedule(door_at, FeluccaAction.set_param(part, FeluccaAnalog.Param.PARAM_CUTOFF, LIFTED))
 	await room.schedule(door_at, FeluccaAction.mark()).triggered
 	_open()

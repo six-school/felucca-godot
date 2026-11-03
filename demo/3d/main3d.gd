@@ -31,9 +31,9 @@ func _ready() -> void:
 func _pulse_on_kicks(s: FeluccaSource3D) -> void:
 	var sphere := s.get_node("CSGSphere3D") as CSGSphere3D
 	for part: FeluccaPart in s.parts:
-		if part.engine == FeluccaPart.Engine.ENGINE_DRUM:
+		if part.engine == FeluccaEngine.DRUM:
 			part.on_hit.connect(func(lane: int, _velocity: int) -> void:
-				if lane == FeluccaPart.Lane.LANE_KICK:
+				if lane == FeluccaLane.KICK:
 					sphere.scale = Vector3.ONE * 1.4
 					create_tween().tween_property(sphere, "scale", Vector3.ONE, 0.25))
 

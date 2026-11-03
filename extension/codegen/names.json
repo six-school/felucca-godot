@@ -3,10 +3,18 @@
     "The typed API's readable names, kept by hand. gen_api.py names each parameter after the page",
     "it is first on (page + label: arp_rate) or, on no page, its label; an entry here renames one, keyed by its id with",
     "the label it must still have, so a Felucca update that moves or relabels it fails the build instead of renaming",
-    "the API. The generated name stays as a hidden fallback. skip: ids not made properties (P_ED_FX: unused)."
+    "the API. skip: ids not made properties (P_ED_FX, and 61..80, the retired DIGITAL engine's operator envelopes and",
+    "levels: nothing reads them). enum_classes: the class of a part's or the song's enum (by its property's name in",
+    "camel case) when it is not Felucca + that name: one class for enums of the same values."
   ],
   "skip_pages": ["STEP", "DETAIL", "MIXER"],
-  "skip": [8],
+  "skip": [8, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80],
+  "enum_classes": {
+    "ArpRate": "FeluccaDivision", "SeqDivision": "FeluccaDivision",
+    "Mod1Source": "FeluccaModSource", "Mod2Source": "FeluccaModSource", "Mod3Source": "FeluccaModSource",
+    "Mod4Source": "FeluccaModSource",
+    "Mod1Dest": "FeluccaModDest", "Mod2Dest": "FeluccaModDest", "Mod3Dest": "FeluccaModDest", "Mod4Dest": "FeluccaModDest"
+  },
   "part": {
     "0": ["level", "LVL"],
     "5": ["env_to_filter", "FLT"], "6": ["env_to_pitch", "PIT"], "7": ["env_to_shape", "SHP"],
@@ -28,7 +36,6 @@
     "52": ["mod2_source", "SRC2"], "53": ["mod2_dest", "DST2"], "54": ["mod2_amount", "AMT2"],
     "55": ["mod3_source", "SRC3"], "56": ["mod3_dest", "DST3"], "57": ["mod3_amount", "AMT3"],
     "58": ["mod4_source", "SRC4"], "59": ["mod4_dest", "DST4"], "60": ["mod4_amount", "AMT4"],
-    "65": ["op1_level", "LVL"], "70": ["op2_level", "LVL"], "75": ["op3_level", "LVL"], "80": ["op4_level", "LVL"],
     "81": ["chord", "CHRD"], "82": ["chord_voicing", "VOIC"],
     "83": ["lane_kick", "KICK"], "84": ["lane_snare", "SNARE"], "85": ["lane_clap", "CLAP"],
     "86": ["lane_hat_closed", "HATCL"], "87": ["lane_hat_open", "HATOP"], "88": ["lane_tom", "TOM"],

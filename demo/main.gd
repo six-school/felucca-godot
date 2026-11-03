@@ -73,7 +73,7 @@ func _note_squares(s: FeluccaSource2D) -> void:
 		r.color = Color.GRAY
 		s.add_child(r)
 		var held := [0]
-		var drum := part.engine == FeluccaPart.Engine.ENGINE_DRUM
+		var drum := part.engine == FeluccaEngine.DRUM
 		part.on_note.connect(func(note: int, _velocity: int) -> void:
 			held[0] += 1
 			r.color = _note_color(note)
@@ -123,7 +123,7 @@ func _cellar_key(n: int, masked: bool) -> void:
 	match n:
 		1:
 			for beat in 4:
-				cellar.schedule(FeluccaWhen.next_bar(beat + 1), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_SNARE, 70 + beat * 15))
+				cellar.schedule(FeluccaWhen.next_bar(beat + 1), FeluccaAction.hit(drums, FeluccaLane.SNARE, 70 + beat * 15))
 			if masked:
 				cellar.schedule(FeluccaWhen.next_bar(), FeluccaAction.mask_bars(drums, 1))
 			said = "snares on the next bar's four beats"
@@ -134,7 +134,7 @@ func _cellar_key(n: int, masked: bool) -> void:
 			for i in 4:
 				var step := length - 3 + i
 				var when := FeluccaWhen.next_step(drums, step) if this_loop else FeluccaWhen.next_loop(drums, step)
-				cellar.schedule(when, FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_SNARE, 70 + i * 15))
+				cellar.schedule(when, FeluccaAction.hit(drums, FeluccaLane.SNARE, 70 + i * 15))
 			if masked:
 				var first := length - 3
 				cellar.schedule(FeluccaWhen.next_step(drums, first) if this_loop else FeluccaWhen.next_loop(drums, first),

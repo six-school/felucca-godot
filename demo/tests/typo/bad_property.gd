@@ -3,8 +3,8 @@ extends SceneTree
 func _init() -> void:
 	var s := FeluccaSource.new()
 	var bass: FeluccaPart = s.part_1
-	bass.arp_ratee = FeluccaPart.ArpRate.ARP_RATE_1_16
-	bass.engine = FeluccaPart.Engine.ENGINE_ANALOG
+	bass.arp_ratee = FeluccaDivision.R_1_16
+	bass.engine = FeluccaEngine.ANALOG
 	var synth := bass.analog
 	if synth:
 		synth.cutoff = 100

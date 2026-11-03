@@ -1,7 +1,9 @@
 // The typed API: FeluccaPart (a source's part: every track parameter, its engine and engine views),
-// FeluccaSong (its sound's globals), one FeluccaEngineView an engine (FeluccaAnalog ..), FeluccaOverrides. The
-// properties come from tables extension/codegen/gen_api.py makes of the firmware's own (felucca_api.gen.cpp): each
-// is a real ClassDB property, so GDScript's analyzer knows it, its type and its enum (a typo is a parse error).
+// FeluccaSong (its sound's globals), one FeluccaEngineView an engine (FeluccaAnalog ..), the part's and the song's
+// enums as classes of their own (FeluccaArpMode ..), FeluccaOverrides. The properties come from tables
+// extension/codegen/gen_api.py makes of the firmware's own (felucca_api.gen.cpp): each is a real ClassDB property
+// with a getter of its own returning its type, so GDScript's analyzer knows it, its type and its enum (a typo, or
+// another enum's value, is a parse error).
 //
 // Values: what a source's scripts set is kept on the source (FelValues), applied at once to the instance that
 // plays it (under AudioServer::lock(), as the audio thread is then not mixing) and at binding to the next one; read
@@ -33,25 +35,31 @@ struct ApiEnum {
 	const ApiConst *values;
 	int count;
 };
+enum ApiType {
+	API_INT,
+	API_BOOL, // (a parameter of OFF and ON)
+	API_ENUM,
+};
 struct ApiProp {
 	const char *name; // the property
-	const char *fallback; // the generated name names.json renamed (a hidden property), or nullptr
 	int id; // the parameter id (track or global)
 	int min, max, def;
-	int enum_index; // into its class's enums, -1 none
+	ApiType type;
+	const char *enum_type; // an enum's: its class and enum, "FeluccaArpMode.Value" (a view's "FeluccaAnalog.Wave")
 	const char *hint; // PROPERTY_HINT_ENUM's "LABEL:value,..", or the range "min,max"
 };
 struct ApiClass {
 	const char *class_name;
 	const ApiProp *props;
 	int nprops;
-	const ApiEnum *enums;
+	const ApiEnum *enums; // (an engine view's own; the part's and the song's are API_ENUM_CLASSES)
 	int nenums;
 	int engine; // an engine view's engine index, -1 else
 };
 extern const ApiClass API_PART, API_SONG, API_VIEWS[];
 extern const int API_VIEW_COUNT;
-extern const ApiEnum API_ENGINE_ENUM, API_PARAM_ENUM, API_LANE_ENUM;
+extern const ApiEnum API_ENUM_CLASSES[]; // each named after its class, its values of the enum Value
+extern const ApiEnum API_ENGINE_ENUM; // (FeluccaEngine's)
 extern const char *const API_FELUCCA;
 
 const ApiProp *api_prop(const ApiClass &p_class, int p_id); // the property of id, nullptr none
@@ -62,6 +70,18 @@ int api_id(const ApiClass &p_class, const char *p_name); // the id of a property
 namespace godot {
 
 class FeluccaOverrides;
+
+// an enum of the part's or the song's as a class of its own, its values of the enum Value (FeluccaArpMode.UP, a
+// FeluccaArpMode.Value), so a part's completion list holds its parameters and not every value of every enum
+void bind_enum_class(int p_index, const StringName &p_class);
+#define FELUCCA_DECLARE_ENUM(m_class, m_index)                                         \
+	class m_class : public Object {                                                    \
+		GDCLASS(m_class, Object);                                                      \
+                                                                                       \
+	protected:                                                                         \
+		static void _bind_methods() { bind_enum_class(m_index, get_class_static()); } \
+	};
+FELUCCA_ENUM_CLASSES(FELUCCA_DECLARE_ENUM)
 
 // what a source's scripts set, shared by the source, its parts and whatever playback binds an instance for it
 struct FelValues {

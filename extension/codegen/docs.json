@@ -1,0 +1,673 @@
+{
+  "_": [
+    "The typed API's descriptions, kept by hand, for the class reference (Godot's help): gen_api.py fails when a",
+    "property, engine view or class has none, or when a name here is no longer one. A property's text says what it does",
+    "and what its values mean; gen_api.py adds where it is on the FM-1 (its page and label, or where below for a",
+    "parameter on no page). Write for people who know the FM-1, not Felucca's code. enums: a class's description (_)",
+    "and the values whose label says too little (the others show their label)."
+  ],
+  "classes": {
+    "FeluccaPart": ["One of a Felucca source's four parts.", "A part is one of the FM-1's four tracks: its engine and sound, its envelope and LFO, its arpeggiator, its pattern's settings and its effects. Set a property to change the part while the music plays: the source keeps what you set and plays it whenever it sounds. A property reads back what is playing, including values the project's automation and parameter locks move. The engine's own eight parameters are on the part's view of that engine, such as [member analog]."],
+    "FeluccaSong": ["A Felucca source's song-wide sound.", "What every part of a source shares: swing, tuning, and the delay, reverb and chorus each part sends to. The tempo is the conductor's, [member FeluccaConductor.tempo]."],
+    "FeluccaAnalog": ["The ANALOG engine of a part.", "Virtual analog: two oscillators, noise, drive and a resonant filter (low-pass, band-pass or high-pass: [member FeluccaPart.filter_type]). Reach it through a part playing ANALOG, [member FeluccaPart.analog]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaPhase": ["The PHASE engine of a part.", "Phase distortion: a cosine read through a bent phase, so a pure tone becomes a saw, a square or a resonant sweep as [member dcw] rises, with a second line, a sub oscillator and a wavefolder. Reach it through a part playing PHASE, [member FeluccaPart.phase]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaLofi": ["The LOFI engine of a part.", "A chiptune voice: pulse, triangle, saw, noise and a 4-bit wave memory, with low bit depths, a held (downsampled) output, a pitch sweep, a fast arpeggio and an optional stepped envelope. Reach it through a part playing LOFI, [member FeluccaPart.lofi]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaSample": ["The SAMPLE engine of a part.", "Multisampled instruments (piano, flute, sax) and the three user sample slots you fill from the web editor. Reach it through a part playing SAMPLE, [member FeluccaPart.sample]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaVoice": ["The VOICE engine of a part.", "A formant synthesizer that sings vowels: a glottal source through four resonators, gliding from one vowel to another. Reach it through a part playing VOICE, [member FeluccaPart.voice]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaTrio": ["The TRIO engine of a part.", "Three oscillators with ring modulation, hard sync and combined waves into a multimode filter, in the style of early home-computer sound chips. Reach it through a part playing TRIO, [member FeluccaPart.trio]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaWheel": ["The WHEEL engine of a part.", "A tonewheel-style organ: nine drawbars set by a registration, percussion, key click, drive and a rotary speaker. Reach it through a part playing WHEEL, [member FeluccaPart.wheel]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaGrain": ["The GRAIN engine of a part.", "Granular textures: many short grains of a built-in sample or a user slot, at a position you choose. Reach it through a part playing GRAIN, [member FeluccaPart.grain]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaPhys": ["The PHYS engine of a part.", "Physical models: struck resonators (bells, bars), a plucked string, a drum head and a string with sympathetic strings. Some parameters mean something else for some models (shown by their other names). Reach it through a part playing PHYS, [member FeluccaPart.phys]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaDrum": ["The DRUM engine of a part.", "An eight-lane drum kit synthesized by Felucca, on the General MIDI key map. Each lane's level is a part property, such as [member FeluccaPart.lane_kick]. The hit is the envelope: the part's envelope, glide and pitch settings do not apply. Reach it through a part playing DRUM, [member FeluccaPart.drum]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaNoise": ["The NOISE engine of a part.", "Noise from analog to digital: coloured noise, crackle, shift-register noise and metallic tones, through a resonant filter. Some parameters have other names in the LFSR and META modes. Reach it through a part playing NOISE, [member FeluccaPart.noise]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaFm6": ["The FM6 engine of a part.", "Classic 6-operator FM. The sound is the part's patch, loaded from a factory slot or sent from the web editor; these eight parameters adjust it. The patch's own envelopes shape the sound, so the part's envelope does not apply. Reach it through a part playing FM6, [member FeluccaPart.fm6]; it is [code]null[/code] while the part plays another engine."],
+    "FeluccaSlice": ["The SLICE engine of a part.", "A sample cut into slices, one per key: a built-in drum break, a piano note or a user slot. Reach it through a part playing SLICE, [member FeluccaPart.slice]; it is [code]null[/code] while the part plays another engine."]
+  },
+  "FeluccaPart": {
+    "engine": "The engine the part plays, from [FeluccaEngine]. Setting it loads that engine's first preset, as choosing an engine on the FM-1 does, and then the values your scripts set again. On the FM-1: hold EDIT and press the engine's key.",
+    "level": "How loud the part is, from 0 (silent) through 104 (-4 dB, the default) to 127 (+7.5 dB).",
+    "env_atk": "How long the envelope takes to rise to full level when a note starts, from 0 (1 ms) to 127 (10 s). With [member env_sync], a note value of the tempo instead.",
+    "env_dec": "How long the envelope then takes to fall to [member env_sus], from 0 (1 ms) to 127 (10 s). With [member env_sync], a note value of the tempo instead.",
+    "env_sus": "The level the envelope holds while a note is held, from 0 (silent) to 127 (full).",
+    "env_rel": "How long a note takes to fade out once it is released, from 0 (1 ms) to 127 (10 s). With [member env_sync], a note value of the tempo instead.",
+    "env_to_filter": "How far the envelope moves the engine's brightness (its filter cutoff on most engines), from -64 (it closes) through 0 (not at all) to 63 (it opens).",
+    "env_to_pitch": "How far the envelope bends the pitch, from -64 (down) through 0 to 63 (up), about an octave at either end.",
+    "env_to_shape": "How far the envelope moves the engine's shape (the pulse width on ANALOG's PWM, the grain position on GRAIN, the noise colour on NOISE), from -64 through 0 to 63.",
+    "lfo_rate": "How fast the LFO cycles, from 0 (0.05 Hz) to 127 (40 Hz). It does not apply while [member lfo2_sync] ties the LFO to the tempo.",
+    "lfo_wave": "The LFO's shape, from [FeluccaLfoWave].",
+    "lfo_phase": "Where in its cycle the LFO starts again, from 0 to 127 (one full cycle), when [member lfo2_trigger] restarts it on a note.",
+    "lfo_fade": "How long the LFO takes to fade in after a note starts with no other note held, from 0 (no fade) to 127 (10 s).",
+    "lfo_to_pitch": "How far the LFO moves the pitch (vibrato), from -64 through 0 to 63, about an octave either way at the ends.",
+    "lfo_to_filter": "How far the LFO moves the engine's brightness (its filter cutoff on most engines), from -64 through 0 to 63.",
+    "lfo_to_shape": "How far the LFO moves the engine's shape (see [member env_to_shape]), from -64 through 0 to 63.",
+    "lfo_to_amp": "How far the LFO moves the volume (tremolo), from 0 (not at all) to 127 (down to silence at its lowest).",
+    "arp_mode": "How the arpeggiator plays the notes held on the part, from [FeluccaArpMode]; [code]OFF[/code] plays them as they come. Notes scheduled with [method FeluccaAction.note] go through it too.",
+    "arp_rate": "How often the arpeggiator plays its next note, as a note value from [FeluccaDivision].",
+    "arp_octaves": "How many octaves the arpeggio spans, from 1 to 4. Above 1, the held notes repeat an octave higher each time: [code]UP[/code] over C E G with 2 plays C E G C' E' G'.",
+    "arp_gate": "How long each arpeggiated note sounds, as a share of the time until the next one: 64 is half, 127 almost all of it, 1 a short blip.",
+    "arp_swing": "Swings the arpeggio: the time between its notes alternates long and short, from 0 (even) to 100 (each pair of notes split 70:30).",
+    "arp_chance": "The chance that each note of the arpeggio sounds. At 127 every note plays; lower values skip notes at random, and even 0 plays about 1 note in 128.",
+    "arp_hold": "When [code]true[/code], the arpeggiator keeps playing the last notes it was given after they are released, until new notes replace them or this is turned off. Notes scheduled from a script latch the same way.",
+    "arp_order": "The order the arpeggiator takes the held notes in, from [FeluccaArpOrder]: by pitch, or as they were played. The [code]ORD[/code] mode always plays them as they were played.",
+    "scale_root": "The key of the part's scale, from 0 (C) to 11 (B), a semitone a step. The scale keyboard, [member scale_quantize] and the diatonic chords follow it.",
+    "scale": "The part's scale, from [FeluccaScale], for the scale keyboard, [member scale_quantize] and the diatonic chords ([member chord]).",
+    "scale_quantize": "Whether and how notes are fitted to the scale, from [FeluccaScaleQuantize]. MIDI notes and notes scheduled from a script play as they are.",
+    "transpose": "Moves the notes the keys play, from -24 to 24 semitones, and the notes the arpeggiator holds from the keys, as it plays. The sequencer's notes move with them only when [member scale_quantize] is [code]SEQ_PLUS_T[/code]; MIDI notes and notes scheduled from a script never do.",
+    "seq_length": "How many steps the part's pattern plays before it starts again, from 1 to 64.",
+    "seq_division": "How long each step of the pattern is, as a note value from [FeluccaDivision].",
+    "seq_swing": "Swings the pattern: every second step comes late, from 0 (straight) to 100 (each pair of steps split 70:30). It adds to the song's [member FeluccaSong.swing], up to 100 in all.",
+    "seq_gate": "How long each step's notes sound, as a share of the step: 64 is half, 127 almost all of it, 1 a short blip. Tied and slid notes hold on.",
+    "send_distortion": "How hard the part's own distortion drives its sound, from 0 (off) to 127.",
+    "send_chorus": "How much of the part goes to the song's chorus, from 0 (none) to 127. The chorus itself is set on [FeluccaSong].",
+    "send_delay": "How much of the part goes to the song's delay, from 0 (none) to 127. The delay itself is set on [FeluccaSong].",
+    "send_reverb": "How much of the part goes to the song's reverb, from 0 (none) to 127. The reverb itself is set on [FeluccaSong].",
+    "voice_mode": "How the part plays several notes at once, from [FeluccaVoiceMode].",
+    "glide": "How long a note takes to slide from the note before, from 0 (no glide) to 127. [member glide_mode] says whether this is a speed or a time.",
+    "pan": "Where the part sits between left and right, from -64 (left) through 0 (centre) to 63 (right).",
+    "mute": "When [code]true[/code], the part is silent. A source's [member FeluccaSource.muted_parts] mutes parts on top of this.",
+    "glide_mode": "Whether [member glide] sets a speed or a time, from [FeluccaGlideMode].",
+    "voice_priority": "Which of the held notes sounds when the part plays one note at a time ([code]MONO[/code] or [code]LEG[/code]), from [FeluccaVoicePriority].",
+    "voice_alloc": "How a new note picks the voice that plays it, from [FeluccaVoiceAlloc].",
+    "detune": "How far apart the voices of [code]UNI[/code] mode are tuned, from 0 (all in tune) to 127 (about 40 cents either way).",
+    "slicer": "The part's slicer, which chops its sound in time with the tempo, from [FeluccaSlicer].",
+    "slicer_pattern": "Which of the slicer's 16 rhythm patterns it plays, from 1 to 16.",
+    "slicer_rate": "How long each of the slicer's 16 steps is, as a note value from [FeluccaSlicerRate].",
+    "slicer_depth": "How strongly the slicer works, from 0 to 127: for [code]GATE[/code] how far its closed steps close (127: silent), for [code]STUT[/code] how loud its repeats are.",
+    "mod1_source": "What drives modulation slot 1, from [FeluccaModSource].",
+    "mod1_dest": "What modulation slot 1 moves, from [FeluccaModDest].",
+    "mod1_amount": "How far modulation slot 1 moves its destination, and which way: from -64 through 0 (not at all) to 63.",
+    "mod2_source": "What drives modulation slot 2, from [FeluccaModSource].",
+    "mod2_dest": "What modulation slot 2 moves, from [FeluccaModDest].",
+    "mod2_amount": "How far modulation slot 2 moves its destination, and which way: from -64 through 0 (not at all) to 63.",
+    "mod3_source": "What drives modulation slot 3, from [FeluccaModSource].",
+    "mod3_dest": "What modulation slot 3 moves, from [FeluccaModDest].",
+    "mod3_amount": "How far modulation slot 3 moves its destination, and which way: from -64 through 0 (not at all) to 63.",
+    "mod4_source": "What drives modulation slot 4, from [FeluccaModSource].",
+    "mod4_dest": "What modulation slot 4 moves, from [FeluccaModDest].",
+    "mod4_amount": "How far modulation slot 4 moves its destination, and which way: from -64 through 0 (not at all) to 63.",
+    "chord": "Makes each note a chord, from [FeluccaChord]: a chord of the part's scale on that note, or a fixed shape. It applies to the keys, MIDI in, the arpeggiator and notes scheduled from a script.",
+    "chord_voicing": "How the notes of [member chord] are spread, from [FeluccaChordVoicing].",
+    "lane_kick": "The level of the DRUM kit's kick, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_snare": "The level of the DRUM kit's snare, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_clap": "The level of the DRUM kit's clap, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_hat_closed": "The level of the DRUM kit's closed hi-hat, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_hat_open": "The level of the DRUM kit's open hi-hat, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_tom": "The level of the DRUM kit's toms, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_rim": "The level of the DRUM kit's rimshot, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lane_bell": "The level of the DRUM kit's bell, from 0 (silent) to 127 (the kit as designed). Only a part playing DRUM uses it.",
+    "lfo2_sync": "Ties the LFO to the tempo, from [FeluccaLfo2Sync]: one cycle per that note value. [code]OFF[/code] leaves its speed to [member lfo_rate].",
+    "lfo2_trigger": "Whether the LFO starts again when a note starts with no other note held, or runs on freely, from [FeluccaLfo2Trigger].",
+    "lfo2_polarity": "Whether the LFO swings both ways around what it moves, or only up from it, from [FeluccaLfo2Polarity].",
+    "seq_quantize": "When [code]true[/code] (the default), every step plays on its place in the grid. When [code]false[/code], steps play with the timing they were recorded with (each step's NUDGE).",
+    "spread": "Spreads the voices of a [code]POLY[/code] or [code]UNI[/code] part alternately left and right of its [member pan], from 0 (all on [member pan]) to 127 (widest).",
+    "insert": "The part's insert effect, from [FeluccaInsert]. What [member insert_a], [member insert_b] and [member insert_c] do depends on it.",
+    "insert_a": "The insert's first setting, from 0 to 127: DRIVE for the drives ([code]SOFT[/code], [code]HARD[/code], [code]FOLD[/code], [code]FUZZ[/code]), BITS for [code]CRUSH[/code], RATE for the swept effects ([code]PHASR[/code], [code]FLANG[/code], [code]CHOR[/code]).",
+    "insert_b": "The insert's second setting, from 0 to 127: TONE for the drives, RATE (the rate the sound is held at) for [code]CRUSH[/code], DEPTH for the swept effects.",
+    "insert_c": "The insert's third setting, from 0 to 127: LEVEL for the drives, LPF (a low-pass after it) for [code]CRUSH[/code], FDBK (feedback) for the swept effects.",
+    "insert_mix": "How much of the insert's sound you hear, from 0 (none: the dry sound) to 127 (all of it).",
+    "filter_type": "The ANALOG engine's filter, from [FeluccaFilterType]. Other engines ignore it.",
+    "env_sync": "When [code]true[/code], [member env_atk], [member env_dec] and [member env_rel] are note values of the tempo instead of times."
+  },
+  "FeluccaSong": {
+    "swing": "Swings every part's pattern: it adds to each part's [member FeluccaPart.seq_swing], from 0 to 100 (up to 100 in all).",
+    "tune": "Fine-tunes every part, from -50 to 50 cents. DRUM parts ignore it.",
+    "delay_time": "How long the delay waits between echoes, as a note value of the tempo from [FeluccaDelayTime].",
+    "delay_feedback": "How much of each echo feeds the next, from 0 (a single echo) to 120 (a long trail).",
+    "delay_color": "The tone of the echoes, from 0 (dark) to 127 (bright).",
+    "delay_mix": "How loud the echoes are, from 0 (silent) to 127. Each part's [member FeluccaPart.send_delay] says how much of it goes in.",
+    "reverb_size": "How long the reverb rings, from 0 (short) to 127 (long: about 4.5 s with [code]HALL[/code]).",
+    "reverb_damp": "How fast the reverb's highs die away, from 0 (they ring on: bright) to 127 (soon: dark).",
+    "chorus_rate": "How fast the chorus moves, from 0 (0.05 Hz) to 127 (40 Hz).",
+    "chorus_depth": "How deep the chorus is, from 0 (none) to 127.",
+    "reverb_type": "The reverb's character, from [FeluccaReverbType]."
+  },
+  "FeluccaAnalog": {
+    "wave": "The oscillators' waveform, from [enum Wave]. With [code]WAVE_SYNC[/code] or [code]WAVE_SUB[/code], [member detune] and [member mix] take on other jobs.",
+    "detune": "How far the second oscillator is tuned from the first, from 0 to 127 cents. With [code]WAVE_SYNC[/code], how far above the first it runs (127: about two octaves): the sync sweep.",
+    "mix": "The balance of the two oscillators, from 0 (the first alone) through 64 (even) to 127 (the second alone). With [code]WAVE_SUB[/code], the sub oscillator's level.",
+    "noise": "How much noise is mixed in, from 0 (none) to 127.",
+    "cutoff": "The filter's cutoff frequency, from 0 (30 Hz) to 127 (16 kHz).",
+    "resonance": "How much the filter rings at its cutoff, from 0 (not at all) to 127 (strongly).",
+    "drive": "How hard the sound is driven into the filter, from 0 (clean) to 127.",
+    "key_track": "How far the cutoff follows the notes you play, from 0 (fixed) to 127 (fully: higher notes, brighter)."
+  },
+  "FeluccaPhase": {
+    "wave": "The waveform the phase is bent into, from [enum Wave].",
+    "wave2": "A second waveform that alternates with [member wave] every other cycle, from [enum Wave2]; [code]WAVE2_NONE[/code] for none.",
+    "dcw": "How far the phase is bent, from 0 (a pure tone) to 127 (the full waveform): the engine's brightness.",
+    "env": "How far the envelope moves [member dcw] over each note, from 0 to 127.",
+    "detune": "How far a second line is tuned from the first, from 0 to 127 cents. [member line] says how it combines.",
+    "line": "How the second line combines with the first, from [enum Line]: mixed or ring-modulated.",
+    "sub": "The level of a sine an octave below, from 0 (none) to 127.",
+    "fold": "A wavefolder on the voice, from 0 (off) through a soft saturation to 127 (several folds): a harder, brighter sound."
+  },
+  "FeluccaLofi": {
+    "chip": "The chip's bit depth and character, from [enum Chip].",
+    "wave": "The waveform, from [enum Wave]. With [code]WAVE_WRAM[/code], [member duty] picks one of 16 built-in wave tables instead.",
+    "duty": "The pulse's width, from 0 to 127. With [code]WAVE_WRAM[/code], which of the 16 wave tables plays (a table every 8 steps).",
+    "crsh": "How far the output is downsampled (held for longer), from 0 (not at all) to 127: a crunchier sound. With [code]CHIP_STEP[/code], the stepped volume envelope instead: constant, a decay, or a looping decay.",
+    "swp": "How fast the pitch sweeps down after each note starts, from 0 (no sweep) to 127.",
+    "vib": "The depth of a vibrato, from 0 (none) to 127.",
+    "arp": "A fast chip-style arpeggio on each note, from [enum Arp].",
+    "tone": "A low-pass on the output, from 0 (dark) to 127 (open)."
+  },
+  "FeluccaSample": {
+    "set": "The instrument played, from [enum Set]: a built-in set or a user slot.",
+    "tune": "Tunes the samples, from -24 to 24 semitones.",
+    "bits": "Reduces the bit depth, from 0 (clean) to 127 (coarse).",
+    "loop": "When [code]true[/code] (the default), a held note's sample loops; when [code]false[/code], it plays once.",
+    "cutoff": "A low-pass on the samples, from 0 (dark) to 127 (open).",
+    "drv": "Drives the sound, from 0 (clean) to 127."
+  },
+  "FeluccaVoice": {
+    "vowl": "The vowel a note starts on, from 0 to 127 through A, E, I, O and U.",
+    "vowl2": "The vowel a note glides to over [member talk], from 0 to 127 through A, E, I, O and U.",
+    "talk": "How long a note takes to glide from [member vowl] to [member vowl2], from 0 (it stays on [member vowl]) to 127 (10 s).",
+    "shift": "Moves every formant up or down, from -12 to 12 semitones: a smaller or larger voice.",
+    "buzz": "The voice's buzz, from 0 (soft and breathy) to 127 (bright and buzzy).",
+    "brth": "How much breath noise is mixed in, from 0 (none) to 127 (a whisper).",
+    "q": "How sharp the formants are, from 0 (wide) to 127 (narrow and ringing).",
+    "rand": "Moves both vowels towards a random vowel for each note, from 0 (not at all) to 127 (fully random)."
+  },
+  "FeluccaTrio": {
+    "wave": "The set of three oscillators, from [enum Wave]: their waves and how they interact (ring modulation, sync, noise).",
+    "int2": "The second oscillator's interval from the note, from -24 to 24 semitones.",
+    "int3": "The third oscillator's interval from the note, from -24 to 24 semitones.",
+    "detune": "Detunes the second oscillator up and the third down, from 0 to 50 cents.",
+    "mode": "The filter's type, from [enum Mode].",
+    "cutoff": "The filter's cutoff, from 0 (dark) to 127 (open).",
+    "resonance": "How much the filter rings at its cutoff, from 0 (not at all) to 127 (strongly).",
+    "pulse_width": "The width of the pulse waves, from 0 to 127 (64: square)."
+  },
+  "FeluccaWheel": {
+    "reg": "The drawbar registration, from [enum Reg]; [member sub], [member body] and [member top] adjust it.",
+    "sub": "Raises or lowers the registration's sub drawbars (16' and 5 1/3'), from -8 to 8 steps.",
+    "body": "Raises or lowers the registration's body drawbars (8' and 4'), from -8 to 8 steps.",
+    "top": "Raises or lowers the registration's upper drawbars (2 2/3' to 1'), from -8 to 8 steps.",
+    "perc": "The percussion: a decaying second or third harmonic on notes played detached, from [enum Perc].",
+    "click": "The key click at each note, from 0 (none) to 127.",
+    "drv": "Overdrives each voice, from 0 (clean) to 127. For more growl across chords, add the part's [member FeluccaPart.send_distortion].",
+    "rotr": "The rotary speaker, from [enum Rotr]: off, slow or fast, ramping between the speeds."
+  },
+  "FeluccaGrain": {
+    "src": "The sound the grains are taken from, from [enum Src]: a built-in set or a user slot.",
+    "pos": "Where in the sound the grains are taken from, from 0 (its start) to 127 (its end). The part's shape modulation moves it: an LFO on [member FeluccaPart.lfo_to_shape] scans the sound.",
+    "size": "How long each grain is, from 0 (10 ms) to 127 (390 ms).",
+    "density": "How many grains start each second, from 0 (1) to 127 (98).",
+    "pitch": "Tunes the grains, from -24 to 24 semitones.",
+    "spread": "How far the grains wander around [member pos] at random, from 0 (a frozen position) to 127.",
+    "rand": "Random detuning of the grains, and how many play backwards, from 0 (none) to 127 (up to an octave, half reversed).",
+    "tone": "A low-pass on the grains, from 0 (dark) to 127 (open)."
+  },
+  "FeluccaPhys": {
+    "model": "The physical model, from [enum Model]. Some parameters below mean something else for [code]MODEL_MEMB[/code] and [code]MODEL_SYMP[/code].",
+    "strc": "The structure, from 0 to 127. MODAL: how the partials are stretched, from compressed through harmonic (about 32 to 38) to more and more inharmonic. STRNG: below about 32 a buzzy, sitar-like bridge, above it a stiffer, piano-like string. MEMB (HARM): from an ideal drum head (toms, timpani) to a tuned, tabla-like one. SYMP (CHRD): how the sympathetic strings are tuned above the note (octave, fifth, fourth, major, minor, sus, seventh, or the scale's root).",
+    "brit": "How bright the strike or pluck is, and how long the high partials ring, from 0 (dull) to 127 (bright). The part's brightness modulation moves it.",
+    "damp": "How long the model rings, from 0 (short) to 127 (on and on).",
+    "pos": "Where it is struck or plucked, from 0 to 127. MEMB: from the centre (round) to the rim. SYMP (SYMP): how much the sympathetic strings take from the string instead.",
+    "acc": "The accent at full velocity, from 0 to 127: a brighter, longer, louder strike. Velocity scales it.",
+    "bow": "Keeps the model sounding with random excitation (bowed or blown), from 0 (struck once) to 127. MEMB (BEND): how far the pitch drops after the strike, up to 12 semitones. SYMP (BUZZ): how buzzy the string's bridge is.",
+    "exc": "How much of the exciter itself (the mallet or pick) you hear, from 0 (none) to 127."
+  },
+  "FeluccaDrum": {
+    "kit": "The kit, from [enum Kit]: Felucca's standard kit or one modelled on a classic drum machine.",
+    "tune": "Tunes every lane from its designed pitch, from 0 (12 semitones down) through 64 (as designed) to 127 (12 up).",
+    "tone": "Moves every lane's tone from its designed value, from 0 (darker) through 64 (as designed) to 127 (brighter).",
+    "decay": "Moves every lane's decay from its designed value, from 0 (shorter) through 64 (as designed) to 127 (longer).",
+    "snap": "Moves each lane's own extra from its designed value (the kick's drive, the snare's snappiness, the clap's spread, the hats' noise, the toms' bend, the rim's drive, the bell's strike), from 0 through 64 (as designed) to 127.",
+    "acc": "The accent at full velocity, from 0 to 127. Velocity scales it.",
+    "kick": "The standard kit's kick, from [enum Kick]. The modelled kits have their own.",
+    "drive": "A soft clip on every hit, from 0 (clean) to 127 (four times the drive), the level kept."
+  },
+  "FeluccaNoise": {
+    "mode": "The noise source, from [enum Mode].",
+    "color": "The noise's colour, from 0 (white) through 64 (pink) to 127 (brown): darker as it rises.",
+    "freq": "The filter's frequency, from 0 (low) to 127 (high).",
+    "resonance": "The filter's resonance, from 0 (a plain low-pass) to 127 (a narrow band-pass that rings).",
+    "track": "How far [member freq] follows the notes you play, from 0 (fixed) to 127 (a semitone a semitone).",
+    "density": "For [code]MODE_ANLG[/code], how many random impulses are added, from 0 (none) to 127. For [code]MODE_LFSR[/code] and [code]MODE_META[/code] (LEN), which shift register or sequence plays.",
+    "drift": "A slow random wander of the filter's frequency, from 0 (none) to 127.",
+    "crush": "For [code]MODE_ANLG[/code] and [code]MODE_DUST[/code], sample-and-hold and fewer bits, from 0 (clean) to 127. For [code]MODE_LFSR[/code] and [code]MODE_META[/code] (CLK), how many semitones above the note the register is clocked."
+  },
+  "FeluccaFm6": {
+    "algorithm": "The algorithm: 0 keeps the patch's own, 1 to 32 pick another.",
+    "feedback": "Added to the patch's feedback, from -7 to 7.",
+    "mlvl": "The level of every modulating operator, from -64 (-36 dB) through 0 (the patch's) to 63 (+36 dB): the sound's brightness. The part's brightness modulation moves it.",
+    "mrat": "Added to the modulating operators' coarse frequency ratio, from -16 to 16 (operators in ratio mode only).",
+    "meg": "The modulating operators' envelope times, from -64 (faster) through 0 (the patch's) to 63 (slower).",
+    "vmod": "Added to the modulating operators' velocity sensitivity, from -7 to 7.",
+    "dtun": "Spreads the carriers apart in pitch, from 0 (in tune) to 127 (about 36 cents between the outer ones).",
+    "slot": "Which patch the part plays: 0 to 7 load factory patch F1 to F8, 8 is the part's own patch (what the project, a user preset or the web editor put there), 9 to 40 load voice B1 to B32 of the bank the web editor sent."
+  },
+  "FeluccaSlice": {
+    "src": "The sound to slice, from [enum Src]: the built-in break, a user slot or the built-in piano note.",
+    "div": "How the sound is cut into slices, from [enum Div].",
+    "start": "Which slice the lowest key plays, from 0 to 31: the others follow in order.",
+    "ptch": "Plays the slices faster and higher, or slower and lower, from -24 to 24 semitones.",
+    "mode": "How a slice plays, from [enum Mode].",
+    "rev": "When [code]true[/code], the slices play backwards.",
+    "dcay": "Fades each slice out as it plays, from 0 (quickly) to 127 (no fade).",
+    "tone": "A gentle low-pass on the slices, from 0 (dark) to 127 (open)."
+  },
+  "where": {
+    "FeluccaPart.level": "MIXER (HOME, then HOME again) › LEVEL",
+    "FeluccaPart.seq_length": "SEQ TOOLS (hold SEQ) › LEN",
+    "FeluccaPart.seq_division": "SEQ TOOLS (hold SEQ) › DIV",
+    "FeluccaPart.seq_swing": "SEQ TOOLS (hold SEQ) › SWING",
+    "FeluccaPart.seq_gate": "SEQ TOOLS (hold SEQ) › GATE",
+    "FeluccaPart.seq_quantize": "SEQ › AUTOMATION, its QUANTIZE row › QNTZ",
+    "FeluccaPart.mod2_source": "MOD, slot 2 (KNOB 1) › SRC2",
+    "FeluccaPart.mod2_dest": "MOD, slot 2 (KNOB 1) › DST2",
+    "FeluccaPart.mod2_amount": "MOD, slot 2 (KNOB 1) › AMT2",
+    "FeluccaPart.mod3_source": "MOD, slot 3 (KNOB 1) › SRC3",
+    "FeluccaPart.mod3_dest": "MOD, slot 3 (KNOB 1) › DST3",
+    "FeluccaPart.mod3_amount": "MOD, slot 3 (KNOB 1) › AMT3",
+    "FeluccaPart.mod4_source": "MOD, slot 4 (KNOB 1) › SRC4",
+    "FeluccaPart.mod4_dest": "MOD, slot 4 (KNOB 1) › DST4",
+    "FeluccaPart.mod4_amount": "MOD, slot 4 (KNOB 1) › AMT4",
+    "FeluccaSong.tune": "MENU › AUDIO › TUNE"
+  },
+  "enums": {
+    "FeluccaLfoWave": {
+      "SIN": "A sine.",
+      "TRI": "A triangle.",
+      "SAW": "A saw.",
+      "SQR": "A square.",
+      "S_AND_H": "Sample and hold: a new random value each cycle, held until the next."
+    },
+    "FeluccaArpMode": {
+      "_": "What the arpeggiator plays over the notes held, here C E G.",
+      "OFF": "No arpeggio: the notes play as they come.",
+      "UP": "From the lowest note up: C E G.",
+      "DN": "From the highest note down: G E C.",
+      "UPDN": "Up, then down: C E G E.",
+      "RND": "A held note at random each time.",
+      "ORD": "In the order the notes were played, whatever [member FeluccaPart.arp_order] says.",
+      "REPEAT": "The last note played, again and again, without going through the octaves.",
+      "DNUP": "Down, then up: G E C E.",
+      "UP_PLUS_8": "Up, then the first note again an octave above the top: C E G C'.",
+      "CONV": "From the outside in: C G E.",
+      "DIVG": "From the inside out: E G C.",
+      "PINKY": "The top note between each of the others: C G E G.",
+      "THUMB": "The bottom note between each of the others: C E C G.",
+      "WALK": "A random step up or down the notes, bouncing off the ends.",
+      "CHORD": "All the held notes together (the first four), an octave higher each step through [member FeluccaPart.arp_octaves]."
+    },
+    "FeluccaDivision": {
+      "_": "Note values, ordered as on the FM-1 (not by length).",
+      "R_1_4": "A quarter note.",
+      "R_1_8": "An eighth note.",
+      "R_1_16": "A sixteenth note.",
+      "R_1_32": "A thirty-second note.",
+      "R_8T": "An eighth-note triplet.",
+      "R_16T": "A sixteenth-note triplet.",
+      "R_1_2": "A half note.",
+      "R_1_1": "A whole note (a bar).",
+      "R_2BAR": "Two bars.",
+      "R_4BAR": "Four bars."
+    },
+    "FeluccaArpOrder": {
+      "NOTE": "By pitch, low to high.",
+      "PLAY": "In the order the notes were played."
+    },
+    "FeluccaScale": {
+      "CHR": "Chromatic: every semitone.",
+      "MAJ": "Major.",
+      "MIN": "Natural minor.",
+      "DOR": "Dorian.",
+      "MIX": "Mixolydian.",
+      "PEN": "Major pentatonic.",
+      "MPEN": "Minor pentatonic.",
+      "HARM": "Harmonic minor.",
+      "PHRY": "Phrygian.",
+      "LYD": "Lydian.",
+      "LOC": "Locrian.",
+      "MEL": "Melodic minor.",
+      "BLUES": "Blues.",
+      "WHOLE": "Whole tone.",
+      "DIMHW": "Diminished, half step first.",
+      "DIMWH": "Diminished, whole step first."
+    },
+    "FeluccaScaleQuantize": {
+      "OFF": "Notes play as they are.",
+      "SNAP": "Every key plays a note of the scale (rounded down to one).",
+      "WHITE": "The white keys walk the scale; the black keys are silent.",
+      "SEQ": "As [code]SNAP[/code], and the sequencer's notes snap to the scale too as they play (the steps keep what was written).",
+      "SEQ_PLUS_T": "As [code]SEQ[/code], with the sequencer's notes moved by [member FeluccaPart.transpose] first, as the keys are."
+    },
+    "FeluccaVoiceMode": {
+      "POLY": "Polyphonic: each note its own voice.",
+      "MONO": "One note at a time; each new note starts its envelope again.",
+      "LEG": "Legato: one note at a time, and a note played while another is held glides on without starting its envelope again.",
+      "UNI": "Unison: several detuned voices on every note ([member FeluccaPart.detune])."
+    },
+    "FeluccaGlideMode": {
+      "RATE": "A speed: a wider interval takes longer.",
+      "TIME": "A time: every glide takes as long, whatever the interval."
+    },
+    "FeluccaVoicePriority": {
+      "LAST": "The last note played.",
+      "LOW": "The lowest note held.",
+      "HIGH": "The highest note held."
+    },
+    "FeluccaVoiceAlloc": {
+      "ROT": "Each note takes the next free voice in turn.",
+      "REUSE": "A note takes the free voice that last played nearest its pitch."
+    },
+    "FeluccaSlicer": {
+      "OFF": "No slicing.",
+      "GATE": "The pattern's closed steps turn the sound down ([member FeluccaPart.slicer_depth]).",
+      "STUT": "Stutter: the pattern's closed steps repeat the step recorded before them."
+    },
+    "FeluccaSlicerRate": {
+      "R_1_8": "An eighth note.",
+      "R_1_16": "A sixteenth note.",
+      "R_1_32": "A thirty-second note.",
+      "R_8T": "An eighth-note triplet.",
+      "R_16T": "A sixteenth-note triplet.",
+      "R_32T": "A thirty-second-note triplet."
+    },
+    "FeluccaModSource": {
+      "OFF": "Nothing: the slot is off.",
+      "LFO": "The part's LFO.",
+      "ENV": "The part's envelope.",
+      "VEL": "Each note's velocity.",
+      "KEY": "Each note's pitch, around C4.",
+      "RAND": "A new random value for each note.",
+      "MODW": "The mod wheel (MIDI CC 1).",
+      "AT": "Channel aftertouch.",
+      "EXPR": "The expression controller (MIDI CC 11).",
+      "S_AND_H": "A random value each LFO cycle, held.",
+      "SLEW": "A random value each LFO cycle, gliding from one to the next."
+    },
+    "FeluccaModDest": {
+      "OFF": "Nothing: the slot is off.",
+      "PITCH": "The pitch.",
+      "CUT": "The engine's brightness (its filter cutoff on most engines).",
+      "SHP": "The engine's shape (see [member FeluccaPart.env_to_shape]).",
+      "AMP": "The volume.",
+      "PAN": "The pan.",
+      "DIST": "The distortion ([member FeluccaPart.send_distortion]).",
+      "CHO": "The chorus send.",
+      "DLY": "The delay send.",
+      "REV": "The reverb send.",
+      "RATE": "The LFO's rate.",
+      "VIB": "How far the LFO moves the pitch ([member FeluccaPart.lfo_to_pitch]).",
+      "E1": "The engine's first parameter (on its first EDIT page).",
+      "E2": "The engine's second parameter.",
+      "E3": "The engine's third parameter.",
+      "E4": "The engine's fourth parameter.",
+      "E5": "The engine's fifth parameter (on its second EDIT page).",
+      "E6": "The engine's sixth parameter.",
+      "E7": "The engine's seventh parameter.",
+      "E8": "The engine's eighth parameter.",
+      "DEPTH": "The LFO's depth, wherever it goes: with [code]MODW[/code], a mod-wheel vibrato.",
+      "VEL": "Each note's velocity, before it plays.",
+      "TIME": "When each step plays: a little late, to humanize."
+    },
+    "FeluccaChord": {
+      "OFF": "A single note.",
+      "DIA3": "The triad of the part's scale on the note.",
+      "DIA7": "The seventh chord of the part's scale on the note.",
+      "MAJ": "A major triad.",
+      "MIN": "A minor triad.",
+      "DOM7": "A dominant seventh.",
+      "MAJ7": "A major seventh.",
+      "MIN7": "A minor seventh.",
+      "SUS4": "A suspended fourth.",
+      "POW": "A power chord: the root and the fifth."
+    },
+    "FeluccaChordVoicing": {
+      "CLOSE": "The notes close together, from the root up.",
+      "OPEN": "The chord's second note an octave up.",
+      "INV1": "The first inversion.",
+      "INV2": "The second inversion.",
+      "PLUS_OCT": "The root added an octave below."
+    },
+    "FeluccaLfo2Sync": {
+      "OFF": "Not tied to the tempo: [member FeluccaPart.lfo_rate] sets the speed."
+    },
+    "FeluccaLfo2Trigger": {
+      "NOTE": "The LFO starts again (at [member FeluccaPart.lfo_phase]) when a note starts with no other note held.",
+      "FREE": "The LFO runs on freely."
+    },
+    "FeluccaLfo2Polarity": {
+      "BI": "Both ways around what it moves.",
+      "UNI": "Only up from what it moves."
+    },
+    "FeluccaInsert": {
+      "OFF": "No insert effect.",
+      "SOFT": "A soft drive.",
+      "HARD": "A hard drive.",
+      "FOLD": "A wavefolder.",
+      "FUZZ": "A fuzz.",
+      "CRUSH": "A bit crusher: fewer bits, a lower rate.",
+      "PHASR": "A phaser.",
+      "FLANG": "A flanger.",
+      "CHOR": "A chorus."
+    },
+    "FeluccaFilterType": {
+      "LP": "Low-pass.",
+      "BP": "Band-pass.",
+      "HP": "High-pass."
+    },
+    "FeluccaDelayTime": {
+      "_": "Note values of the tempo, ordered as on the FM-1 (not by length).",
+      "R_1_4": "A quarter note.",
+      "R_1_8": "An eighth note.",
+      "R_1_16": "A sixteenth note.",
+      "R_1_32": "A thirty-second note.",
+      "R_8T": "An eighth-note triplet.",
+      "R_16T": "A sixteenth-note triplet.",
+      "R_1_2": "A half note.",
+      "R_1_1": "A whole note (a bar).",
+      "R_2BAR": "Two bars.",
+      "R_4BAR": "Four bars.",
+      "R_1_8D": "A dotted eighth note.",
+      "R_1_16D": "A dotted sixteenth note.",
+      "R_1_4D": "A dotted quarter note."
+    },
+    "FeluccaReverbType": {
+      "ROOM": "A room.",
+      "SPRING": "A spring reverb.",
+      "HALL": "A smooth stereo hall (the default)."
+    },
+    "FeluccaLane": {
+      "KICK": "The kick.",
+      "SNARE": "The snare.",
+      "CLAP": "The clap.",
+      "HAT_CLOSED": "The closed hi-hat.",
+      "HAT_OPEN": "The open hi-hat.",
+      "TOM": "The toms.",
+      "RIM": "The rimshot.",
+      "BELL": "The bell."
+    },
+    "FeluccaEngine": {
+      "ANALOG": "Virtual analog: two oscillators, noise, drive and a resonant filter ([FeluccaAnalog]).",
+      "PHASE": "Phase distortion, with a wavefolder ([FeluccaPhase]).",
+      "LOFI": "Chiptune: pulse, triangle, saw, noise and a wave memory ([FeluccaLofi]).",
+      "SAMPLE": "Multisampled instruments and the user sample slots ([FeluccaSample]).",
+      "VOICE": "A formant oscillator that sings vowels ([FeluccaVoice]).",
+      "TRIO": "Three oscillators with ring modulation and sync, into a multimode filter ([FeluccaTrio]).",
+      "WHEEL": "A tonewheel-style organ ([FeluccaWheel]).",
+      "GRAIN": "Granular textures from the samples ([FeluccaGrain]).",
+      "PHYS": "Physical models: resonators, strings, drum heads ([FeluccaPhys]).",
+      "DRUM": "An eight-lane drum kit ([FeluccaDrum]).",
+      "NOISE": "Noise from analog to digital through a resonant filter ([FeluccaNoise]).",
+      "FM6": "Classic 6-operator FM ([FeluccaFm6]).",
+      "SLICE": "A sample cut into slices, one per key ([FeluccaSlice])."
+    },
+    "FeluccaAnalog.Wave": {
+      "WAVE_SAW": "Two saws.",
+      "WAVE_SQR": "Two squares.",
+      "WAVE_TRI": "Two triangles.",
+      "WAVE_SIN": "Two sines.",
+      "WAVE_PWM": "Two pulses, their width moved by the part's shape modulation.",
+      "WAVE_SYNC": "A saw hard-synced to the first saw: sweep [member FeluccaAnalog.detune] or the shape modulation for the sync sound.",
+      "WAVE_SUB": "A saw with a square an octave below it, its level [member FeluccaAnalog.mix]."
+    },
+    "FeluccaPhase.Wave": {
+      "WAVE_SAW": "A saw.",
+      "WAVE_SQR": "A square.",
+      "WAVE_PLS": "A pulse.",
+      "WAVE_DSIN": "A double sine.",
+      "WAVE_SPLS": "A saw-pulse.",
+      "WAVE_RSAW": "A resonant saw.",
+      "WAVE_RTRI": "A resonant triangle.",
+      "WAVE_RTRP": "A resonant trapezoid."
+    },
+    "FeluccaPhase.Wave2": {
+      "WAVE2_NONE": "None: [member FeluccaPhase.wave] plays every cycle."
+    },
+    "FeluccaPhase.Line": {
+      "LINE_MIX": "Mixed.",
+      "LINE_RING": "Ring-modulated."
+    },
+    "FeluccaLofi.Chip": {
+      "CHIP_4BIT": "4 bits.",
+      "CHIP_4B_2": "4 bits, at half the rate.",
+      "CHIP_8BIT": "8 bits.",
+      "CHIP_1BIT": "1 bit.",
+      "CHIP_STEP": "4 bits with a stepped volume envelope ([member FeluccaLofi.crsh]), a staircase triangle and fixed pulse widths."
+    },
+    "FeluccaLofi.Wave": {
+      "WAVE_PLS": "A pulse.",
+      "WAVE_TRI": "A triangle.",
+      "WAVE_SAW": "A saw.",
+      "WAVE_NOIS": "Shift-register noise.",
+      "WAVE_WRAM": "A 32-step, 4-bit wave table, picked by [member FeluccaLofi.duty]."
+    },
+    "FeluccaLofi.Arp": {
+      "ARP_OFF": "No arpeggio.",
+      "ARP_OCT": "The note and its octave.",
+      "ARP_MAJ": "A major triad.",
+      "ARP_MIN": "A minor triad."
+    },
+    "FeluccaSample.Set": {
+      "SET_PIANO": "A piano.",
+      "SET_PIANO_2": "Also the piano: the value of a retired set, kept so older sounds load.",
+      "SET_FLUTE": "A flute.",
+      "SET_SAX": "A saxophone.",
+      "SET_PIANO_3": "Also the piano: the value of a retired set, kept so older sounds load.",
+      "SET_USR1": "User sample slot 1, filled from the web editor.",
+      "SET_USR2": "User sample slot 2, filled from the web editor.",
+      "SET_USR3": "User sample slot 3, filled from the web editor."
+    },
+    "FeluccaTrio.Wave": {
+      "WAVE_SAW3": "Three saws.",
+      "WAVE_PLS3": "Three pulses.",
+      "WAVE_PPT": "Two pulses and a triangle.",
+      "WAVE_SST": "Two saws and a triangle.",
+      "WAVE_TRI3": "Three triangles.",
+      "WAVE_S_AND_T": "Two saw-and-triangle combined waves and a triangle.",
+      "WAVE_P_AND_S": "Two pulse-and-saw combined waves and a triangle.",
+      "WAVE_P_PLUS_N": "A pulse and pitched noise.",
+      "WAVE_NOIS": "Pitched noise alone.",
+      "WAVE_SYNC": "Two saws, the second hard-synced to the first.",
+      "WAVE_SYNCP": "Two pulses, the second hard-synced to the first.",
+      "WAVE_SYNC3": "Two saws, the second synced, and a triangle.",
+      "WAVE_RING": "A triangle ring-modulated by the silent third oscillator.",
+      "WAVE_RING3": "A triangle ring-modulated by the third, which sounds too.",
+      "WAVE_R_PLUS_S": "A ring-modulated triangle and a synced saw.",
+      "WAVE_R_PLUS_SP": "A ring-modulated triangle and a synced pulse."
+    },
+    "FeluccaTrio.Mode": {
+      "MODE_LP": "Low-pass.",
+      "MODE_BP": "Band-pass.",
+      "MODE_HP": "High-pass.",
+      "MODE_NOT": "Notch."
+    },
+    "FeluccaWheel.Reg": {
+      "REG_FLUTE": "One soft flute (8').",
+      "REG_MELLO": "Flute and octave, mellow.",
+      "REG_HOLLW": "Sub and octave, hollow.",
+      "REG_SMOOT": "Smooth comping.",
+      "REG_3BAR": "The first three drawbars out (the default).",
+      "REG_BLUES": "Three drawbars and the octave.",
+      "REG_GOSPL": "Body with a little shimmer.",
+      "REG_ROCK": "Body and the top three.",
+      "REG_TOPS": "Sub and the top only.",
+      "REG_CLARI": "Odd harmonics, reedy and hollow.",
+      "REG_REED": "A falling slope, brassy.",
+      "REG_STRNG": "Bright and thin.",
+      "REG_CHAPL": "Soft, churchy.",
+      "REG_BRITE": "Even drawbars, bright.",
+      "REG_BASS": "For the left hand.",
+      "REG_FULL": "Every drawbar out."
+    },
+    "FeluccaWheel.Perc": {
+      "PERC_OFF": "No percussion.",
+      "PERC_2ND": "On the second harmonic.",
+      "PERC_3RD": "On the third harmonic.",
+      "PERC_2SOFT": "On the second harmonic, soft.",
+      "PERC_3SOFT": "On the third harmonic, soft.",
+      "PERC_2SLOW": "On the second harmonic, slow decay.",
+      "PERC_3SLOW": "On the third harmonic, slow decay."
+    },
+    "FeluccaWheel.Rotr": {
+      "ROTR_OFF": "No rotary speaker.",
+      "ROTR_SLOW": "Slow (chorale).",
+      "ROTR_FAST": "Fast (tremolo)."
+    },
+    "FeluccaGrain.Src": {
+      "SRC_PIANO": "The piano.",
+      "SRC_PIANO_2": "Also the piano: the value of a retired set, kept so older sounds load.",
+      "SRC_FLUTE": "The flute.",
+      "SRC_SAX": "The saxophone.",
+      "SRC_PIANO_3": "Also the piano: the value of a retired set, kept so older sounds load.",
+      "SRC_USR1": "User sample slot 1, filled from the web editor.",
+      "SRC_USR2": "User sample slot 2, filled from the web editor.",
+      "SRC_USR3": "User sample slot 3, filled from the web editor."
+    },
+    "FeluccaPhys.Model": {
+      "MODEL_MODAL": "Struck resonators: bells, bars, plates.",
+      "MODEL_STRNG": "A plucked string.",
+      "MODEL_MEMB": "A struck drum head.",
+      "MODEL_SYMP": "A plucked string with three sympathetic strings ringing along."
+    },
+    "FeluccaDrum.Kit": {
+      "KIT_STD": "Felucca's standard kit.",
+      "KIT_66": "Plays the 66 kit ([code]KIT_66_2[/code]): the value of a retired kit, kept so older sounds load.",
+      "KIT_10": "Plays the 10 kit ([code]KIT_10_2[/code]): the value of a retired kit, kept so older sounds load.",
+      "KIT_77": "Plays the 77 kit ([code]KIT_77_2[/code]): the value of a retired kit, kept so older sounds load.",
+      "KIT_80": "A deep sine kick with a long decay, a noisy snare, six-square hats.",
+      "KIT_10_2": "A swept kick, a white-noise snare, long-tailed claps, a cymbal.",
+      "KIT_66_2": "A soft round kick, a bright snare, noise hats, a conga.",
+      "KIT_55": "A dropping kick, high metal hats, a metal bell.",
+      "KIT_77_2": "A swelling kick, multi-burst claps, claves, a cymbal.",
+      "KIT_DEEP": "A low swelling kick and a long cymbal, from the other kits' pieces.",
+      "KIT_TIGHT": "Short and dry, from the other kits' pieces.",
+      "KIT_PERC": "A conga, claves and a bell, from the other kits' pieces."
+    },
+    "FeluccaDrum.Kick": {
+      "KICK_PUNCH": "A punchy kick.",
+      "KICK_ROUND": "A round kick."
+    },
+    "FeluccaNoise.Mode": {
+      "MODE_ANLG": "White noise, with random impulses ([member FeluccaNoise.density]).",
+      "MODE_DUST": "The impulses alone: crackle and drops.",
+      "MODE_LFSR": "A long shift register, clocked above the note: digital noise.",
+      "MODE_META": "A short register sequence once per cycle of the note: a metallic tone."
+    },
+    "FeluccaSlice.Src": {
+      "SRC_BREAK": "The built-in drum break: a bar of sixteenths.",
+      "SRC_USR1": "User sample slot 1, filled from the web editor.",
+      "SRC_USR2": "User sample slot 2, filled from the web editor.",
+      "SRC_USR3": "User sample slot 3, filled from the web editor.",
+      "SRC_PIANO": "The built-in piano note."
+    },
+    "FeluccaSlice.Div": {
+      "DIV_4": "Four equal slices.",
+      "DIV_8": "Eight equal slices.",
+      "DIV_16": "Sixteen equal slices.",
+      "DIV_32": "Thirty-two equal slices.",
+      "DIV_AUTO": "A slice at each hit the FM-1 finds in the sound.",
+      "DIV_MAN": "Slices set by hand on the SLICES page (a user slot; the built-in sounds play [code]DIV_AUTO[/code])."
+    },
+    "FeluccaSlice.Mode": {
+      "MODE_ONE": "The slice plays to its end, however short the note.",
+      "MODE_GATE": "The slice plays while the note is held, then the envelope's release.",
+      "MODE_LOOP": "The slice repeats while the note is held."
+    }
+  }
+}

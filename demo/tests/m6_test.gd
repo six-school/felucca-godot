@@ -8,7 +8,8 @@
 # with the signals; a part's notes: on_note / on_noteoff in pairs, a DRUM part's on_hit, the warning for on_hit on
 # another; replace and mask: a note in place of a step's own, one layered over it, a loop masked but for a scheduled
 # kick, a mask of 0 refused; set_param for an engine's parameter: applied and kept, refused on another engine's part,
-# dropped when its part leaves the engine before the step. (The knock and the door
+# dropped when its part leaves the engine before the step; a latched arpeggio: notes scheduled once under ARP HOLD
+# arpeggiate on after they end, a later note replaces them, HOLD off ends it. (The knock and the door
 # together are the demo's; the core's timing: core/tests/test_sched.c.)
 extends Node
 
@@ -53,7 +54,7 @@ func source(id: String) -> FeluccaSource:
 	s.project = project
 	s.quantize = FeluccaSource.QUANTIZE_NOW
 	s.part_4.seq_length = 16
-	s.part_4.seq_division = FeluccaPart.SeqDivision.SEQ_DIVISION_1_16
+	s.part_4.seq_division = FeluccaDivision.R_1_16
 	add_child(s)
 	watch(s)
 	return s
@@ -92,6 +93,7 @@ func _ready() -> void:
 	await notes()
 	await replace_mask()
 	await engine_params()
+	await latched_arp()
 	await stop_all()
 	check(FeluccaConductor.get_bound_count() == 0, "all stopped: every engine free")
 	print("m6_test: %d failed" % fails)
@@ -113,7 +115,7 @@ func refused() -> void:
 	check(a.schedule(when, FeluccaAction.mark()) == null, "schedule() on a source that is not playing: null")
 	a.play()
 	check(a.schedule(FeluccaWhen.next_loop(other.part_4, 1), FeluccaAction.mark()) == null and
-		a.schedule(when, FeluccaAction.hit(other.part_4, FeluccaPart.Lane.LANE_KICK)) == null,
+		a.schedule(when, FeluccaAction.hit(other.part_4, FeluccaLane.KICK)) == null,
 		"schedule() with a part of another source: null")
 	check(a.schedule(null, FeluccaAction.mark()) == null, "schedule() without a target: null")
 	await stop_all()
@@ -146,7 +148,7 @@ func knock() -> void:
 	var a := await started("Knock")
 	var from := got.size()
 	for step: int in [1, 5, 9, 13]:
-		a.schedule_with_tag(FeluccaWhen.next_loop(a.part_4, step), FeluccaAction.hit(a.part_4, FeluccaPart.Lane.LANE_KICK), &"knock")
+		a.schedule_with_tag(FeluccaWhen.next_loop(a.part_4, step), FeluccaAction.hit(a.part_4, FeluccaLane.KICK), &"knock")
 	await until(func() -> bool: return got.size() >= from + 4, 6.0)
 	var k := heard(&"knock")
 	var steps := k.map(func(e: FeluccaEvent) -> int: return e.step)
@@ -250,7 +252,7 @@ func late() -> void:
 func set_param() -> void:
 	var a := await started("SetParam")
 	var before := a.part_1.level
-	var h := a.schedule_with_tag(FeluccaWhen.next_loop(a.part_4, 1), FeluccaAction.set_param(a.part_1, FeluccaPart.Param.PARAM_LEVEL, 77), &"level")
+	var h := a.schedule_with_tag(FeluccaWhen.next_loop(a.part_4, 1), FeluccaAction.set_param(a.part_1, FeluccaParam.LEVEL, 77), &"level")
 	check(a.part_1.level == before, "pending: part 1's level still %d" % before)
 	await h.triggered
 	check(a.part_1.level == 77, "heard: part 1's level 77 (%d)" % a.part_1.level)
@@ -456,13 +458,13 @@ func notes() -> void:
 	synth.on_note.connect(func(n: int, v: int) -> void: noted.call(1, n, v))
 	synth.on_noteoff.connect(func(n: int) -> void: released.call(1, n))
 	synth.on_hit.connect(func(_l: int, _v: int) -> void: synth_hits[0] += 1)
-	var kick := a.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_KICK),
+	var kick := a.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.hit(drums, FeluccaLane.KICK),
 		func(_e: FeluccaEvent) -> void: order.append("callback"))
 	a.schedule(FeluccaWhen.next_loop(drums, 5), FeluccaAction.note(synth, 99, 90, 2))
 	await kick.triggered
 	await wait(1.0)
 	var at := order.find("callback")
-	var kick_at := order.slice(0, maxi(at, 0)).rfind("hit %d 100" % FeluccaPart.Lane.LANE_KICK)
+	var kick_at := order.slice(0, maxi(at, 0)).rfind("hit %d 100" % FeluccaLane.KICK)
 	check(at > 0 and kick_at >= 0 and at - kick_at <= 4,
 		"a scheduled hit: heard as KICK (velocity 100), at its moment and before its callback (%s)" % [order.slice(kick_at, at + 1)])
 	var hits := order.filter(func(e: String) -> bool: return e.begins_with("hit "))
@@ -479,7 +481,7 @@ func notes() -> void:
 func replace_mask() -> void:
 	var a := source("Replace")
 	a.part_1.seq_length = 16
-	a.part_1.seq_division = FeluccaPart.SeqDivision.SEQ_DIVISION_1_16
+	a.part_1.seq_division = FeluccaDivision.R_1_16
 	a.play()
 	await until(func() -> bool: return a.is_bound())
 	var synth := a.part_1
@@ -515,7 +517,7 @@ func replace_mask() -> void:
 		"note_layered(): heard with the step's own (%s)" % [layered])
 
 	var m := a.schedule(FeluccaWhen.next_loop(drums, 1), FeluccaAction.mask_loops(drums, 1))
-	a.schedule(FeluccaWhen.next_loop(drums, 9), FeluccaAction.hit(drums, FeluccaPart.Lane.LANE_KICK, 77))
+	a.schedule(FeluccaWhen.next_loop(drums, 9), FeluccaAction.hit(drums, FeluccaLane.KICK, 77))
 	var em: FeluccaEvent = await m.triggered
 	await wait(4.3)                     # (that loop, and the next)
 	var in_loop := func(loop: int) -> Array:
@@ -549,7 +551,45 @@ func engine_params() -> void:
 	check(synth.analog.cutoff == 127, ".. and kept for the next binding (%d)" % synth.analog.cutoff)
 	check(FeluccaAction.set_param(a.part_4, FeluccaAnalog.Param.PARAM_CUTOFF, 1) == null, "ANALOG's cutoff on the DRUM part: refused")
 	var d := a.schedule(FeluccaWhen.next_loop(a.part_4, 1), FeluccaAction.set_param(synth, FeluccaAnalog.Param.PARAM_RESONANCE, 50))
-	synth.engine = FeluccaPart.Engine.ENGINE_PHASE
+	synth.engine = FeluccaEngine.PHASE
 	var e2: FeluccaEvent = await d.triggered
 	check(e2.dropped, "its part switched to PHASE before the step: dropped")
+	await stop_all()
+
+# ---- a latched arpeggio: notes scheduled once, a step long, on a part with ARP ORD and HOLD on (test-4's part 2 has no
+# notes of its own) arpeggiate on after they end, in the order scheduled; a note scheduled later replaces them, and its
+# callback runs once however often the arp plays it; HOLD off ends the arpeggio
+func latched_arp() -> void:
+	var a := source("Arp")
+	var arp := a.part_2
+	arp.seq_length = 16
+	arp.seq_division = FeluccaDivision.R_1_16
+	arp.arp_mode = FeluccaArpMode.ORD
+	arp.arp_rate = FeluccaDivision.R_1_16
+	arp.arp_hold = true
+	a.play()
+	await until(func() -> bool: return a.is_bound())
+	var played: Array[int] = []
+	arp.on_note.connect(func(note: int, _velocity: int) -> void: played.append(note))
+	for note: int in [67, 60, 72, 64]:
+		a.schedule(FeluccaWhen.next_step(arp, 1), FeluccaAction.note(arp, note, 100, 1))
+	await until(func() -> bool: return not played.is_empty(), 4.0)
+	await wait(2.5)                     # (the notes ended a step on, 0.125 s; the arp's 1/16 at 120 BPM: 8 a second)
+	check(played.size() >= 16 and played.slice(0, 8) == [67, 60, 72, 64, 67, 60, 72, 64],
+		"HOLD: %d notes in 2.5 s from 4 a step long, in the order scheduled (%s)" % [played.size(), played.slice(0, 8)])
+	var calls := [0]
+	var from := [-1]
+	var h := a.schedule(FeluccaWhen.next_step(arp, 1), FeluccaAction.note(arp, 62, 100, 1), func(_e: FeluccaEvent) -> void:
+		calls[0] += 1
+		from[0] = played.size())
+	await h.triggered
+	await wait(1.0)
+	var since := played.slice(from[0])
+	check(calls[0] == 1 and since.size() >= 6 and since.all(func(n: int) -> bool: return n == 62),
+		"a note scheduled later: played alone from then (%s), its callback once (%d)" % [since, calls[0]])
+	arp.arp_hold = false
+	await wait(0.3)
+	var n := played.size()
+	await wait(1.0)
+	check(played.size() == n, "HOLD off: the arpeggio ends (%d notes after)" % (played.size() - n))
 	await stop_all()

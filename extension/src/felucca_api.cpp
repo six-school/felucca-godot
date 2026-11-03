@@ -2,9 +2,11 @@
 
 #include <godot_cpp/classes/audio_server.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/godot.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <cstring>
+#include <deque>
 
 namespace felucca {
 
@@ -279,11 +281,104 @@ bool FeluccaOverrides::value_of(int p_track, int p_id, int32_t &r_value) const {
 	return found;
 }
 
+// ---------------------------------------------------------------- typed properties ---
+
+// GDScript's analyzer types a native property by its getter's return, which godot-cpp takes from the C++ return
+// type: one getter of an int for every parameter made each an int, whatever its enum (another enum's value parsed)
+// or bool. So each property gets a getter and a setter of its own, _get_<name> and _set_<name> (a leading _ keeps
+// them out of the class reference and completion), registered through the GDExtension interface with their types:
+// the property's enum (FeluccaArpMode.Value), bool or int.
+struct TypedAccess {
+	int32_t (*get)(void *p_instance, const void *p_data);
+	void (*set)(void *p_instance, const void *p_data, int32_t p_value);
+	const void *data; // (what get and set are given: the parameter's ApiProp, or nothing)
+	bool is_bool;
+};
+
+static int32_t clamp32(int64_t v) { return int32_t(v < INT32_MIN ? INT32_MIN : v > INT32_MAX ? INT32_MAX : v); }
+
+static void typed_get_call(void *p_access, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *,
+		GDExtensionInt, GDExtensionVariantPtr r_return, GDExtensionCallError *r_error) {
+	const TypedAccess *a = static_cast<const TypedAccess *>(p_access);
+	const int32_t v = a->get(p_instance, a->data);
+	const Variant ret = a->is_bool ? Variant(v != 0) : Variant(int64_t(v));
+	gdextension_interface::variant_new_copy(r_return, ret._native_ptr());
+	r_error->error = GDEXTENSION_CALL_OK;
+}
+
+static void typed_get_ptrcall(void *p_access, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *,
+		GDExtensionTypePtr r_return) {
+	const TypedAccess *a = static_cast<const TypedAccess *>(p_access);
+	const int32_t v = a->get(p_instance, a->data);
+	if (a->is_bool) {
+		*static_cast<GDExtensionBool *>(r_return) = v != 0;
+	} else {
+		*static_cast<int64_t *>(r_return) = v;
+	}
+}
+
+static void typed_set_call(void *p_access, GDExtensionClassInstancePtr p_instance, const GDExtensionConstVariantPtr *p_args,
+		GDExtensionInt p_count, GDExtensionVariantPtr, GDExtensionCallError *r_error) {
+	const TypedAccess *a = static_cast<const TypedAccess *>(p_access);
+	r_error->error = GDEXTENSION_CALL_OK;
+	if (p_count != 1) {
+		r_error->error = p_count < 1 ? GDEXTENSION_CALL_ERROR_TOO_FEW_ARGUMENTS : GDEXTENSION_CALL_ERROR_TOO_MANY_ARGUMENTS;
+		r_error->expected = 1;
+		return;
+	}
+	const Variant &v = *static_cast<const Variant *>(p_args[0]);
+	if (v.get_type() != Variant::INT && v.get_type() != Variant::BOOL && v.get_type() != Variant::FLOAT) {
+		r_error->error = GDEXTENSION_CALL_ERROR_INVALID_ARGUMENT; // (a float too: a tween's)
+		r_error->argument = 0;
+		r_error->expected = a->is_bool ? Variant::BOOL : Variant::INT;
+		return;
+	}
+	a->set(p_instance, a->data, clamp32(int64_t(v)));
+}
+
+static void typed_set_ptrcall(void *p_access, GDExtensionClassInstancePtr p_instance, const GDExtensionConstTypePtr *p_args,
+		GDExtensionTypePtr) {
+	const TypedAccess *a = static_cast<const TypedAccess *>(p_access);
+	a->set(p_instance, a->data,
+			a->is_bool ? int32_t(*static_cast<const GDExtensionBool *>(p_args[0]) != 0) : clamp32(*static_cast<const int64_t *>(p_args[0])));
+}
+
+// p_info: the property (an enum's with PROPERTY_USAGE_CLASS_IS_ENUM and its class_name, "FeluccaArpMode.Value")
+static void bind_typed(const StringName &p_class, const PropertyInfo &p_info, const TypedAccess &p_access) {
+	static std::deque<TypedAccess> accesses; // (the methods' userdata, while the library is loaded)
+	accesses.push_back(p_access);
+	void *ud = &accesses.back();
+	const StringName getter = "_get_" + String(p_info.name), setter = "_set_" + String(p_info.name), unnamed, arg = "value";
+	const String none;
+	const uint32_t usage = PROPERTY_USAGE_DEFAULT | (p_info.usage & PROPERTY_USAGE_CLASS_IS_ENUM);
+	GDExtensionPropertyInfo value = { GDExtensionVariantType(p_info.type), unnamed._native_ptr(), p_info.class_name._native_ptr(),
+		PROPERTY_HINT_NONE, none._native_ptr(), usage };
+	GDExtensionPropertyInfo argument = value;
+	argument.name = arg._native_ptr();
+	GDExtensionClassMethodArgumentMetadata meta = GDEXTENSION_METHOD_ARGUMENT_METADATA_NONE;
+	GDExtensionClassMethodInfo get = { getter._native_ptr(), ud, typed_get_call, typed_get_ptrcall,
+		GDEXTENSION_METHOD_FLAGS_DEFAULT | GDEXTENSION_METHOD_FLAG_CONST, true, &value, meta, 0, nullptr, nullptr, 0, nullptr };
+	GDExtensionClassMethodInfo set = { setter._native_ptr(), ud, typed_set_call, typed_set_ptrcall, GDEXTENSION_METHOD_FLAGS_DEFAULT,
+		false, nullptr, meta, 1, &argument, &meta, 0, nullptr };
+	gdextension_interface::classdb_register_extension_class_method(gdextension_interface::library, p_class._native_ptr(), &get);
+	gdextension_interface::classdb_register_extension_class_method(gdextension_interface::library, p_class._native_ptr(), &set);
+	GDExtensionPropertyInfo prop = { GDExtensionVariantType(p_info.type), p_info.name._native_ptr(), p_info.class_name._native_ptr(),
+		p_info.hint, p_info.hint_string._native_ptr(), p_info.usage };
+	gdextension_interface::classdb_register_extension_class_property(gdextension_interface::library, p_class._native_ptr(), &prop,
+			setter._native_ptr(), getter._native_ptr());
+}
+
 // ---------------------------------------------------------------- binding the tables ---
 
-static String enum_class(const ApiClass &c, int e) { return String(c.class_name) + "." + c.enums[e].name; }
+void bind_enum_class(int p_index, const StringName &p_class) {
+	const ApiEnum &e = API_ENUM_CLASSES[p_index];
+	for (int k = 0; k < e.count; k++) {
+		ClassDB::bind_integer_constant(p_class, "Value", e.values[k].name, e.values[k].value);
+	}
+}
 
-// every property of a table, with its enum, as an indexed property of the class: setter(id, v), getter(id)
+// every property of a table, typed (T: the class whose _get_value and _set_value it calls), and a view's enums
+template <typename T>
 static void bind_table(const ApiClass &c, const StringName &p_class) {
 	for (int e = 0; e < c.nenums; e++) {
 		for (int k = 0; k < c.enums[e].count; k++) {
@@ -292,44 +387,33 @@ static void bind_table(const ApiClass &c, const StringName &p_class) {
 	}
 	for (int i = 0; i < c.nprops; i++) {
 		const ApiProp &p = c.props[i];
-		PropertyInfo info = p.enum_index >= 0
-				? PropertyInfo(Variant::INT, p.name, PROPERTY_HINT_ENUM, p.hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM,
-						  enum_class(c, p.enum_index))
-				: PropertyInfo(Variant::INT, p.name, PROPERTY_HINT_RANGE, p.hint);
-		ClassDB::add_property(p_class, info, "_set_value", "_get_value", p.id);
-		if (p.fallback) { // (the generated name, for scripts: not shown)
-			info.name = p.fallback;
-			info.usage = PROPERTY_USAGE_NONE;
-			ClassDB::add_property(p_class, info, "_set_value", "_get_value", p.id);
-		}
+		const PropertyInfo info = p.type == API_ENUM
+				? PropertyInfo(Variant::INT, p.name, PROPERTY_HINT_ENUM, p.hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM, p.enum_type)
+				: p.type == API_BOOL ? PropertyInfo(Variant::BOOL, p.name)
+									 : PropertyInfo(Variant::INT, p.name, PROPERTY_HINT_RANGE, p.hint);
+		bind_typed(p_class, info,
+				{ [](void *o, const void *d) { return static_cast<T *>(o)->_get_value(static_cast<const ApiProp *>(d)->id); },
+						[](void *o, const void *d, int32_t v) { static_cast<T *>(o)->_set_value(static_cast<const ApiProp *>(d)->id, v); },
+						&p, p.type == API_BOOL });
 	}
 }
 
 // ---------------------------------------------------------------- FeluccaPart ---
 
 void FeluccaPart::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_set_value", "id", "value"), &FeluccaPart::_set_value);
-	ClassDB::bind_method(D_METHOD("_get_value", "id"), &FeluccaPart::_get_value);
-	ClassDB::bind_method(D_METHOD("set_engine", "engine"), &FeluccaPart::set_engine);
-	ClassDB::bind_method(D_METHOD("get_engine"), &FeluccaPart::get_engine);
 	ClassDB::bind_method(D_METHOD("_get_view", "view"), &FeluccaPart::_get_view);
 	ClassDB::bind_method(D_METHOD("get_index"), &FeluccaPart::get_index);
-	bind_table(API_PART, get_class_static());
+	bind_table<FeluccaPart>(API_PART, get_class_static());
 	String hint;
 	for (int k = 0; k < API_ENGINE_ENUM.count; k++) {
-		ClassDB::bind_integer_constant(get_class_static(), API_ENGINE_ENUM.name, API_ENGINE_ENUM.values[k].name,
-				API_ENGINE_ENUM.values[k].value);
 		hint += String(k ? "," : "") + API_ENGINE_ENUM.values[k].name + ":" + String::num_int64(API_ENGINE_ENUM.values[k].value);
 	}
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "engine", PROPERTY_HINT_ENUM, hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM,
-						 "FeluccaPart.Engine"),
-			"set_engine", "get_engine");
+	bind_typed(get_class_static(),
+			PropertyInfo(Variant::INT, "engine", PROPERTY_HINT_ENUM, hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM,
+					"FeluccaEngine.Value"),
+			{ [](void *o, const void *) { return static_cast<FeluccaPart *>(o)->get_engine(); },
+					[](void *o, const void *, int32_t v) { static_cast<FeluccaPart *>(o)->set_engine(v); }, nullptr, false });
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "index", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "", "get_index");
-	for (const ApiEnum *e : { &API_PARAM_ENUM, &API_LANE_ENUM }) {
-		for (int k = 0; k < e->count; k++) {
-			ClassDB::bind_integer_constant(get_class_static(), e->name, e->values[k].name, e->values[k].value);
-		}
-	}
 	// (one getter a view, returning its own class: GDScript's analyzer types a property by its getter's return)
 #define FELUCCA_BIND_VIEW(m_class, m_view, m_engine, m_access)                                                  \
 	ClassDB::bind_method(D_METHOD("get_" #m_access), &FeluccaPart::get_##m_access);                           \
@@ -364,7 +448,7 @@ void FeluccaPart::set_engine(int32_t p_engine) {
 		known |= API_ENGINE_ENUM.values[k].value == p_engine;
 	}
 	if (!known) {
-		UtilityFunctions::push_error("FeluccaPart.engine: ", p_engine, " is no engine (FeluccaPart.Engine)");
+		UtilityFunctions::push_error("FeluccaPart.engine: ", p_engine, " is no engine (FeluccaEngine).");
 		return;
 	}
 	values->set_engine(track, p_engine);
@@ -396,9 +480,7 @@ Ref<FeluccaEngineView> FeluccaPart::_get_view(int p_view) {
 // ---------------------------------------------------------------- FeluccaSong ---
 
 void FeluccaSong::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_set_value", "id", "value"), &FeluccaSong::_set_value);
-	ClassDB::bind_method(D_METHOD("_get_value", "id"), &FeluccaSong::_get_value);
-	bind_table(API_SONG, get_class_static());
+	bind_table<FeluccaSong>(API_SONG, get_class_static());
 }
 
 void FeluccaSong::_set_value(int p_id, int32_t p_value) {
@@ -414,13 +496,11 @@ int32_t FeluccaSong::_get_value(int p_id) const {
 
 // ---------------------------------------------------------------- the engine views ---
 
-void FeluccaEngineView::_bind_methods() { // (the views' properties use these: bound once, here)
-	ClassDB::bind_method(D_METHOD("_set_value", "id", "value"), &FeluccaEngineView::_set_value);
-	ClassDB::bind_method(D_METHOD("_get_value", "id"), &FeluccaEngineView::_get_value);
+void FeluccaEngineView::_bind_methods() {
 }
 
 void FeluccaEngineView::bind_view(int p_view) {
-	bind_table(API_VIEWS[p_view], API_VIEWS[p_view].class_name);
+	bind_table<FeluccaEngineView>(API_VIEWS[p_view], API_VIEWS[p_view].class_name);
 }
 
 void FeluccaEngineView::_set_value(int p_id, int32_t p_value) {
@@ -444,18 +524,18 @@ int32_t FeluccaEngineView::_get_value(int p_id) const {
 void FeluccaOverride::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_part", "part"), &FeluccaOverride::set_part);
 	ClassDB::bind_method(D_METHOD("get_part"), &FeluccaOverride::get_part);
-	ClassDB::bind_method(D_METHOD("set_param", "param"), &FeluccaOverride::set_param);
-	ClassDB::bind_method(D_METHOD("get_param"), &FeluccaOverride::get_param);
 	ClassDB::bind_method(D_METHOD("set_value", "value"), &FeluccaOverride::set_value);
 	ClassDB::bind_method(D_METHOD("get_value"), &FeluccaOverride::get_value);
-	String hint; // the part's parameters by name (FeluccaPart.Param: their ids): the inspector's dropdown
+	String hint; // the part's parameters by name (FeluccaParam: their ids): the inspector's dropdown
 	for (int i = 0; i < API_PART.nprops; i++) {
 		hint += String(i ? "," : "") + API_PART.props[i].name + ":" + String::num_int64(API_PART.props[i].id);
 	}
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "part", PROPERTY_HINT_RANGE, "1,4"), "set_part", "get_part");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "param", PROPERTY_HINT_ENUM, hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM,
-						 "FeluccaPart.Param"),
-			"set_param", "get_param");
+	bind_typed(get_class_static(),
+			PropertyInfo(Variant::INT, "param", PROPERTY_HINT_ENUM, hint, PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_CLASS_IS_ENUM,
+					"FeluccaParam.Value"),
+			{ [](void *o, const void *) { return int32_t(static_cast<FeluccaOverride *>(o)->get_param()); },
+					[](void *o, const void *, int32_t v) { static_cast<FeluccaOverride *>(o)->set_param(v); }, nullptr, false });
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "value"), "set_value", "get_value");
 }
 

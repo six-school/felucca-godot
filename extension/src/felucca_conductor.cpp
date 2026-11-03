@@ -126,11 +126,11 @@ int FeluccaConductor::get_beat() {
 	return int(int64_t(std::floor(get_playhead())) % 4) + 1;
 }
 
-// the DRUM engine's index (FeluccaPart.Engine's ENGINE_DRUM)
+// the DRUM engine's index (FeluccaEngine.DRUM)
 static int32_t drum_engine() {
 	static int32_t d = -2;
 	for (int k = 0; d == -2 && k < felucca::API_ENGINE_ENUM.count; k++) {
-		d = String(felucca::API_ENGINE_ENUM.values[k].name) == "ENGINE_DRUM" ? felucca::API_ENGINE_ENUM.values[k].value : d;
+		d = String(felucca::API_ENGINE_ENUM.values[k].name) == "DRUM" ? felucca::API_ENGINE_ENUM.values[k].value : d;
 	}
 	return d;
 }

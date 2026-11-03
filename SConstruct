@@ -38,8 +38,9 @@ dump = env.Command(
 params = env.Command("build/gen_api/params.json", dump, "$SOURCE > $TARGET")
 gen = env.Command(
     ["build/gen_api/felucca_api.gen.cpp", "build/gen_api/felucca_api.gen.h", "build/gen_api/doc_data.gen.cpp"],
-    [params, "extension/codegen/gen_api.py", "extension/codegen/names.json"],
-    "python3 -I extension/codegen/gen_api.py ${SOURCES[0]} extension/codegen/names.json build/gen_api third_party/godot-cpp",
+    [params, "extension/codegen/gen_api.py", "extension/codegen/names.json", "extension/codegen/docs.json"],
+    "python3 -I extension/codegen/gen_api.py ${SOURCES[0]} extension/codegen/names.json extension/codegen/docs.json "
+    "build/gen_api third_party/godot-cpp",
 )
 
 env.Append(CPPPATH=["extension/src", "core", "build/gen_api"])

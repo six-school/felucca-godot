@@ -28,6 +28,8 @@ static void initialize_felucca(ModuleInitializationLevel p_level) {
 		GDREGISTER_INTERNAL_CLASS(FeluccaPlayback);
 		GDREGISTER_ABSTRACT_CLASS(FeluccaConductor); // (the engine singleton only)
 		GDREGISTER_CLASS(FeluccaConductorNode); // (the autoload's: addons/felucca/felucca.tscn)
+#define FELUCCA_REGISTER_ENUM(m_class, m_index) GDREGISTER_ABSTRACT_CLASS(m_class);
+		FELUCCA_ENUM_CLASSES(FELUCCA_REGISTER_ENUM)
 		GDREGISTER_CLASS(FeluccaPart);
 		GDREGISTER_CLASS(FeluccaSong);
 		GDREGISTER_ABSTRACT_CLASS(FeluccaEngineView);

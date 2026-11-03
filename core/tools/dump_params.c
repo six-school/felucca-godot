@@ -1,7 +1,7 @@
 /* The firmware's own parameter tables as JSON: what extension/codegen/gen_api.py makes the
  * typed API of. White-box (board.c compiled in): every track parameter by id (TP, as the editor protocol's
  * param_desc_of reads it), every global with whether the core takes a write of it, the pages (their ids in order),
- * each engine's eight (edit[]).
+ * each engine's eight (edit[]) and the titles of its two EDIT pages.
  *   dump_params > params.json */
 #include "board.c"
 #include <stdio.h>
@@ -72,7 +72,13 @@ int main(void)
     for (e = 0; e < NENGINES; e++) {
         printf("%s{\"index\":%u,\"name\":", e ? "," : "", e);
         jstr(ENGINES[e]->name);
-        printf(",\"params\":[");
+        printf(",\"pages\":[");                 /* EDIT 1 and EDIT 2 as the screen titles them */
+        for (k = 0; k < 2; k++) {
+            if (k)
+                putchar(',');
+            jstr(ENGINES[e]->page_title[k] ? ENGINES[e]->page_title[k] : k ? "EDIT 2" : "EDIT 1");
+        }
+        printf("],\"params\":[");
         for (k = 0; k < 8; k++) {
             if (k)
                 putchar(',');

@@ -88,7 +88,7 @@ static Ref<FeluccaAction> part_action(const Ref<FeluccaPart> &p_part, uint8_t p_
 
 Ref<FeluccaAction> FeluccaAction::hit(const Ref<FeluccaPart> &p_part, int p_lane, int p_velocity) {
 	if (p_part.is_null() || p_lane < 0 || p_lane >= FEL_LANES || p_velocity < 1 || p_velocity > 127) {
-		UtilityFunctions::push_error("FeluccaAction.hit(): a part, a lane (FeluccaPart.Lane) and a velocity (1 to 127).");
+		UtilityFunctions::push_error("FeluccaAction.hit(): a part, a lane (FeluccaLane) and a velocity (1 to 127).");
 		return Ref<FeluccaAction>();
 	}
 	return part_action(p_part, FEL_DO_HIT, p_lane, p_velocity, 0);
@@ -130,7 +130,7 @@ Ref<FeluccaAction> FeluccaAction::mask_bars(const Ref<FeluccaPart> &p_part, int 
 	return mask(p_part, p_bars, FEL_SPAN_BARS, "mask_bars");
 }
 
-// a part's own parameter (FeluccaPart.Param: its id), or its engine's (an engine view's Param: (engine + 1) x 256 + the
+// a part's own parameter (FeluccaParam: its id), or its engine's (an engine view's Param: (engine + 1) x 256 + the
 // id, every engine numbering its eight alike): only the part's engine's, and only while it plays it (the core drops it
 // at its step else)
 Ref<FeluccaAction> FeluccaAction::set_param(const Ref<FeluccaPart> &p_part, int p_param, int p_value) {
@@ -141,7 +141,7 @@ Ref<FeluccaAction> FeluccaAction::set_param(const Ref<FeluccaPart> &p_part, int 
 	}
 	const ApiProp *p = engine < 0 ? api_prop(API_PART, id) : view ? api_prop(*view, id) : nullptr;
 	if (p_part.is_null() || !p) {
-		UtilityFunctions::push_error("FeluccaAction.set_param(): a part and a parameter (FeluccaPart.Param, or its engine view's Param).");
+		UtilityFunctions::push_error("FeluccaAction.set_param(): a part and a parameter (FeluccaParam, or its engine view's Param).");
 		return Ref<FeluccaAction>();
 	}
 	if (engine >= 0 && p_part->get_engine() != engine) {
