@@ -447,7 +447,7 @@ static const char *core_engine_name(int engine) { return engine >= 0 && engine <
  * a copy of each track's grid: midi_seq_preview) and applies what is due there first, so a hit sounds from the block
  * its step starts in, as the step's own notes do, and a parameter set is in place for the step's note-ons (an engine
  * reads some of them there only) */
-#define FEL_OFFS 32u                    /* the notes of hits and notes, still to end */
+#define FEL_OFFS 64u                    /* the notes of hits and notes, still to end */
 typedef struct {
     fel_when_t w;
     fel_action_t a;
@@ -461,7 +461,11 @@ typedef struct {
 static fel_sched_t fel_sched[FEL_SCHEDULES];
 static fel_event_t fel_ev[FEL_EVENTS];
 static uint32_t fel_ev_w, fel_ev_r;     /* a ring: the block writes, events() reads (one thread at a time: fel_core.h) */
-static struct { uint8_t used, track, note; uint32_t left; } fel_offs[FEL_OFFS];   /* left: samples */
+static struct {
+    uint8_t used, track, note;          /* note: a hit's MIDI note, or the note scheduled (the key labelled with it) */
+    uint8_t key, n, on[CHORD_MAX];      /* key: a scheduled note played as its key, with the n notes it started */
+    uint32_t left;                      /* samples */
+} fel_offs[FEL_OFFS];
 static uint64_t fel_blk_frame;          /* the block being ticked: its first frame (render()'s count), */
 static double fel_blk_beats;            /* .. the conductor's timeline there */
 
@@ -526,13 +530,79 @@ static double fel_div_beats(uint32_t div)
     return div < 6u ? 1.0 / DIV_DEN[div] : div < 10u ? (double)(1u << (div - 5u)) : 1.0 / DIV_DEN[div % 6u];
 }
 
-/* a note now (this block), as MIDI IN plays it on the track's channel, and its end len samples on. The same note again
- * before it ended moves its end; with every slot taken, the one nearest its end ends now */
-static void fel_note_for(uint32_t track, uint32_t note, uint32_t vel, uint32_t len)
+/* a scheduled note's key on the panel (27 keys, F3 .. G5: note 53 + k) and the octave buttons (-3 .. +3) that reach
+ * it, those nearest 0 */
+static void fel_key_of(uint32_t note, uint32_t *k, int32_t *oct)
+{
+    int32_t d = (int32_t)note - 53;
+    *oct = d < 0 ? -((11 - d) / 12) : d > 26 ? (d - 15) / 12 : 0;
+    *k = (uint32_t)(d - 12 * *oct);
+}
+
+/* another scheduled note of the track's sounds x already */
+static int fel_key_holds(uint32_t track, uint32_t x)
+{
+    uint32_t i, j;
+    for (i = 0; i < FEL_OFFS; i++)
+        if (fel_offs[i].used && fel_offs[i].key && fel_offs[i].track == track)
+            for (j = 0; j < fel_offs[i].n; j++)
+                if (fel_offs[i].on[j] == x)
+                    return 1;
+    return 0;
+}
+
+/* slot at: note pressed as the FM-1's key labelled with it plays (seq.c keyboard_block and key_on), its notes kept
+ * in the slot for the release. The panel's per-key state stays the panel's: only kb_note[k], the octave buttons and
+ * in_key are set while it starts, as arp_add reads them to keep the key (so ROOT, SCALE, QNT and TRN reach it as the
+ * arp plays). A note another scheduled note, a MIDI note or a key holds already sounds: not started again */
+static void fel_key_on(uint32_t at, uint32_t note, uint32_t vel)
+{
+    track_t *t = &trk[fel_offs[at].track];
+    uint32_t k, i, n = 0;
+    int32_t oct;
+    int8_t was_oct = song.octave;
+    uint8_t was_note, on[CHORD_MAX];
+    fel_key_of(note, &k, &oct);
+    song.octave = (int8_t)oct;
+    was_note = kb_note[k];
+    kb_note[k] = (uint8_t)kb_map(t, k);
+    if (kb_note[k] != KB_SILENT) {                      /* (a black key under QNT WHITE: silent) */
+        n = chord_build(t, kb_note[k], on);
+        in_key = (uint8_t)(k + 1u);
+        for (i = 0; i < n; i++)
+            if (!fel_key_holds(fel_offs[at].track, on[i]) && !midi_note_held(t, on[i]) && !midi_local_held(t, on[i]))
+                input_on(t, on[i], vel);
+        in_key = 0;
+    }
+    kb_note[k] = was_note;
+    song.octave = was_oct;
+    fel_offs[at].n = (uint8_t)n;
+    memcpy(fel_offs[at].on, on, n);
+}
+
+/* slot at's note ends (a hit's as MIDI IN's; a key's notes but those another source still holds, as key_off) */
+static void fel_off(uint32_t at)
+{
+    track_t *t = &trk[fel_offs[at].track];
+    uint32_t i;
+    fel_offs[at].used = 0;
+    if (!fel_offs[at].key) {
+        midi_event(0x80u, fel_offs[at].track, fel_offs[at].note, 0);
+        return;
+    }
+    for (i = 0; i < fel_offs[at].n; i++)
+        if (!fel_key_holds(fel_offs[at].track, fel_offs[at].on[i]) && !midi_local_held(t, fel_offs[at].on[i]))
+            input_off(t, fel_offs[at].on[i]);                 /* (it skips a note a MIDI note holds) */
+}
+
+/* a note now (this block) and its end len samples on: a hit's as MIDI IN plays it on the track's channel, a
+ * scheduled note's as its key. The same note again before it ended strikes it again and moves its end; with every
+ * slot taken, the one nearest its end ends now */
+static void fel_note_for(uint32_t track, uint32_t note, uint32_t vel, uint32_t len, uint32_t key)
 {
     uint32_t i, at = FEL_OFFS, first = 0;
     for (i = 0; i < FEL_OFFS; i++) {
-        if (fel_offs[i].used && fel_offs[i].track == track && fel_offs[i].note == note) {
+        if (fel_offs[i].used && fel_offs[i].track == track && fel_offs[i].note == note && fel_offs[i].key == key) {
             at = i;
             break;
         }
@@ -541,25 +611,33 @@ static void fel_note_for(uint32_t track, uint32_t note, uint32_t vel, uint32_t l
         if (fel_offs[i].used && fel_offs[i].left < fel_offs[first].left)
             first = i;
     }
-    if (at == FEL_OFFS) {
+    if (at == FEL_OFFS)
         at = first;
-        midi_event(0x80u, fel_offs[at].track, fel_offs[at].note, 0);
-    }
-    midi_event(0x90u, track, note, vel);
+    if (fel_offs[at].used && (key || fel_offs[at].note != note || fel_offs[at].track != track))
+        fel_off(at);                                    /* (a hit struck again: MIDI IN releases it itself) */
     fel_offs[at].used = 1;
     fel_offs[at].track = (uint8_t)track;
     fel_offs[at].note = (uint8_t)note;
+    fel_offs[at].key = (uint8_t)key;
+    fel_offs[at].n = 0;                                 /* (none yet: not a holder of its own notes) */
     fel_offs[at].left = len ? len : 1u;
+    if (key)
+        fel_key_on(at, note, vel);
+    else
+        midi_event(0x90u, track, note, vel);
 }
 
 static void fel_do(const fel_sched_t *s)
 {
     const fel_action_t *a = &s->a;
-    uint32_t step = div_samples((uint32_t)trk[a->track].p[P_SDIV]);   /* (the track's step, unswung) */
+    uint32_t step = div_samples((uint32_t)trk[a->track].p[P_SDIV]), i;   /* (the track's step, unswung) */
     switch (a->kind) {
-    case FEL_DO_HIT: fel_note_for(a->track, DRUM_LANE_NOTE[a->a], (uint32_t)a->b, step); break;
+    case FEL_DO_HIT: fel_note_for(a->track, DRUM_LANE_NOTE[a->a], (uint32_t)a->b, step, 0); break;
     case FEL_DO_NOTE:
-    case FEL_DO_NOTE_OVER: fel_note_for(a->track, (uint32_t)a->a, (uint32_t)a->b, step * (uint32_t)a->c); break;
+    case FEL_DO_NOTE_OVER:
+        for (i = 0; i < (uint32_t)a->a; i++)            /* (in order: the arp keeps the order they came in) */
+            fel_note_for(a->track, a->notes[i], (uint32_t)a->b, step * (uint32_t)a->c, 1);
+        break;
     case FEL_DO_SET: (void)core_param_set(a->track, a->a, a->b); break;
     case FEL_DO_GLOBAL: (void)core_global_set(a->a, a->b); break;
     default: break;                                     /* (MARK: the event only; MASK: host_step_skip) */
@@ -710,8 +788,7 @@ static uint32_t fel_sched_block(uint32_t units, uint32_t n, double b0, double b1
                 fel_offs[i].left -= n;
                 continue;
             }
-            midi_event(0x80u, fel_offs[i].track, fel_offs[i].note, 0);
-            fel_offs[i].used = 0;
+            fel_off(i);
         }
     for (i = 0; i < FEL_SCHEDULES; i++) {
         fel_sched_t *s = &fel_sched[i];
@@ -775,7 +852,7 @@ static void fel_sched_forget(void)
     uint32_t i;
     for (i = 0; i < FEL_OFFS; i++)
         if (fel_offs[i].used)
-            midi_event(0x80u, fel_offs[i].track, fel_offs[i].note, 0);
+            fel_off(i);
     memset(fel_offs, 0, sizeof fel_offs);
     memset(fel_sched, 0, sizeof fel_sched);
 }
@@ -794,7 +871,11 @@ static int32_t core_schedule(const fel_when_t *w, const fel_action_t *a, uint32_
     case FEL_DO_MARK: break;
     case FEL_DO_HIT: ok &= a->a >= 0 && a->a < NLANE && a->b >= 1 && a->b <= 127; break;
     case FEL_DO_NOTE:
-    case FEL_DO_NOTE_OVER: ok &= a->a >= 0 && a->a <= 127 && a->b >= 1 && a->b <= 127 && a->c >= 1 && a->c <= 64; break;
+    case FEL_DO_NOTE_OVER:
+        ok &= a->a >= 1 && a->a <= FEL_NOTES && a->b >= 1 && a->b <= 127 && a->c >= 1 && a->c <= 64;
+        for (i = 0; ok && i < (uint32_t)a->a; i++)
+            ok &= a->notes[i] >= FEL_NOTE_LO && a->notes[i] <= FEL_NOTE_HI;
+        break;
     case FEL_DO_MASK: ok &= a->a >= 1 && a->a <= 4096 && a->b >= FEL_SPAN_STEPS && a->b <= FEL_SPAN_BARS; break;
     case FEL_DO_SET: ok &= core_param_get(a->track, a->a) != FEL_INVALID && a->c >= -1 && a->c < NENGINES; break;
     case FEL_DO_GLOBAL: ok &= a->a >= 0 && a->a < G_COUNT && fel_global_writable(a->a); break;

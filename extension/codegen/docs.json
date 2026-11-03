@@ -51,8 +51,8 @@
     "arp_order": "The order the arpeggiator takes the held notes in, from [FeluccaArpOrder]: by pitch, or as they were played. The [code]ORD[/code] mode always plays them as they were played.",
     "scale_root": "The key of the part's scale, from 0 (C) to 11 (B), a semitone a step. The scale keyboard, [member scale_quantize] and the diatonic chords follow it.",
     "scale": "The part's scale, from [FeluccaScale], for the scale keyboard, [member scale_quantize] and the diatonic chords ([member chord]).",
-    "scale_quantize": "Whether and how notes are fitted to the scale, from [FeluccaScaleQuantize]. MIDI notes and notes scheduled from a script play as they are.",
-    "transpose": "Moves the notes the keys play, from -24 to 24 semitones, and the notes the arpeggiator holds from the keys, as it plays. The sequencer's notes move with them only when [member scale_quantize] is [code]SEQ_PLUS_T[/code]; MIDI notes and notes scheduled from a script never do.",
+    "scale_quantize": "Whether and how the notes of the keys and those scheduled with [method FeluccaAction.note] are fitted to the scale, from [FeluccaScaleQuantize].",
+    "transpose": "Moves the notes the keys play and the notes scheduled with [method FeluccaAction.note], from -24 to 24 semitones, including those the arpeggiator holds, as it plays. The sequencer's notes move with them only when [member scale_quantize] is [code]SEQ_PLUS_T[/code].",
     "seq_length": "How many steps the part's pattern plays before it starts again, from 1 to 64.",
     "seq_division": "How long each step of the pattern is, as a note value from [FeluccaDivision].",
     "seq_swing": "Swings the pattern: every second step comes late, from 0 (straight) to 100 (each pair of steps split 70:30). It adds to the song's [member FeluccaSong.swing], up to 100 in all.",
@@ -331,7 +331,7 @@
     "FeluccaScaleQuantize": {
       "OFF": "Notes play as they are.",
       "SNAP": "Every key plays a note of the scale (rounded down to one).",
-      "WHITE": "The white keys walk the scale; the black keys are silent.",
+      "WHITE": "The white keys walk the scale; the black keys are silent. A note scheduled with [method FeluccaAction.note] plays as its key: in C minor, [code]\"E4\"[/code] plays the third, Eb4, and [code]\"C#4\"[/code] nothing.",
       "SEQ": "As [code]SNAP[/code], and the sequencer's notes snap to the scale too as they play (the steps keep what was written).",
       "SEQ_PLUS_T": "As [code]SEQ[/code], with the sequencer's notes moved by [member FeluccaPart.transpose] first, as the keys are."
     },

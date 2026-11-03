@@ -8,8 +8,9 @@
 # with the signals; a part's notes: on_note / on_noteoff in pairs, a DRUM part's on_hit, the warning for on_hit on
 # another; replace and mask: a note in place of a step's own, one layered over it, a loop masked but for a scheduled
 # kick, a mask of 0 refused; set_param for an engine's parameter: applied and kept, refused on another engine's part,
-# dropped when its part leaves the engine before the step; a latched arpeggio: notes scheduled once under ARP HOLD
-# arpeggiate on after they end, a later note replaces them, HOLD off ends it. (The knock and the door
+# dropped when its part leaves the engine before the step; note names and MIDI numbers; a latched arpeggio: notes
+# scheduled once under ARP HOLD (one action, by name) arpeggiate on after they end, a later note replaces them, TRN
+# moves them as it plays, HOLD off ends it. (The knock and the door
 # together are the demo's; the core's timing: core/tests/test_sched.c.)
 extends Node
 
@@ -109,6 +110,18 @@ func refused() -> void:
 		"FeluccaWhen: no part, step 0, beat 5, 0 loops ahead: null")
 	check(FeluccaAction.hit(drums, 8) == null and FeluccaAction.note(drums, 60, 0) == null and
 		FeluccaAction.set_param(drums, 9999, 0) == null, "FeluccaAction: lane 9, velocity 0, a parameter that is none: null")
+	check(FeluccaAction.note(drums, "H4") == null and FeluccaAction.note(drums, "C9") == null and
+		FeluccaAction.note(drums, "Db4") == null and FeluccaAction.note(drums, []) == null,
+		"FeluccaAction.note(): H4, C9 (beyond the FM-1's keys), Db4 (sharps only), no notes: null")
+	check(FeluccaAction.note_to_int("E#4") == -1 and FeluccaAction.int_to_note(128) == "",
+		"note_to_int(\"E#4\"), int_to_note(128): none")
+	var names: Array[String] = []
+	for i in 128:
+		names.append(FeluccaAction.int_to_note(i))
+	var back := range(128).all(func(i: int) -> bool: return FeluccaAction.note_to_int(names[i]) == i)
+	check(FeluccaAction.note_to_int("D#4") == 63 and FeluccaAction.note_to_int("C-1") == 0 and
+		FeluccaAction.note_to_int("G9") == 127 and names[60] == "C4" and back,
+		"note names: D#4 is 63, C-1 0, G9 127, 60 C4, and every MIDI note there and back (%s .. %s)" % [names[0], names[127]])
 	var when := FeluccaWhen.next_loop(drums, 1)
 	check(when.late == FeluccaWhen.LATE_NEXT and FeluccaWhen.next_loop(drums, 1, FeluccaWhen.LATE_DROP).late == FeluccaWhen.LATE_DROP,
 		"late: NEXT by default, or as given")
@@ -556,9 +569,10 @@ func engine_params() -> void:
 	check(e2.dropped, "its part switched to PHASE before the step: dropped")
 	await stop_all()
 
-# ---- a latched arpeggio: notes scheduled once, a step long, on a part with ARP ORD and HOLD on (test-4's part 2 has no
-# notes of its own) arpeggiate on after they end, in the order scheduled; a note scheduled later replaces them, and its
-# callback runs once however often the arp plays it; HOLD off ends the arpeggio
+# ---- a latched arpeggio: four notes scheduled once by name, in one action, a step long, on a part with ARP ORD and
+# HOLD on (test-4's part 2 has no notes of its own) arpeggiate on after they end, in the order given; a note scheduled
+# later replaces them, and its callback runs once however often the arp plays it; TRN moves the note held as the arp
+# plays (the arp keeps the key, as the FM-1's own); HOLD off ends the arpeggio
 func latched_arp() -> void:
 	var a := source("Arp")
 	var arp := a.part_2
@@ -567,19 +581,21 @@ func latched_arp() -> void:
 	arp.arp_mode = FeluccaArpMode.ORD
 	arp.arp_rate = FeluccaDivision.R_1_16
 	arp.arp_hold = true
+	arp.scale_quantize = FeluccaScaleQuantize.OFF      # (the notes as named)
+	arp.transpose = 0
+	arp.chord = FeluccaChord.OFF
 	a.play()
 	await until(func() -> bool: return a.is_bound())
 	var played: Array[int] = []
 	arp.on_note.connect(func(note: int, _velocity: int) -> void: played.append(note))
-	for note: int in [67, 60, 72, 64]:
-		a.schedule(FeluccaWhen.next_step(arp, 1), FeluccaAction.note(arp, note, 100, 1))
+	a.schedule(FeluccaWhen.next_step(arp, 1), FeluccaAction.note(arp, "G4 C4 C5 E4", 100, 1))
 	await until(func() -> bool: return not played.is_empty(), 4.0)
 	await wait(2.5)                     # (the notes ended a step on, 0.125 s; the arp's 1/16 at 120 BPM: 8 a second)
 	check(played.size() >= 16 and played.slice(0, 8) == [67, 60, 72, 64, 67, 60, 72, 64],
-		"HOLD: %d notes in 2.5 s from 4 a step long, in the order scheduled (%s)" % [played.size(), played.slice(0, 8)])
+		"HOLD: %d notes in 2.5 s from \"G4 C4 C5 E4\" a step long, in the order given (%s)" % [played.size(), played.slice(0, 8)])
 	var calls := [0]
 	var from := [-1]
-	var h := a.schedule(FeluccaWhen.next_step(arp, 1), FeluccaAction.note(arp, 62, 100, 1), func(_e: FeluccaEvent) -> void:
+	var h := a.schedule(FeluccaWhen.next_step(arp, 1), FeluccaAction.note(arp, "D4", 100, 1), func(_e: FeluccaEvent) -> void:
 		calls[0] += 1
 		from[0] = played.size())
 	await h.triggered
@@ -587,6 +603,14 @@ func latched_arp() -> void:
 	var since := played.slice(from[0])
 	check(calls[0] == 1 and since.size() >= 6 and since.all(func(n: int) -> bool: return n == 62),
 		"a note scheduled later: played alone from then (%s), its callback once (%d)" % [since, calls[0]])
+	arp.transpose = 2
+	await wait(0.4)
+	var t0 := played.size()
+	await wait(0.8)
+	var moved := played.slice(t0)
+	check(moved.size() >= 4 and moved.all(func(n: int) -> bool: return n == 64),
+		"TRN +2 while it plays: the latched D4 follows as the arp plays, E4 (%s)" % [moved])
+	arp.transpose = 0
 	arp.arp_hold = false
 	await wait(0.3)
 	var n := played.size()

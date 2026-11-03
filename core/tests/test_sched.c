@@ -21,14 +21,19 @@
  *      it, a mask from a bar's beat, a mask cancelled before it starts (it never does) and while running (it runs on);
  *      each against the same step a pass later, as programmed.
  *   F  a SET for an engine: applied while the track plays it; for another engine, or one the track has left
- *      before the step comes, dropped (an engine's parameter id is every engine's: it would move another's). */
+ *      before the step comes, dropped (an engine's parameter id is every engine's: it would move another's).
+ *   G  notes as the FM-1's keys play them: QNT SNAP rounds C#4 down to C4, TRN moves a note, QNT WHITE silences a
+ *      black key and walks the scale on the white ones; two notes that map to one sound once, until the later ends;
+ *      a chord in one action (one action event) latched by the arp, which follows TRN and SCALE changed as it plays;
+ *      DRUM's key C4 is the kick; notes no key reaches refused, as an action of none or of too many. */
 #include "test_hooks.h"
 #include "drive.h"
 #include "check.h"
 #include <stdlib.h>
+#include <string.h>
 
 const fel_test_t *fel_test_0(void), *fel_test_1(void), *fel_test_2(void), *fel_test_3(void), *fel_test_4(void),
-    *fel_test_5(void), *fel_test_6(void);
+    *fel_test_5(void), *fel_test_6(void), *fel_test_7(void);
 
 #define EVN 8192u
 static fel_event_t evs[EVN];            /* what a test drained, in order */
@@ -72,7 +77,7 @@ static fel_when_t at_beats(double beats, double every, int late)
     fel_when_t w = {FEL_AT_BEATS, 0, (uint8_t)late, 0, 0, beats, every};
     return w;
 }
-static const fel_action_t MARK = {FEL_DO_MARK, 3, 0, 0, 0};
+static const fel_action_t MARK = {FEL_DO_MARK, 3, 0, 0, 0, {0}};
 
 /* ---- A: the steps worked out = the steps entered */
 static void test_steps(const fel_test_t *x)
@@ -184,12 +189,12 @@ static void test_knock(const fel_test_t *x)
     cut0 = c->param_get(0, FEL_TEST_CUT);
     for (i = 0; i < 4; i++) {
         fel_when_t w = at_step(3, i * 4, 1, FEL_LATE_NEXT);
-        fel_action_t kick = {FEL_DO_HIT, 3, 0, 100, 0};
+        fel_action_t kick = {FEL_DO_HIT, 3, 0, 100, 0, {0}};
         CHECK(c->schedule(&w, &kick, 100 + i) == 0, "schedule a kick");
     }
     {
         fel_when_t w = at_step(3, 0, 2, FEL_LATE_NEXT);
-        fel_action_t cut = {FEL_DO_SET, 0, FEL_TEST_CUT, 127, 0};   /* (for engine 0, ANALOG: track 1's) */
+        fel_action_t cut = {FEL_DO_SET, 0, FEL_TEST_CUT, 127, 0, {0}};   /* (for engine 0, ANALOG: track 1's) */
         CHECK(c->schedule(&w, &MARK, 200) == 0 && c->schedule(&w, &cut, 201) == 0, "schedule the door");
     }
     nev = 0;
@@ -390,9 +395,9 @@ static void test_targets(const fel_test_t *x, const fel_test_t *y)
     c->cancel(0);
     CHECK(c->schedule(&w, &MARK, 2001) == 0, "cancel(0): every one gone");
     {
-        fel_action_t lane8 = {FEL_DO_HIT, 3, 8, 100, 0}, vel0 = {FEL_DO_HIT, 3, 0, 0, 0},
-                     param = {FEL_DO_SET, 0, 9999, 1, 0}, len0 = {FEL_DO_NOTE, 0, 60, 100, 0},
-                     global = {FEL_DO_GLOBAL, 0, -1, 1, 0};
+        fel_action_t lane8 = {FEL_DO_HIT, 3, 8, 100, 0, {0}}, vel0 = {FEL_DO_HIT, 3, 0, 0, 0, {0}},
+                     param = {FEL_DO_SET, 0, 9999, 1, 0, {0}}, len0 = {FEL_DO_NOTE, 0, 1, 100, 0, {60}},
+                     global = {FEL_DO_GLOBAL, 0, -1, 1, 0, {0}};
         fel_when_t t4 = at_step(4, 0, 0, FEL_LATE_NEXT), s64 = at_step(3, 64, 0, FEL_LATE_NEXT);
         CHECK(c->schedule(&w, &MARK, 0) == 1 && c->schedule(&w, &lane8, 1) == 1 && c->schedule(&w, &vel0, 1) == 1 &&
                   c->schedule(&w, &param, 1) == 1 && c->schedule(&w, &len0, 1) == 1 &&
@@ -421,7 +426,7 @@ static void test_notes(const fel_test_t *x)
     L = s.track[3].loop;
     for (i = 0; i < 2; i++) {
         fel_when_t w = at_step(3, i * 4, 1, FEL_LATE_NEXT);
-        fel_action_t kick = {FEL_DO_HIT, 3, 0, 100, 0};
+        fel_action_t kick = {FEL_DO_HIT, 3, 0, 100, 0, {0}};
         c->schedule(&w, &kick, 900 + i);
     }
     nev = 0;
@@ -565,12 +570,12 @@ static void test_mask(const fel_test_t *x)
     L = s.track[0].loop;                                /* (tracks 1, 2, 4: 1/16 x 16, in step) */
     L2 = s.track[2].loop;                               /* (track 3: 1/8T x 6, a pass a second) */
     {
-        fel_action_t kick = {FEL_DO_HIT, 3, 0, 50, 0}, snare = {FEL_DO_HIT, 3, 1, 50, 0},
-                     hi = {FEL_DO_NOTE, 0, 72, 90, 1}, over = {FEL_DO_NOTE_OVER, 0, 72, 90, 1},
-                     one = {FEL_DO_MASK, 1, 1, FEL_SPAN_STEPS, 0}, loop3 = {FEL_DO_MASK, 3, 1, FEL_SPAN_LOOPS, 0},
-                     kick70 = {FEL_DO_HIT, 3, 0, 70, 0}, bar2 = {FEL_DO_MASK, 2, 1, FEL_SPAN_BARS, 0},
-                     loop2 = {FEL_DO_MASK, 2, 1, FEL_SPAN_LOOPS, 0}, step0 = {FEL_DO_MASK, 0, 1, FEL_SPAN_STEPS, 0},
-                     loop0 = {FEL_DO_MASK, 0, 1, FEL_SPAN_LOOPS, 0}, two0 = {FEL_DO_MASK, 0, 2, FEL_SPAN_STEPS, 0};
+        fel_action_t kick = {FEL_DO_HIT, 3, 0, 50, 0, {0}}, snare = {FEL_DO_HIT, 3, 1, 50, 0, {0}},
+                     hi = {FEL_DO_NOTE, 0, 1, 90, 1, {72}}, over = {FEL_DO_NOTE_OVER, 0, 1, 90, 1, {72}},
+                     one = {FEL_DO_MASK, 1, 1, FEL_SPAN_STEPS, 0, {0}}, loop3 = {FEL_DO_MASK, 3, 1, FEL_SPAN_LOOPS, 0, {0}},
+                     kick70 = {FEL_DO_HIT, 3, 0, 70, 0, {0}}, bar2 = {FEL_DO_MASK, 2, 1, FEL_SPAN_BARS, 0, {0}},
+                     loop2 = {FEL_DO_MASK, 2, 1, FEL_SPAN_LOOPS, 0, {0}}, step0 = {FEL_DO_MASK, 0, 1, FEL_SPAN_STEPS, 0, {0}},
+                     loop0 = {FEL_DO_MASK, 0, 1, FEL_SPAN_LOOPS, 0, {0}}, two0 = {FEL_DO_MASK, 0, 2, FEL_SPAN_STEPS, 0, {0}};
         w = at_step(3, 0, 1, FEL_LATE_NEXT); c->schedule(&w, &kick, 1101);      /* E1: kick (with a hat), step 1 */
         w = at_step(3, 4, 1, FEL_LATE_NEXT); c->schedule(&w, &snare, 1102);     /* E2: snare (a lane hit), step 5 */
         w = at_step(0, 4, 1, FEL_LATE_NEXT); c->schedule(&w, &hi, 1103);        /* E3: the ratcheted step 5 */
@@ -622,8 +627,8 @@ static void test_mask(const fel_test_t *x)
           "E9 a mask of 2 steps from a bar's beat: from the step that starts there");
     w = at_step(0, 0, 1, FEL_LATE_NEXT);
     {
-        fel_action_t none = {FEL_DO_MASK, 0, 0, FEL_SPAN_STEPS, 0}, much = {FEL_DO_MASK, 0, 4097, FEL_SPAN_STEPS, 0},
-                     unit = {FEL_DO_MASK, 0, 1, 3, 0};
+        fel_action_t none = {FEL_DO_MASK, 0, 0, FEL_SPAN_STEPS, 0, {0}}, much = {FEL_DO_MASK, 0, 4097, FEL_SPAN_STEPS, 0, {0}},
+                     unit = {FEL_DO_MASK, 0, 1, 3, 0, {0}};
         CHECK(c->schedule(&w, &none, 1) == 1 && c->schedule(&w, &much, 1) == 1 && c->schedule(&w, &unit, 1) == 1,
               "not masks: 0 steps, 4097, a unit that is none");
     }
@@ -634,8 +639,8 @@ static void test_engine_set(const fel_test_t *x)
 {
     const fel_core_t *c = x->core;
     fel_when_t w;
-    fel_action_t analog = {FEL_DO_SET, 0, FEL_TEST_CUT, 120, 0}, other = {FEL_DO_SET, 0, FEL_TEST_CUT, 30, 1},
-                 left = {FEL_DO_SET, 0, FEL_TEST_CUT, 40, 0}, bad = {FEL_DO_SET, 0, FEL_TEST_CUT, 40, 99};
+    fel_action_t analog = {FEL_DO_SET, 0, FEL_TEST_CUT, 120, 0, {0}}, other = {FEL_DO_SET, 0, FEL_TEST_CUT, 30, 1, {0}},
+                 left = {FEL_DO_SET, 0, FEL_TEST_CUT, 40, 0, {0}}, bad = {FEL_DO_SET, 0, FEL_TEST_CUT, 40, 99, {0}};
     c->boot();
     x->setup(FEL_TEST_KNOCK);                           /* (track 1: ANALOG, engine 0) */
     c->tempo(120);
@@ -658,6 +663,139 @@ static void test_engine_set(const fel_test_t *x)
     CHECK(c->schedule(&w, &bad, 1) == 1, "one for an engine that is none: not an action");
 }
 
+/* ---- G: notes as the FM-1's keys play them */
+enum { G_AMODE = 17, G_ARATE = 18, G_AHOLD = 23, G_SCALE = 26, G_QUANT = 27, G_TRANS = 28 };   /* (params.json's ids) */
+
+/* the notes track started since nev was cleared, in order */
+static uint32_t notes_of(uint32_t track, uint8_t *out, uint32_t max)
+{
+    uint32_t i, n = 0;
+    for (i = 0; i < nev && n < max; i++)
+        if (evs[i].track == track && evs[i].kind == FEL_EV_NOTE)
+            out[n++] = evs[i].note;
+    return n;
+}
+
+/* one scheduled NOTE of notes (count of them) on track, a beat on, len steps */
+static int key_note(const fel_core_t *c, uint32_t track, const uint8_t *notes, uint32_t count, uint32_t len, uint32_t id)
+{
+    fel_when_t w = at_beats(drive_timeline + 0.5, 0, FEL_LATE_NEXT);
+    fel_action_t a = {FEL_DO_NOTE, (uint8_t)track, (int32_t)count, 100, (int32_t)len, {0}};
+    memcpy(a.notes, notes, count);
+    return c->schedule(&w, &a, id);
+}
+
+/* the notes an arp plays over 1 s, after 0.3 s to take a change (a set: each note once, low to high, at most 8) */
+static uint32_t arp_set(const fel_core_t *c, uint8_t *set)
+{
+    uint8_t got[64];
+    uint32_t i, j, n, k = 0;
+    run(c, frames_ms(300), 0);
+    nev = 0;
+    run(c, frames_ms(1000), 0);
+    n = notes_of(0, got, 64);
+    for (i = 0; i < n; i++) {
+        for (j = 0; j < k && set[j] != got[i]; j++)
+            ;
+        if (j == k && k < 8)
+            set[k++] = got[i];
+    }
+    for (i = 1; i < k; i++)
+        for (j = i; j > 0 && set[j - 1] > set[j]; j--) {
+            uint8_t t = set[j];
+            set[j] = set[j - 1];
+            set[j - 1] = t;
+        }
+    return k;
+}
+
+static void test_keys(const fel_test_t *x)
+{
+    static const uint8_t CS4[1] = {61}, C4[1] = {60}, E4[1] = {64}, CEG[3] = {60, 64, 67};
+    static const uint8_t LOW[1] = {16}, HIGH[1] = {116};
+    const fel_core_t *c = x->core;
+    uint8_t got[64];
+    uint32_t n, i, k;
+    uint64_t f_on = 0, f_off = 0;
+    c->boot();
+    x->setup(FEL_TEST_KNOCK);                          /* (ANALOG on track 1, no notes; DRUM on track 4) */
+    c->tempo(120);
+    c->play(drive_timeline + 0.1);
+    run(c, frames_ms(300), 0);
+    c->param_set(0, G_QUANT, 1);                        /* SNAP, C major */
+    c->param_set(0, G_SCALE, 1);
+    nev = 0;
+    key_note(c, 0, CS4, 1, 1, 1301);
+    run(c, frames_ms(700), 0);
+    n = notes_of(0, got, 64);
+    CHECK(n == 1 && got[0] == 60, "G1 C#4 under QNT SNAP in C major: C4 (%u notes, the first %u)", n, n ? got[0] : 0);
+    c->param_set(0, G_TRANS, 5);
+    nev = 0;
+    key_note(c, 0, C4, 1, 1, 1302);
+    run(c, frames_ms(700), 0);
+    n = notes_of(0, got, 64);
+    CHECK(n == 1 && got[0] == 65, "G2 C4 with TRN +5: F4 (%u)", n ? got[0] : 0);
+    c->param_set(0, G_TRANS, 0);
+    c->param_set(0, G_QUANT, 2);                        /* WHITE, C minor: the white keys walk its scale */
+    c->param_set(0, G_SCALE, 2);
+    nev = 0;
+    key_note(c, 0, CS4, 1, 1, 1303);
+    key_note(c, 0, E4, 1, 1, 1304);
+    run(c, frames_ms(700), 0);
+    n = notes_of(0, got, 64);
+    CHECK(n == 1 && got[0] == 63, "G3 under QNT WHITE in C minor: C#4 (a black key) silent, E4 its third, Eb4 (%u notes, "
+          "the first %u)", n, n ? got[0] : 0);
+    c->param_set(0, G_QUANT, 1);                        /* SNAP, C major again: C4 and C#4 are one note */
+    c->param_set(0, G_SCALE, 1);
+    nev = 0;
+    key_note(c, 0, C4, 1, 2, 1305);
+    key_note(c, 0, CS4, 1, 4, 1306);
+    run(c, frames_ms(1200), 0);
+    for (i = 0, k = 0; i < nev; i++)
+        if (evs[i].track == 0 && evs[i].note == 60) {
+            k++;
+            if (evs[i].kind == FEL_EV_NOTE)
+                f_on = evs[i].frame;
+            else
+                f_off = evs[i].frame;
+        }
+    CHECK(k == 2 && f_off > f_on && (double)(f_off - f_on) / FEL_RATE > 0.45,
+          "G4 two notes held as one (C4, and C#4 snapped): it sounds once, until the later ends (%u on and off, %.3f s: "
+          "4 steps 0.5)", k, (double)(f_off - f_on) / FEL_RATE);
+    c->param_set(0, G_AMODE, 1);                        /* UP, 1/16, HOLD: C E G latched, one action */
+    c->param_set(0, G_ARATE, 2);
+    c->param_set(0, G_AHOLD, 1);
+    nev = 0;
+    key_note(c, 0, CEG, 3, 1, 1307);
+    run(c, frames_ms(700), 0);
+    for (i = 0, k = 0; i < nev; i++)
+        k += evs[i].kind == FEL_EV_ACTION && evs[i].id == 1307;
+    CHECK(k == 1, "G5 a chord in one action: one action event (%u)", k);
+    n = arp_set(c, got);
+    CHECK(n == 3 && got[0] == 60 && got[1] == 64 && got[2] == 67, "G5 .. latched, the arp plays C E G (%u notes)", n);
+    c->param_set(0, G_TRANS, 2);
+    n = arp_set(c, got);
+    CHECK(n == 3 && got[0] == 62 && got[1] == 65 && got[2] == 69,
+          "G6 TRN +2 while it plays: D F A, the keys mapped again in C major (%u: %u %u %u)", n, got[0], n > 1 ? got[1] : 0,
+          n > 2 ? got[2] : 0);
+    c->param_set(0, G_TRANS, 0);
+    c->param_set(0, G_SCALE, 2);
+    n = arp_set(c, got);
+    CHECK(n == 3 && got[0] == 60 && got[1] == 63 && got[2] == 67, "G7 SCALE MIN while it plays: C Eb G (%u: %u %u %u)", n,
+          got[0], n > 1 ? got[1] : 0, n > 2 ? got[2] : 0);
+    c->param_set(0, G_AMODE, 0);                        /* the arp off: the latch let go */
+    nev = 0;
+    key_note(c, 3, C4, 1, 1, 1308);                     /* DRUM: the key labelled C4 is the kick */
+    run(c, frames_ms(700), 0);
+    for (i = 0, k = 0; i < nev; i++)
+        k += evs[i].kind == FEL_EV_NOTE && evs[i].track == 3 && evs[i].note == 36 && evs[i].lane == 0 &&
+             evs[i].velocity == 100;
+    CHECK(k == 1, "G8 C4 on DRUM: the kick (36, lane KICK), as the key labelled C4 plays it (%u)", k);
+    CHECK(key_note(c, 0, LOW, 1, 1, 1) == 1 && key_note(c, 0, HIGH, 1, 1, 1) == 1 && key_note(c, 0, CEG, 0, 1, 1) == 1 &&
+              key_note(c, 0, CEG, FEL_NOTES + 1u, 1, 1) == 1,
+          "G9 refused: E0 and G#8 (no key reaches them), no notes, more than %d", FEL_NOTES);
+}
+
 int main(void)
 {
     test_steps(fel_test_0());
@@ -666,5 +804,6 @@ int main(void)
     test_notes(fel_test_4());
     test_mask(fel_test_5());
     test_engine_set(fel_test_6());
+    test_keys(fel_test_7());
     return check_done("test_sched");
 }

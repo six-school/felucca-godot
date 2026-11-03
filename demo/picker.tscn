@@ -5,6 +5,7 @@
 [ext_resource type="PackedScene" path="res://pool.tscn" id="3"]
 [ext_resource type="PackedScene" uid="uid://udg7joedydyp" path="res://knock.tscn" id="4"]
 [ext_resource type="PackedScene" uid="uid://b7lvv24dbajbw" path="res://3d/main3d.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://transpose.tscn" id="6"]
 
 [node name="Picker" type="Control" unique_id=776850475]
 layout_mode = 3
@@ -14,7 +15,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1")
-scenes = Array[PackedScene]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5")])
+scenes = Array[PackedScene]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6")])
 
 [node name="Center" type="CenterContainer" parent="." unique_id=145801267]
 layout_mode = 1

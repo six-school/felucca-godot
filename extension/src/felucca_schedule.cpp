@@ -82,7 +82,7 @@ static Ref<FeluccaAction> part_action(const Ref<FeluccaPart> &p_part, uint8_t p_
 	Ref<FeluccaAction> a;
 	a.instantiate();
 	a->values = p_part->source_values();
-	a->action = { p_kind, uint8_t(p_part->get_track()), p_a, p_b, p_c };
+	a->action = { p_kind, uint8_t(p_part->get_track()), p_a, p_b, p_c, {} };
 	return a;
 }
 
@@ -94,20 +94,107 @@ Ref<FeluccaAction> FeluccaAction::hit(const Ref<FeluccaPart> &p_part, int p_lane
 	return part_action(p_part, FEL_DO_HIT, p_lane, p_velocity, 0);
 }
 
-Ref<FeluccaAction> FeluccaAction::note(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps) {
-	if (p_part.is_null() || p_note < 0 || p_note > 127 || p_velocity < 1 || p_velocity > 127 || p_steps < 1 || p_steps > 64) {
-		UtilityFunctions::push_error("FeluccaAction.note(): a part, a note (0 to 127), a velocity (1 to 127) and steps (1 to 64).");
-		return Ref<FeluccaAction>();
+// a note's name as the FM-1's keys are labelled (C4 = 60): C C# D D# E F F# G G# A A# B, sharps only (one name a
+// note), then its octave, -1 to 9 (C-1 = 0 .. G9 = 127); -1 for none
+static const char *const NOTE_NAMES[12] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+
+static int note_number(const String &p_name) {
+	for (int k = 11; k >= 0; k--) { // (each sharp before its natural: "C#4" is no "C" of octave "#4")
+		const String n = NOTE_NAMES[k];
+		if (!p_name.begins_with(n)) {
+			continue;
+		}
+		const String o = p_name.substr(n.length());
+		const int64_t oct = o.to_int();
+		const int64_t v = (oct + 1) * 12 + k;
+		return o == String::num_int64(oct) && v >= 0 && v <= 127 ? int(v) : -1; // (no "+4", "04")
 	}
-	return part_action(p_part, FEL_DO_NOTE, p_note, p_velocity, p_steps);
+	return -1;
 }
 
-Ref<FeluccaAction> FeluccaAction::note_layered(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps) {
-	if (p_part.is_null() || p_note < 0 || p_note > 127 || p_velocity < 1 || p_velocity > 127 || p_steps < 1 || p_steps > 64) {
-		UtilityFunctions::push_error("FeluccaAction.note_layered(): a part, a note (0 to 127), a velocity (1 to 127) and steps (1 to 64).");
+static String note_name(int p_note) {
+	return String(NOTE_NAMES[p_note % 12]) + String::num_int64(p_note / 12 - 1);
+}
+
+int FeluccaAction::note_to_int(const String &p_name) {
+	const int v = note_number(p_name);
+	if (v < 0) {
+		UtilityFunctions::push_error("FeluccaAction.note_to_int(): \"", p_name, "\" is no note (a note is C4, D#4 ...).");
+	}
+	return v;
+}
+
+String FeluccaAction::int_to_note(int p_note) {
+	if (p_note < 0 || p_note > 127) {
+		UtilityFunctions::push_error("FeluccaAction.int_to_note(): ", p_note, " is no MIDI note (0 to 127).");
+		return String();
+	}
+	return note_name(p_note);
+}
+
+// p_notes into a NOTE action's notes: a name ("D#4"), several in one ("C4 E4 G4"), a MIDI number, or an Array of names
+// and numbers; false, with an error saying why, for none, too many, or a note no key of the FM-1 reaches
+static bool notes_of(const char *p_method, const Variant &p_notes, fel_action_t &r_action) {
+	Array all;
+	if (p_notes.get_type() == Variant::ARRAY) {
+		all = p_notes;
+	} else {
+		all.push_back(p_notes);
+	}
+	int n = 0;
+	for (int64_t i = 0; i < all.size(); i++) {
+		PackedStringArray names;
+		if (all[i].get_type() == Variant::STRING || all[i].get_type() == Variant::STRING_NAME) {
+			names = String(all[i]).split(" ", false);
+		}
+		for (int64_t j = 0; j < (names.is_empty() ? 1 : names.size()); j++) {
+			int v = -1;
+			if (names.is_empty() && all[i].get_type() == Variant::INT) {
+				const int64_t x = all[i];
+				v = x >= 0 && x <= 127 ? int(x) : -1;
+			} else if (!names.is_empty()) {
+				v = note_number(names[j]);
+			}
+			if (v < 0) {
+				UtilityFunctions::push_error("FeluccaAction.", p_method, "(): ", names.is_empty() ? Variant(all[i]) : Variant(names[j]),
+						" is no note (a name such as \"D#4\", or a MIDI note).");
+				return false;
+			}
+			if (v < FEL_NOTE_LO || v > FEL_NOTE_HI) {
+				UtilityFunctions::push_error("FeluccaAction.", p_method, "(): ", note_name(v), " is beyond the FM-1's keys (F0 to G8).");
+				return false;
+			}
+			if (n == FEL_NOTES) {
+				UtilityFunctions::push_error("FeluccaAction.", p_method, "(): more than ", FEL_NOTES, " notes.");
+				return false;
+			}
+			r_action.notes[n++] = uint8_t(v);
+		}
+	}
+	if (!n) {
+		UtilityFunctions::push_error("FeluccaAction.", p_method, "(): no notes.");
+		return false;
+	}
+	r_action.a = n;
+	return true;
+}
+
+static Ref<FeluccaAction> note_action(const char *p_method, uint8_t p_kind, const Ref<FeluccaPart> &p_part, const Variant &p_notes,
+		int p_velocity, int p_steps) {
+	if (p_part.is_null() || p_velocity < 1 || p_velocity > 127 || p_steps < 1 || p_steps > 64) {
+		UtilityFunctions::push_error("FeluccaAction.", p_method, "(): a part, notes, a velocity (1 to 127) and steps (1 to 64).");
 		return Ref<FeluccaAction>();
 	}
-	return part_action(p_part, FEL_DO_NOTE_OVER, p_note, p_velocity, p_steps);
+	Ref<FeluccaAction> a = part_action(p_part, p_kind, 0, p_velocity, p_steps);
+	return notes_of(p_method, p_notes, a->action) ? a : Ref<FeluccaAction>();
+}
+
+Ref<FeluccaAction> FeluccaAction::note(const Ref<FeluccaPart> &p_part, const Variant &p_notes, int p_velocity, int p_steps) {
+	return note_action("note", FEL_DO_NOTE, p_part, p_notes, p_velocity, p_steps);
+}
+
+Ref<FeluccaAction> FeluccaAction::note_layered(const Ref<FeluccaPart> &p_part, const Variant &p_notes, int p_velocity, int p_steps) {
+	return note_action("note_layered", FEL_DO_NOTE_OVER, p_part, p_notes, p_velocity, p_steps);
 }
 
 static Ref<FeluccaAction> mask(const Ref<FeluccaPart> &p_part, int p_count, int p_unit, const char *p_name) {
@@ -161,10 +248,12 @@ Ref<FeluccaAction> FeluccaAction::mark() {
 
 void FeluccaAction::_bind_methods() {
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("hit", "part", "lane", "velocity"), &FeluccaAction::hit, DEFVAL(100));
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("note", "part", "note", "velocity", "steps"), &FeluccaAction::note,
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("note", "part", "notes", "velocity", "steps"), &FeluccaAction::note,
 			DEFVAL(100), DEFVAL(1));
-	ClassDB::bind_static_method(get_class_static(), D_METHOD("note_layered", "part", "note", "velocity", "steps"),
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("note_layered", "part", "notes", "velocity", "steps"),
 			&FeluccaAction::note_layered, DEFVAL(100), DEFVAL(1));
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("note_to_int", "name"), &FeluccaAction::note_to_int);
+	ClassDB::bind_static_method(get_class_static(), D_METHOD("int_to_note", "note"), &FeluccaAction::int_to_note);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("mask_steps", "part", "steps"), &FeluccaAction::mask_steps);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("mask_loops", "part", "loops"), &FeluccaAction::mask_loops);
 	ClassDB::bind_static_method(get_class_static(), D_METHOD("mask_bars", "part", "bars"), &FeluccaAction::mask_bars);

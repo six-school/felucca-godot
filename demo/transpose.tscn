@@ -1,0 +1,27 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://transpose.gd" id="1"]
+[ext_resource type="Script" path="res://simple_move.gd" id="2"]
+[ext_resource type="FeluccaProject" path="res://music/hall-theme-with-arp-on-part-2.felucca" id="3"]
+
+[node name="Transpose" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Song" type="FeluccaSource" parent="."]
+project = ExtResource("3")
+pinned = true
+
+[node name="Player" type="Node2D" parent="."]
+script = ExtResource("2")
+
+[node name="ColorRect" type="ColorRect" parent="Player"]
+offset_left = -16.0
+offset_top = -16.0
+offset_right = 16.0
+offset_bottom = 16.0
+
+[node name="Hud" type="CanvasLayer" parent="."]
+
+[node name="Label" type="Label" parent="Hud"]
+offset_left = 16.0
+offset_top = 16.0

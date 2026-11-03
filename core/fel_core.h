@@ -10,10 +10,11 @@
 #define FEL_CORE_H
 #include <stdint.h>
 
-#define FEL_CORE_ABI 10                 /* bump on any change to this file (2: locate, the passes in the snapshot;
+#define FEL_CORE_ABI 11                 /* bump on any change to this file (2: locate, the passes in the snapshot;
                                          * 3: project_info, engine_name; 4: project_info's values; 5: cut;
                                          * 6: schedule, cancel, events; 7: a step event's length; 8: notes;
-                                         * 9: replace, layer, mask; 10: SET for an engine) */
+                                         * 9: replace, layer, mask; 10: SET for an engine; 11: a NOTE's notes as
+                                         * the keys play them, several to an action) */
 #define FEL_RATE 44100                  /* the FM-1's rate: the caller resamples */
 #define FEL_TRACKS 4
 #define FEL_PROJECT_SIZE 3840           /* a project store object (FUN10), as the web app exports it */
@@ -23,6 +24,9 @@
 #define FEL_LANES 8                     /* the DRUM grid's lanes: KICK SNARE CLAP HAT-CL HAT-OP TOM RIM BELL */
 #define FEL_SCHEDULES 64                /* actions an instance holds until their time */
 #define FEL_EVENTS 256                  /* events it holds until events() takes them */
+#define FEL_NOTES 16                    /* the notes of one NOTE action at most (as many as an arp holds) */
+#define FEL_NOTE_LO 17                  /* the notes the FM-1's keys reach: F0 .. G8 (its 27 keys, F3 .. G5, with */
+#define FEL_NOTE_HI 115                 /* the octave buttons at -3 .. +3) */
 
 typedef struct {
     uint32_t playing;
@@ -65,8 +69,11 @@ typedef struct {
     uint8_t track;
     int32_t a, b, c;                    /* HIT: lane (0..7), velocity: the lane's GM note on the track (DRUM strikes
                                          * the lane, another engine plays the pitch) for a step, in place of the
-                                         * step's own hit of that lane; NOTE: note, velocity, length in the track's
-                                         * steps (1..64), played as MIDI IN would (arps, chords, scales), in place of
+                                         * step's own hit of that lane; NOTE: a notes (1..FEL_NOTES) of notes[], in
+                                         * that order, velocity b, length c in the track's steps (1..64), each played
+                                         * as the FM-1's key labelled with it plays (FEL_NOTE_LO..HI): QNT, ROOT,
+                                         * SCALE and TRN map it, CHRD makes it a chord, the arp keeps the key and maps
+                                         * it again as it plays, DRUM and SLICE map the key themselves; in place of
                                          * the step's own notes (its hits play); NOTE_OVER: the same, over them; SET:
                                          * param_set(track, a, b) from that step on, if the track's engine is c then
                                          * (-1: any), else dropped (an engine's parameter id is every engine's: it
@@ -75,6 +82,7 @@ typedef struct {
                                          * for a (1..4096) of FEL_SPAN_* b from the step. What a HIT, NOTE or MASK
                                          * silences is the track's step the target is a step of, else the next of its
                                          * steps to start; the scheduled notes in it play */
+    uint8_t notes[FEL_NOTES];           /* NOTE, NOTE_OVER: the notes (MIDI numbers) */
 } fel_action_t;
 
 /* what happened (events) */
@@ -82,10 +90,11 @@ enum { FEL_EV_ACTION, FEL_EV_DROPPED, FEL_EV_STEP, FEL_EV_NOTE, FEL_EV_NOTE_OFF 
 typedef struct {
     uint8_t kind;                       /* ACTION: an action applied; DROPPED: one found passed (FEL_LATE_DROP), or
                                          * whose step is past its track's LEN; STEP: a track entered a step; NOTE: a
-                                         * track started a note (its steps', its arp's, MIDI IN's: the scheduled
-                                         * hits' too; none while muted); NOTE_OFF: released one it had started, once
-                                         * (the sequencer's at their gates' ends and at a stop; keys held, MIDI IN's,
-                                         * when released; a panic, a project load, a cut: every note still on) */
+                                         * track started a note (its steps', its arp's, MIDI IN's, the scheduled
+                                         * hits' and notes' as they map: none while muted); NOTE_OFF: released one it
+                                         * had started, once (the sequencer's at their gates' ends and at a stop;
+                                         * keys held, MIDI IN's, scheduled notes when released; a panic, a project
+                                         * load, a cut: every note still on) */
     uint8_t track;
     uint16_t step;                      /* 0-based: the step entered (AT_BEATS: the step playing) */
     uint32_t loop;                      /* the track's pass (as the snapshot counts them) */

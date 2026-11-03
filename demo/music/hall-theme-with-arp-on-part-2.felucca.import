@@ -1,0 +1,15 @@
+[remap]
+
+importer="felucca.project"
+importer_version=2
+type="FeluccaProject"
+uid="uid://bqyh5p87omh0c"
+path="res://.godot/imported/hall-theme-with-arp-on-part-2.felucca-0167eb393ff22e422fbcd9fa9ae9c9eb.res"
+
+[deps]
+
+source_file="res://music/hall-theme-with-arp-on-part-2.felucca"
+dest_files=["res://.godot/imported/hall-theme-with-arp-on-part-2.felucca-0167eb393ff22e422fbcd9fa9ae9c9eb.res"]
+
+[params]
+

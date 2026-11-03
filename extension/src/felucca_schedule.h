@@ -48,10 +48,14 @@ public:
 	std::shared_ptr<FelValues> values; // the source the part is of (mark: none)
 
 	// on the step occurrence it targets: hit in place of the step's own hit of its lane (its other lanes play), note
-	// in place of the step's own notes (its hits play), note_layered over them; the pattern stays as it is
+	// in place of the step's own notes (its hits play), note_layered over them; the pattern stays as it is. The notes:
+	// a name ("D#4"), several ("C4 E4 G4", an Array), MIDI numbers; each played as the FM-1's key labelled with it
 	static Ref<FeluccaAction> hit(const Ref<FeluccaPart> &p_part, int p_lane, int p_velocity);
-	static Ref<FeluccaAction> note(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps);
-	static Ref<FeluccaAction> note_layered(const Ref<FeluccaPart> &p_part, int p_note, int p_velocity, int p_steps);
+	static Ref<FeluccaAction> note(const Ref<FeluccaPart> &p_part, const Variant &p_notes, int p_velocity, int p_steps);
+	static Ref<FeluccaAction> note_layered(const Ref<FeluccaPart> &p_part, const Variant &p_notes, int p_velocity, int p_steps);
+	// a note's name and its MIDI number (C4 = 60, sharps only: "D#4" = 63, C-1 = 0 .. G9 = 127); -1 / "" for none
+	static int note_to_int(const String &p_name);
+	static String int_to_note(int p_note);
 	// the part's own steps silent for a span from the target (the scheduled notes in it play): so many of its steps,
 	// its loops (its LEN), the conductor's bars (the steps starting within them)
 	static Ref<FeluccaAction> mask_steps(const Ref<FeluccaPart> &p_part, int p_steps);

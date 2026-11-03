@@ -35,7 +35,7 @@ To publish a release, push a tag named `v` followed by the version, for example 
 
 ## Demos
 
-Open `demo/picker.tscn` (the main scene, on the web too) to pick a demo: the main one, the pool, the knock or the 3D scene. Press P or Escape to go back.
+Open `demo/picker.tscn` (the main scene, on the web too) to pick a demo: the main one, the pool, the knock, the 3D scene or the transposed arpeggio. Press P or Escape to go back.
 
 When you export:
 
